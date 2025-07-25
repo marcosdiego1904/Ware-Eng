@@ -1,0 +1,109 @@
+﻿Detailed Integration Plan: Connecting Your React SPA to the API
+Overall Goal: To integrate your existing React/TypeScript application, which features a main sidebar layout, with the Flask RESTful API. This plan focuses on mapping each sidebar section to its corresponding API endpoint(s) and implementing the necessary client-side logic for data fetching, display, and user interaction.
+Project Context: The frontend UI is already built, including a left sidebar with distinct sections. We will now replace all mock data and placeholder logic with live data from the API prepared in Phase 1.
+Step 1: Structuring Client-Side Routing for the Sidebar Layout
+Your application's structure will be managed by react-router-dom. We'll define a main layout that includes your Sidebar component and a content area where the different page components will be rendered based on the URL.
+1. Create a MainLayout.tsx Component:
+This component will be the parent for all protected pages. It renders the sidebar and an <Outlet />, which is a placeholder where React Router will render the active page component.
+// src/components/layout/MainLayout.tsx
+import { Outlet } from 'react-router-dom';
+import Sidebar from './Sidebar'; // Assuming you have a Sidebar component
+
+const MainLayout = () => {
+ return (
+   <div style={{ display: 'flex' }}>
+     <Sidebar />
+     <main style={{ flexGrow: 1, padding: '2rem' }}>
+       <Outlet /> {/* Child routes will render here */}
+     </main>
+   </div>
+ );
+};
+
+export default MainLayout;
+
+2. Update Your Routing in App.tsx:
+Configure your routes to use this new layout. This clearly separates the logic for each section.
+// src/App.tsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
+import ProtectedRoute from './components/common/ProtectedRoute';
+import MainLayout from './components/layout/MainLayout';
+
+// Import your page components for each section
+import LatestReportPage from './pages/LatestReportPage';
+import NewAnalysisPage from './pages/NewAnalysisPage';
+import HistoryPage from './pages/HistoryPage';
+import RulesPage from './pages/RulesPage';
+import SettingsPage from './pages/SettingsPage';
+
+function App() {
+ return (
+   <BrowserRouter>
+     <Routes>
+       <Route path="/login" element={<LoginPage />} />
+       {/* All protected routes will now use the MainLayout */}
+       <Route element={<ProtectedRoute />}>
+         <Route element={<MainLayout />}>
+           <Route path="/" element={<LatestReportPage />} />
+           <Route path="/new-analysis" element={<NewAnalysisPage />} />
+           <Route path="/history" element={<HistoryPage />} />
+           <Route path="/rules" element={<RulesPage />} />
+           <Route path="/settings" element={<SettingsPage />} />
+         </Route>
+       </Route>
+     </Routes>
+   </BrowserRouter>
+ );
+}
+
+Step 2: API Integration for Each Sidebar Section
+Now, let's connect each page component to the API. The API client setup from the previous plan (axiosClient.ts, authApi.ts, etc.) remains essential.
+1. Main Section: Latest Report (LatestReportPage.tsx)
+This page will be the default view when a user logs in (/). It needs to perform two API calls.
+   * Logic:
+   1. On component mount (useEffect), call the endpoint to get the list of all user reports: GET /api/v1/reports.
+   2. The API returns reports sorted by date, so the first report in the array (response.data.reports[0]) is the latest one.
+   3. If a latest report exists, take its id and make a second API call to get its full details: GET /api/v1/reports/<latest_id>/details.
+   4. Store the detailed data in state and pass it as props to your existing dashboard components (KPIs, charts, lists).
+   5. If no reports exist, display a welcome message prompting the user to create their first analysis.
+2. "New Report" Section (NewAnalysisPage.tsx)
+This page corresponds to the /new-analysis route and will contain your file upload and column mapping components.
+   * Logic:
+   1. The component will have a form to handle file inputs for the inventory and (optional) rules files.
+   2. It will also manage the state for the column mapping selections.
+   3. On form submission, it will construct a FormData object. This is crucial for sending files.
+   4. It will make a POST request to /api/v1/reports. The FormData will contain the files and the column mapping (as a JSON string).
+   5. While waiting for the API response, show a loading indicator.
+   6. Upon a successful response, use the report_id from the JSON body and programmatically redirect the user to the main dashboard (/) to see the new results.
+3. "History" Section (HistoryPage.tsx)
+This page corresponds to the /history route and replicates the functionality of the old dashboard.html.
+   * Logic:
+   1. On component mount (useEffect), call GET /api/v1/reports.
+   2. Store the array of reports in state.
+   3. Render a table or list of these reports. Each item should be a Link from react-router-dom pointing to the main dashboard but with a specific report loaded (e.g., you could adapt the main dashboard page to accept an optional ID, or have a separate /report/:id page).
+4. "Manage Rules" Section (RulesPage.tsx)
+This is a new feature that requires backend additions. The goal is to allow users to view and edit the business rules directly from the UI.
+   * Backend Prerequisite (New Task):
+   * The current system reads a static .xlsx file. This must be changed. The best approach is to store the rules in the database.
+   * Create a new Rule model in app.py.
+   * Create two new API endpoints:
+   * GET /api/v1/rules: Fetches all current rules from the database.
+   * POST /api/v1/rules: Receives an array of rule objects to update or create new rules in the database.
+   * The core engine in main.py must be modified to read rules from the database instead of the Excel file.
+   * Frontend Logic (RulesPage.tsx):
+   1. On component mount, call GET /api/v1/rules to fetch the current rules.
+   2. Display these rules in an editable table or a series of form fields.
+   3. When the user clicks "Save," collect the data from the form, and send it to POST /api/v1/rules.
+   4. Show a success or error message to the user.
+5. "Settings" Section (SettingsPage.tsx)
+This section is for user-specific configurations.
+   * Backend Prerequisite (New Task):
+   * Create new endpoints for user management, for example:
+   * POST /api/v1/auth/change-password: Allows an authenticated user to change their password.
+   * Frontend Logic (SettingsPage.tsx):
+   1. Create a simple form for changing the password (current password, new password, confirm new password).
+   2. On submit, call the new /api/v1/auth/change-password endpoint.
+   3. Display appropriate feedback to the user.
+   4. This section can also contain the "Logout" button, which would call useAuthStore.getState().clearAuth() and redirect to the login page.
+This more detailed plan aligns with your existing UI structure and provides a clear, step-by-step guide for the integration work, including identifying necessary additions to your backend API.

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pip install:*)",
+      "Bash(ls:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(./venv/Scripts/pip.exe install:*)",
+      "Bash(./venv/Scripts/python.exe -c \"import src.app; print(''Flask application loads successfully'')\")",
+      "Bash(./venv/Scripts/pip.exe show Flask-Cors)",
+      "Bash(../venv/Scripts/python.exe -c:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(taskkill:*)"
+    ],
+    "deny": []
+  }
+}

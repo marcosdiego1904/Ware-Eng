@@ -1,0 +1,209 @@
+﻿Implementation Plan: Backend to RESTful API Transformation
+Overall Goal: To refactor the existing Flask application to function as a decoupled RESTful API. The application will stop rendering HTML templates and will communicate exclusively through endpoints that return JSON, using JWT-based authentication.
+Project Context: The current project is a monolithic Flask application (app.py) that analyzes inventory files, detects anomalies, and displays the results using HTML templates. This phase focuses solely on modifying the backend to prepare it for a new Single-Page Application (SPA) built in React.
+Step 0: Setup and Dependencies
+Before starting, you need to add the libraries that will handle JWT and CORS.
+1. Update the requirements.txt file to include the following dependencies:
+Flask
+pandas
+openpyxl
+Flask-SQLAlchemy
+Flask-Login
+Werkzeug
+PyJWT==2.8.0
+Flask-Cors==4.0.1
+
+2. Install the new dependencies:
+pip install -r requirements.txt
+
+Step 1: API, Blueprint, and CORS Configuration
+To keep the code organized, we will create a Flask "Blueprint" specifically for the new API. This allows us to version and prefix all API routes (e.g., /api/v1/...).
+   1. Create an API Blueprint in app.py:
+# At the beginning of app.py, after the imports
+from flask import Blueprint, jsonify
+from flask_cors import CORS
+
+# ...
+
+# Create the Blueprint
+api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
+
+# Configure CORS to apply only to the API Blueprint
+# This will allow requests from the React development server (e.g., localhost:3000)
+CORS(api_bp, resources={r"/*": {"origins": "*"}}) # Change "*" to your frontend's production URL
+
+# ... (rest of the app configuration)
+
+# Register the Blueprint with the main application
+app.register_blueprint(api_bp)
+
+Note: All new API routes will be created using @api_bp.route(...) instead of @app.route(...).
+Step 2: Implementing JWT Authentication
+We will replace the session-based login system from Flask-Login with one based on JSON Web Tokens (JWT).
+      1. Modify the Login Route (/login):
+      * It must accept a username and password in JSON format.
+      * If the credentials are valid, it must generate and return a JWT.
+      * It should no longer use login_user() or redirects.
+# app.py
+import jwt
+from datetime import datetime, timedelta
+
+# ...
+
+@api_bp.route('/auth/login', methods=['POST'])
+def api_login():
+   data = request.get_json()
+   if not data or not data.get('username') or not data.get('password'):
+       return jsonify({'message': 'Could not verify'}), 401
+
+   user = User.query.filter_by(username=data['username']).first()
+
+   if user and user.check_password(data['password']):
+       # Generate the JWT token
+       token = jwt.encode({
+           'user_id': user.id,
+           'exp': datetime.utcnow() + timedelta(hours=24) # Token valid for 24 hours
+       }, app.config['SECRET_KEY'], algorithm="HS256")
+
+       return jsonify({'token': token, 'username': user.username})
+
+   return jsonify({'message': 'Login failed!'}), 401
+
+      2. Modify the Register Route (/register):
+      * It should work similarly, accepting JSON and returning a success message.
+# app.py
+@api_bp.route('/auth/register', methods=['POST'])
+def api_register():
+   data = request.get_json()
+   username = data.get('username')
+   password = data.get('password')
+
+   if User.query.filter_by(username=username).first():
+       return jsonify({'message': 'Username already exists.'}), 409
+
+   new_user = User(username=username)
+   new_user.set_password(password)
+   db.session.add(new_user)
+   db.session.commit()
+
+   return jsonify({'message': 'New user created!'}), 201
+
+      3. Create a Decorator to Protect Routes (@token_required):
+      * This decorator will verify the presence and validity of the JWT in the Authorization header of each request to a protected endpoint.
+# app.py
+from functools import wraps
+
+def token_required(f):
+   @wraps(f)
+   def decorated(*args, **kwargs):
+       token = None
+       if 'Authorization' in request.headers:
+           # The token is expected in the "Bearer <token>" format
+           token = request.headers['Authorization'].split(" ")[1]
+
+       if not token:
+           return jsonify({'message': 'Token is missing!'}), 401
+
+       try:
+           data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+           current_user = User.query.get(data['user_id'])
+       except Exception as e:
+           return jsonify({'message': 'Token is invalid!', 'error': str(e)}), 401
+
+       # Pass the authenticated user to the route
+       return f(current_user, *args, **kwargs)
+   return decorated
+
+Step 3: Refactoring Endpoints to JSON Format
+Now, convert the existing routes to use the @token_required decorator and return JSON. The original routes that use render_template must be deleted or commented out.
+      1. Endpoint to Get User Reports (/dashboard):
+      * Before: render_template('dashboard.html', reports=reports)
+      * Now: It must return a list of reports in JSON format.
+# app.py
+@api_bp.route('/reports', methods=['GET'])
+@token_required
+def get_user_reports(current_user):
+   reports = AnalysisReport.query.filter_by(user_id=current_user.id).order_by(AnalysisReport.timestamp.desc()).all()
+   output = []
+   for report in reports:
+       report_data = {
+           'id': report.id,
+           'report_name': report.report_name,
+           'timestamp': report.timestamp.isoformat(),
+           'anomaly_count': len(report.anomalies)
+       }
+       output.append(report_data)
+   return jsonify({'reports': output})
+
+      2. Endpoint to Create a New Analysis (/process):
+      * Before: The flow was / -> /mapping -> /process -> redirect('/results_v2.html').
+      * Now: It will be a single endpoint that receives the files and mapping, and returns the ID of the new report. File uploads will be handled by the frontend.
+# app.py
+@api_bp.route('/reports', methods=['POST'])
+@token_required
+def create_analysis_report(current_user):
+   # The frontend will send the data as 'multipart/form-data'
+   if 'inventory_file' not in request.files:
+       return jsonify({'message': 'No inventory file part'}), 400
+
+   inventory_file = request.files['inventory_file']
+   rules_file = request.files.get('rules_file') # Optional
+   column_mapping = json.loads(request.form.get('column_mapping'))
+
+   # ... (logic for temporarily saving and processing files) ...
+   # The logic for 'run_engine' and saving to the DB remains almost the same
+
+   # Simplified processing example
+   inventory_df = pd.read_excel(inventory_file)
+   inventory_df.rename(columns=column_mapping, inplace=True)
+   # ... rest of the main.run_engine logic ...
+
+   anomalies = run_engine(...) # Call the engine
+
+   new_report = AnalysisReport(...) # Create report in DB
+   # ... (save anomalies) ...
+   db.session.commit()
+
+   return jsonify({'message': 'Report created successfully', 'report_id': new_report.id}), 201
+
+      3. Endpoint for Report Details (/report/<id>/details):
+      * This route is already well-designed because it returns JSON. It just needs to be moved to the new Blueprint and protected with the decorator.
+# app.py
+@api_bp.route('/reports/<int:report_id>/details', methods=['GET'])
+@token_required
+def get_api_report_details(current_user, report_id):
+   report = AnalysisReport.query.get_or_404(report_id)
+   if report.user_id != current_user.id:
+       return jsonify({"error": "Unauthorized"}), 403
+
+   # The existing logic for processing and returning the details is correct.
+   # ... (existing code from get_report_details) ...
+
+   return jsonify({
+       "reportId": report.id,
+       # ... rest of the data ...
+   })
+
+      4. Endpoint to Update Anomaly Status:
+      * This route is also well-designed. It just needs to be moved to the Blueprint and protected.
+# app.py
+@api_bp.route('/anomalies/<int:anomaly_id>/status', methods=['POST'])
+@token_required
+def change_api_anomaly_status(current_user, anomaly_id):
+   anomaly = Anomaly.query.get_or_404(anomaly_id)
+   # Note: The original code had a bug here. It should be anomaly.report.author.id
+   if anomaly.report.user_id != current_user.id:
+       return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+   # The existing logic is correct
+   # ... (existing code from change_anomaly_status) ...
+
+   return jsonify({'success': True, ...})
+
+Summary of Changes and Final Structure
+At the end of this phase:
+      1. app.py will not contain any calls to render_template. All routes related to the user interface (/, /dashboard, /login, etc.) will have been removed or replaced by their counterparts in /api/v1/....
+      2. The authentication system will be based entirely on the @token_required decorator and the JWT flow.
+      3. The Flask application will be a "headless" API, ready for any client (in this case, the future React SPA) to connect to it.
+      4. The templates/ directory can be deleted, as it will no longer be used by Flask.
+This plan establishes a solid and professional foundation for your backend, preparing it for a clean and efficient integration with the modern frontend you plan to build.

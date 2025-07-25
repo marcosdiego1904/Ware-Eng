@@ -1,0 +1,23 @@
+Hola, quiero refactorizar mi aplicación Flask para convertirla en una Single-Page Application (SPA). El objetivo es utilizar src/templates/results_v2.html como la única plantilla principal después del login.
+
+Plan de Acción:
+
+Modifica results_v2.html: Añade una barra de navegación lateral (sidebar) que contenga:
+
+Un botón "Nuevo Análisis".
+
+Un listado de los reportes del usuario, obtenidos de la misma forma que en dashboard.html.
+
+Crea un Modal para "Nuevo Análisis": Al hacer clic en el botón "Nuevo Análisis", debe aparecer un modal que integre:
+
+Paso 1 (Carga): La funcionalidad de index.html para subir el archivo de inventario y el de reglas.
+
+Paso 2 (Mapeo): Tras subir el archivo, el contenido del mismo modal debe cambiar para mostrar la interfaz de mapping.html, cargando dinámicamente las columnas del archivo subido.
+
+Actualización Dinámica del Dashboard:
+
+Al enviar el mapeo, el modal se cierra, se muestra un indicador de carga y se llama al endpoint /process.
+
+Una vez completado, el script de la página debe usar el endpoint /report/<id>/details para obtener los datos del nuevo reporte y actualizar dinámicamente el contenido del dashboard (KPIs, gráficos, listas) sin recargar la página. La función initializeDashboard debe ser adaptada para esto.
+
+Navegación entre reportes: Al hacer clic en un reporte de la sidebar, se debe usar el mismo mecanismo de llamada a la API y actualización dinámica para mostrar los datos de ese reporte."

@@ -1,0 +1,8 @@
+Flask
+pandas
+openpyxl
+Flask-SQLAlchemy
+Flask-Login
+Werkzeug
+PyJWT==2.8.0
+Flask-Cors==4.0.1 

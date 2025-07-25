@@ -1,0 +1,95 @@
+# General
+# =======
+# Ignore common OS and editor-specific files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+.cache
+
+# Python / Flask Backend
+# ======================
+# Ignore Python virtual environment
+/backend/venv/
+
+# Ignore Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore the instance folder, which often contains sensitive
+# configuration or the development database.
+/backend/instance/
+
+# Ignore distribution and packaging artifacts
+/backend/build/
+/backend/dist/
+/backend/src/*.egg-info/
+
+# NOTE: It appears Python packages were installed directly into /backend/src.
+# These should not be in version control. They should be installed from
+# requirements.txt into a virtual environment during setup.
+/backend/src/bin/
+/backend/src/blinker/
+/backend/src/blinker-1.9.0.dist-info/
+/backend/src/click/
+/backend/src/click-8.2.1.dist-info/
+/backend/src/colorama/
+/backend/src/colorama-0.4.6.dist-info/
+/backend/src/flask/
+/backend/src/flask_cors/
+/backend/src/Flask_Cors-4.0.1.dist-info/
+/backend/src/flask-3.1.1.dist-info/
+/backend/src/itsdangerous/
+/backend/src/itsdangerous-2.2.0.dist-info/
+/backend/src/jinja2/
+/backend/src/jinja2-3.1.6.dist-info/
+/backend/src/jwt/
+/backend/src/markupsafe/
+/backend/src/MarkupSafe-3.0.2.dist-info/
+/backend/src/PyJWT-2.8.0.dist-info/
+/backend/src/werkzeug/
+/backend/src/werkzeug-3.1.3.dist-info/
+
+
+# Ignore user-uploaded files.
+# It's better to use a dedicated storage service for these in production.
+/backend/src/uploads/*
+# To keep the directory, you can add an empty .gitkeep file inside it.
+# !/backend/src/uploads/.gitkeep
+
+# Data files
+# If your .xlsx files are not templates and contain sensitive or large data,
+# it is better to ignore them. Uncomment the line below if so.
+# /backend/data/*.xlsx
+
+
+# Frontend / Next.js
+# ====================
+# Ignore dependencies
+/frontend/node_modules/
+
+# Ignore Next.js build output and cache
+/frontend/.next/
+/frontend/out/
+
+# Ignore Vercel deployment folder
+/frontend/.vercel/
+
+# Ignore log files
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+/frontend/pnpm-debug.log*
+
+# Ignore local environment variables - NEVER COMMIT THESE
+.env
+.env*.local
+/frontend/.env
+/frontend/.env*.local
+
+# Ignore ESLint and TypeScript cache files
+/frontend/.eslintcache
+/frontend/*.tsbuildinfo 
