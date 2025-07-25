@@ -2,6 +2,68 @@
 
 A full-stack web application designed for warehouse management and inventory analysis. It provides a comprehensive dashboard to visualize inventory data, track item movements, and identify anomalies.
 
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- Node.js 18+
+- npm or yarn
+
+### Environment Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd ware2
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+   
+   **⚠️ IMPORTANT**: Edit `.env` and set a strong `FLASK_SECRET_KEY` (minimum 32 characters)
+
+3. **Backend Setup**
+   ```bash
+   cd backend
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+4. **Frontend Setup**
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+### Running the Application
+
+1. **Start Backend** (Terminal 1)
+   ```bash
+   cd backend
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   python src/app.py
+   ```
+
+2. **Start Frontend** (Terminal 2)
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+3. **Access Application**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:5001
+
+## 🔒 Security Notes
+
+- Never commit `.env` files to version control
+- Use strong, unique secret keys for production
+- File uploads are restricted to Excel formats only
+- Production deployments should use PostgreSQL instead of SQLite
+
 ## Features
 
 -   **Dashboard:** An interactive dashboard with key metrics, charts, and activity feeds.

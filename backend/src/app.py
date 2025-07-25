@@ -81,7 +81,9 @@ def handle_reports_options():
     return '', 200
 
 # Database and Login Manager Configuration
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-insecure')
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    raise ValueError("FLASK_SECRET_KEY environment variable is required")
 
 # Environment-aware configuration for database and uploads
 IS_VERCEL = os.environ.get('VERCEL') == '1'
@@ -650,7 +652,7 @@ def default_json_serializer(obj):
 #         "locations": location_summary
 #     })
 
-# --- JWT API Routes ---
+# --- File Upload Validation ---\ndef validate_file_upload(file, allowed_extensions=None):\n    \"\"\"Validate uploaded file for security and format compliance.\"\"\"\n    if allowed_extensions is None:\n        allowed_extensions = {'xlsx', 'xls'}\n    \n    if not file or not file.filename:\n        return False, \"No file selected\"\n    \n    # Check file extension\n    file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''\n    if file_ext not in allowed_extensions:\n        return False, f\"Invalid file type. Only {', '.join(allowed_extensions)} files are allowed\"\n    \n    # Check file size (10MB limit)\n    max_size = int(os.environ.get('UPLOAD_MAX_SIZE', '10485760'))  # 10MB default\n    file.seek(0, 2)  # Seek to end of file\n    file_size = file.tell()\n    file.seek(0)  # Reset file pointer\n    \n    if file_size > max_size:\n        return False, f\"File too large. Maximum size is {max_size / 1024 / 1024:.1f}MB\"\n    \n    return True, \"File is valid\"\n\n# --- JWT API Routes ---
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
@@ -718,6 +720,17 @@ def create_analysis_report(current_user):
     inventory_file = request.files['inventory_file']
     rules_file = request.files.get('rules_file')  # Optional
     column_mapping_str = request.form.get('column_mapping')
+    
+    # Validate inventory file
+    is_valid, error_msg = validate_file_upload(inventory_file)
+    if not is_valid:
+        return jsonify({'message': f'Inventory file error: {error_msg}'}), 400
+    
+    # Validate rules file if provided
+    if rules_file:
+        is_valid, error_msg = validate_file_upload(rules_file)
+        if not is_valid:
+            return jsonify({'message': f'Rules file error: {error_msg}'}), 400
     
     if not column_mapping_str:
         return jsonify({'message': 'Column mapping is required'}), 400

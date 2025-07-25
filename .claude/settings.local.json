@@ -12,7 +12,13 @@
       "Bash(python:*)",
       "Bash(curl:*)",
       "Bash(npm run dev:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(find:*)",
+      "Bash(dir:*)",
+      "Bash(rm:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }
