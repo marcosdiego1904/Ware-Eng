@@ -36,6 +36,7 @@ allowed_origins = [origin.strip() for origin in allowed_origins_env.split(',')]
 # Add production origins if not already included
 production_origins = [
     'https://ware-eng-ft.vercel.app',
+    'https://ware-eng.vercel.app',  # Add the actual frontend URL
     'https://*.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001', 
@@ -92,6 +93,7 @@ def add_cors_headers(response):
     
     return response
 
+
 # Add CORS headers to all responses
 @app.after_request
 def after_request(response):
@@ -100,14 +102,31 @@ def after_request(response):
     print(f"CORS Headers: {dict(response.headers)}")
     return response
 
-# Add request logging
+# Combined request handler for logging and preflight
 @app.before_request
-def log_request():
+def handle_request():
+    # Log the request
     print(f"\nIncoming request: {request.method} {request.path}")
     print(f"Origin: {request.headers.get('Origin', 'None')}")
     print(f"Authorization: {'Present' if request.headers.get('Authorization') else 'Missing'}")
     print(f"Content-Type: {request.headers.get('Content-Type', 'None')}")
     print(f"User-Agent: {request.headers.get('User-Agent', 'None')[:50]}...")
+    
+    # Handle preflight OPTIONS requests
+    if request.method == "OPTIONS":
+        response = make_response()
+        origin = request.headers.get('Origin')
+        
+        if origin and (origin.endswith('.vercel.app') or origin.startswith('http://localhost') or origin in allowed_origins):
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Max-Age'] = '3600'
+            print(f"Preflight response sent for origin: {origin}")
+        
+        return response
+    
     return None
 
 # Add explicit OPTIONS handlers for all endpoints
