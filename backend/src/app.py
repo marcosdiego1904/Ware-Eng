@@ -30,7 +30,23 @@ app = Flask(__name__, template_folder=_template_folder)
 
 # Configure CORS - use only Flask-CORS to avoid duplicate headers
 # Get allowed origins from environment variable or use defaults
-allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001,http://localhost:3002').split(',')
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001,http://localhost:3002')
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(',')]
+
+# Add production origins if not already included
+production_origins = [
+    'https://ware-eng-ft.vercel.app',
+    'https://*.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001', 
+    'http://localhost:3002'
+]
+
+for origin in production_origins:
+    if origin not in allowed_origins:
+        allowed_origins.append(origin)
+
+print(f"CORS allowed origins: {allowed_origins}")
 
 CORS(app, 
      origins=allowed_origins, 
@@ -51,12 +67,29 @@ def test_cors():
 # Manual CORS handler for all requests
 def add_cors_headers(response):
     origin = request.headers.get('Origin')
-    if origin in allowed_origins:
+    print(f"Request origin: {origin}")
+    print(f"Allowed origins: {allowed_origins}")
+    
+    # Always add CORS headers for allowed origins
+    if origin and (origin in allowed_origins or any(origin.endswith(allowed.replace('https://*.', '.')) for allowed in allowed_origins if allowed.startswith('https://*.'))):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Max-Age'] = '3600'
+        print(f"CORS headers added for origin: {origin}")
+    else:
+        # For debugging, let's be more permissive temporarily
+        if origin and (origin.endswith('.vercel.app') or origin.startswith('http://localhost')):
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Max-Age'] = '3600'
+            print(f"CORS headers added (permissive) for origin: {origin}")
+        else:
+            print(f"CORS headers NOT added for origin: {origin}")
+    
     return response
 
 # Add CORS headers to all responses
@@ -77,11 +110,29 @@ def log_request():
     print(f"User-Agent: {request.headers.get('User-Agent', 'None')[:50]}...")
     return None
 
-# Add explicit OPTIONS handler for reports endpoint
+# Add explicit OPTIONS handlers for all endpoints
 @api_bp.route('/reports', methods=['OPTIONS'])
-@cross_origin(origins=['http://localhost:3000', 'http://localhost:3001'])
 def handle_reports_options():
     return '', 200
+
+@api_bp.route('/auth/login', methods=['OPTIONS'])
+def handle_login_options():
+    return '', 200
+
+@api_bp.route('/auth/register', methods=['OPTIONS'])
+def handle_register_options():
+    return '', 200
+
+# Debug endpoint to check configuration
+@api_bp.route('/debug/config', methods=['GET'])
+def debug_config():
+    return jsonify({
+        'allowed_origins': allowed_origins,
+        'has_secret_key': bool(app.config.get('SECRET_KEY')),
+        'database_url_set': bool(os.environ.get('DATABASE_URL')),
+        'is_production': IS_PRODUCTION,
+        'environment_origins': os.environ.get('ALLOWED_ORIGINS', 'not set')
+    })
 
 # Database and Login Manager Configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY')
