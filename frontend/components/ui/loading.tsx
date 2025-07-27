@@ -197,3 +197,6 @@ export function InlineLoading({ text = "Loading..." }: { text?: string }) {
     </div>
   )
 }
+
+// Alias for backward compatibility
+export const LoadingSpinner = Loading

@@ -51,10 +51,20 @@ interface DashboardState {
   isLoading: boolean;
   reports: Report[];
   currentReport: ReportDetails | null;
+  
+  // Enhanced analysis state
+  selectedRulesForAnalysis: number[];
+  customRuleParameters: Record<number, any>;
+  
   setCurrentView: (view: DashboardState['currentView']) => void;
   setLoading: (loading: boolean) => void;
   setReports: (reports: Report[]) => void;
   setCurrentReport: (report: ReportDetails | null) => void;
+  
+  // Enhanced analysis actions
+  setSelectedRulesForAnalysis: (ruleIds: number[]) => void;
+  setCustomRuleParameters: (ruleId: number, parameters: any) => void;
+  clearAnalysisSelection: () => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -63,8 +73,26 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   reports: [],
   currentReport: null,
   
+  // Enhanced analysis state
+  selectedRulesForAnalysis: [],
+  customRuleParameters: {},
+  
   setCurrentView: (view) => set({ currentView: view }),
   setLoading: (loading) => set({ isLoading: loading }),
   setReports: (reports) => set({ reports }),
   setCurrentReport: (report) => set({ currentReport: report }),
+  
+  // Enhanced analysis actions
+  setSelectedRulesForAnalysis: (ruleIds) => set({ selectedRulesForAnalysis: ruleIds }),
+  setCustomRuleParameters: (ruleId, parameters) => 
+    set((state) => ({
+      customRuleParameters: {
+        ...state.customRuleParameters,
+        [ruleId]: parameters
+      }
+    })),
+  clearAnalysisSelection: () => set({ 
+    selectedRulesForAnalysis: [],
+    customRuleParameters: {}
+  }),
 }));
