@@ -88,11 +88,26 @@ if not app.config['SECRET_KEY']:
 # Environment-aware configuration for database and uploads
 IS_VERCEL = os.environ.get('VERCEL') == '1'
 
-if IS_VERCEL:
-    # Vercel environment: use the /tmp directory for the database
-    db_path = os.path.join('/tmp', 'database.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+# Environment-aware configuration for database and uploads
+IS_PRODUCTION = os.environ.get('RENDER') == 'true' or os.environ.get('VERCEL') == '1'
+
+if IS_PRODUCTION:
+    # Production environment (Render/Vercel): Use PostgreSQL
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set in production")
+
+    # SQLAlchemy requires 'postgresql://' but Render provides 'postgres://'
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
+    # Local development environment: use the instance folder with SQLite
+    instance_path = os.path.join(_project_root, 'instance')
+    os.makedirs(instance_path, exist_ok=True)
+    db_path = os.path.join(instance_path, 'database.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     # Local environment: use the instance folder
     instance_path = os.path.join(_project_root, 'instance')
     os.makedirs(instance_path, exist_ok=True)
