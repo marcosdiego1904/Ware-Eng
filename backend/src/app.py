@@ -746,7 +746,32 @@ def default_json_serializer(obj):
 #         "locations": location_summary
 #     })
 
-# --- File Upload Validation ---\ndef validate_file_upload(file, allowed_extensions=None):\n    \"\"\"Validate uploaded file for security and format compliance.\"\"\"\n    if allowed_extensions is None:\n        allowed_extensions = {'xlsx', 'xls'}\n    \n    if not file or not file.filename:\n        return False, \"No file selected\"\n    \n    # Check file extension\n    file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''\n    if file_ext not in allowed_extensions:\n        return False, f\"Invalid file type. Only {', '.join(allowed_extensions)} files are allowed\"\n    \n    # Check file size (10MB limit)\n    max_size = int(os.environ.get('UPLOAD_MAX_SIZE', '10485760'))  # 10MB default\n    file.seek(0, 2)  # Seek to end of file\n    file_size = file.tell()\n    file.seek(0)  # Reset file pointer\n    \n    if file_size > max_size:\n        return False, f\"File too large. Maximum size is {max_size / 1024 / 1024:.1f}MB\"\n    \n    return True, \"File is valid\"\n\n# --- JWT API Routes ---
+# --- File Upload Validation ---
+def validate_file_upload(file, allowed_extensions=None):
+    """Validate uploaded file for security and format compliance."""
+    if allowed_extensions is None:
+        allowed_extensions = {'xlsx', 'xls'}
+    
+    if not file or not file.filename:
+        return False, "No file selected"
+    
+    # Check file extension
+    file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if file_ext not in allowed_extensions:
+        return False, f"Invalid file type. Only {', '.join(allowed_extensions)} files are allowed"
+    
+    # Check file size (10MB limit)
+    max_size = int(os.environ.get('UPLOAD_MAX_SIZE', '10485760'))  # 10MB default
+    file.seek(0, 2)  # Seek to end of file
+    file_size = file.tell()
+    file.seek(0)  # Reset file pointer
+    
+    if file_size > max_size:
+        return False, f"File too large. Maximum size is {max_size / 1024 / 1024:.1f}MB"
+    
+    return True, "File is valid"
+
+# --- JWT API Routes ---
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
