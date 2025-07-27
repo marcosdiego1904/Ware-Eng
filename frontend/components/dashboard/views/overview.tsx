@@ -13,8 +13,6 @@ import {
   AlertTriangle, 
   Package, 
   MapPin, 
-  CheckCircle2, 
-  Clock,
   TrendingUp,
   FileText,
   Upload,
@@ -22,8 +20,6 @@ import {
   BarChart3,
   Target,
   Zap,
-  Users,
-  Calendar,
   ArrowUp,
   ArrowDown,
   Minus

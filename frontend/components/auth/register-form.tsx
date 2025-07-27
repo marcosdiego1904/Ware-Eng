@@ -41,8 +41,9 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
     try {
       await registerUser(data.username, data.password)
       onSuccess()
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.')
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } }
+      setError(error.response?.data?.message || 'Registration failed. Please try again.')
     } finally {
       setIsLoading(false)
     }

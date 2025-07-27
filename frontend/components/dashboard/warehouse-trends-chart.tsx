@@ -128,7 +128,7 @@ export function WarehouseTrendsChart({ data, stats }: WarehouseTrendsChartProps)
 
             {/* Chart Bars */}
             <div className="space-y-3">
-              {weeklyData.map((day, index) => (
+              {weeklyData.map((day) => (
                 <div key={day.day} className="space-y-2">
                   <div className="flex justify-between items-center text-sm font-medium">
                     <span>{day.day}</span>

@@ -70,7 +70,7 @@ export function LocationBreakdownChart({ locations }: LocationBreakdownChartProp
 
       {/* Horizontal Bar Chart */}
       <div className="space-y-3">
-        {chartData.map((location, index) => (
+        {chartData.map((location) => (
           <div key={location.name} className="space-y-1">
             <div className="flex justify-between items-center text-sm">
               <span className="font-medium truncate flex-1 pr-2">

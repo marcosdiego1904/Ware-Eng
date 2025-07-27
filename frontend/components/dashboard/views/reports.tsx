@@ -8,9 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
 import { FileText, Search, Filter, Eye, Calendar, AlertTriangle, MapPin, BarChart3, Activity, Clock, CheckCircle2 } from 'lucide-react'
-import { reportsApi, Report, ReportDetails, Anomaly, getPriorityColor, getStatusColor } from '@/lib/reports'
+import { reportsApi, Report, ReportDetails, getPriorityColor } from '@/lib/reports'
 import { AnomalyStatusManager } from '@/components/reports/anomaly-status-manager'
 import { LocationBreakdownChart } from '@/components/reports/location-breakdown-chart'
 import { AnomalyTrendsChart } from '@/components/reports/anomaly-trends-chart'
@@ -22,7 +21,6 @@ export function ReportsView() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterBy, setFilterBy] = useState<'all' | 'has-anomalies' | 'no-anomalies'>('all')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'most-anomalies' | 'least-anomalies'>('newest')
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -44,7 +42,7 @@ export function ReportsView() {
   }
 
   const filteredAndSortedReports = (() => {
-    let filtered = reports.filter(report => {
+    const filtered = reports.filter(report => {
       const matchesSearch = report.report_name.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesFilter = filterBy === 'all' || 
         (filterBy === 'has-anomalies' && report.anomaly_count > 0) ||
@@ -137,7 +135,7 @@ export function ReportsView() {
                 <label className="text-sm font-medium">Filter:</label>
                 <select 
                   value={filterBy} 
-                  onChange={(e) => setFilterBy(e.target.value as any)}
+                  onChange={(e) => setFilterBy(e.target.value as 'all' | 'has-anomalies' | 'no-anomalies')}
                   className="px-3 py-1 border rounded-md text-sm"
                 >
                   <option value="all">All Reports</option>
@@ -150,7 +148,7 @@ export function ReportsView() {
                 <label className="text-sm font-medium">Sort by:</label>
                 <select 
                   value={sortBy} 
-                  onChange={(e) => setSortBy(e.target.value as any)}
+                  onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'most-anomalies' | 'least-anomalies')}
                   className="px-3 py-1 border rounded-md text-sm"
                 >
                   <option value="newest">Newest First</option>
@@ -423,7 +421,7 @@ export function ReportsView() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setSelectedLocation(location.name)}
+                                onClick={() => console.log('View location details:', location.name)}
                               >
                                 View Details
                               </Button>
@@ -454,7 +452,6 @@ export function ReportsView() {
               
               <TabsContent value="anomalies" className="space-y-6">
                 <AnomalyStatusManager 
-                  reportId={selectedReport.reportId} 
                   locations={selectedReport.locations}
                   onStatusUpdate={() => {
                     // Refresh report details after status update

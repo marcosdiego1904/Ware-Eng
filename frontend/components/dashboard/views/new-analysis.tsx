@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { FileUpload } from '@/components/analysis/file-upload'
 import { ColumnMapping } from '@/components/analysis/column-mapping'
 import { ProcessingStatus } from '@/components/analysis/processing-status'
@@ -16,11 +15,8 @@ export function NewAnalysisView() {
     inventory: null,
     rules: null
   })
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const { setCurrentView } = useDashboardStore()
-  const router = useRouter()
 
   const handleFilesSelected = (files: { inventory: File | null; rules: File | null }) => {
     setSelectedFiles(files)
@@ -34,9 +30,7 @@ export function NewAnalysisView() {
   }
 
   const handleMappingComplete = async (mapping: Record<string, string>) => {
-    setColumnMapping(mapping)
     setCurrentStep('processing')
-    setIsSubmitting(true)
 
     try {
       console.log('Starting analysis with:', {
@@ -56,24 +50,23 @@ export function NewAnalysisView() {
 
       // Simulate processing time (the real API call handles this)
       setTimeout(() => {
-        handleProcessingComplete(response.report_id)
+        handleProcessingComplete()
       }, 5000) // 5 second delay to show the processing animation
 
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { response?: { status?: number; data?: { message?: string } }; message?: string }
       console.error('Analysis failed:', err)
       console.error('Error details:', {
-        status: err.response?.status,
-        data: err.response?.data,
-        message: err.message
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
       })
-      setError(err.response?.data?.message || `Analysis failed: ${err.message}`)
+      setError(error.response?.data?.message || `Analysis failed: ${error.message}`)
       setCurrentStep('mapping')
-      setIsSubmitting(false)
     }
   }
 
-  const handleProcessingComplete = (reportId: number) => {
-    setIsSubmitting(false)
+  const handleProcessingComplete = () => {
     // Redirect to the reports view to show the new report
     setCurrentView('reports')
     // Or you could navigate to a specific report view
@@ -83,19 +76,16 @@ export function NewAnalysisView() {
   const handleProcessingError = (errorMessage: string) => {
     setError(errorMessage)
     setCurrentStep('mapping')
-    setIsSubmitting(false)
   }
 
   const handleBackToFiles = () => {
     setCurrentStep('upload')
-    setColumnMapping({})
     setError(null)
   }
 
   const handleStartOver = () => {
     setCurrentStep('upload')
     setSelectedFiles({ inventory: null, rules: null })
-    setColumnMapping({})
     setError(null)
   }
 

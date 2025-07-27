@@ -34,7 +34,7 @@ export interface Anomaly {
   pallet_id: string;
   details: string;
   history: AnomalyHistoryItem[];
-  [key: string]: any; // For additional anomaly details
+  [key: string]: unknown; // For additional anomaly details
 }
 
 export interface AnomalyHistoryItem {
@@ -85,7 +85,7 @@ export const reportsApi = {
 
     // Log FormData contents for debugging
     console.log('FormData entries:');
-    for (let [key, value] of formData.entries()) {
+    for (const [key, value] of formData.entries()) {
       console.log(`  ${key}:`, value instanceof File ? `File(${value.name}, ${value.size}bytes)` : value);
     }
 
@@ -94,14 +94,15 @@ export const reportsApi = {
       const response = await api.post('/reports', formData);
       console.log('Request successful:', response.data);
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { status?: number; statusText?: string; data?: unknown }; message?: string }
       console.error('Request failed:', error);
       console.error('Error details:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message,
-        code: error.code
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        message: err.message,
+        code: (error as { code?: string }).code
       });
       throw error;
     }

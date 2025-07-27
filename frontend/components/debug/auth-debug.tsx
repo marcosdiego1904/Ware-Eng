@@ -24,9 +24,10 @@ export function AuthDebug() {
       setSuccess('')
       await login(username, password)
       setSuccess('Login successful!')
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } }; message?: string }
       console.error('Login error:', err)
-      setError(err.response?.data?.message || err.message || 'Login failed')
+      setError(error.response?.data?.message || error.message || 'Login failed')
     }
   }
 
@@ -36,9 +37,10 @@ export function AuthDebug() {
       setSuccess('')
       await register(username, password)
       setSuccess('Registration successful!')
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } }; message?: string }
       console.error('Register error:', err)
-      setError(err.response?.data?.message || err.message || 'Registration failed')
+      setError(error.response?.data?.message || error.message || 'Registration failed')
     }
   }
 

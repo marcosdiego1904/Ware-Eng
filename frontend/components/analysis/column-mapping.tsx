@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,11 +34,7 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadFileColumns()
-  }, [inventoryFile])
-
-  const loadFileColumns = async () => {
+  const loadFileColumns = useCallback(async () => {
     try {
       setIsLoading(true)
       setError(null)
@@ -79,20 +75,24 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [inventoryFile])
+  
+  useEffect(() => {
+    loadFileColumns()
+  }, [loadFileColumns])
 
   // Simple fuzzy matching for auto-suggestions
   const findBestMatch = (requiredCol: string, availableColumns: string[]): string | null => {
     const normalizedRequired = requiredCol.toLowerCase().replace(/_/g, ' ')
     
     // Exact match
-    let exactMatch = availableColumns.find(col => 
+    const exactMatch = availableColumns.find(col => 
       col.toLowerCase().replace(/[_\s]/g, '') === normalizedRequired.replace(/[_\s]/g, '')
     )
     if (exactMatch) return exactMatch
 
     // Partial match
-    let partialMatch = availableColumns.find(col => 
+    const partialMatch = availableColumns.find(col => 
       col.toLowerCase().includes(normalizedRequired) || 
       normalizedRequired.includes(col.toLowerCase())
     )

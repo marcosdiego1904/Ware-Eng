@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,6 @@ interface FileUploadProps {
 }
 
 export function FileUpload({ onFilesSelected, selectedFiles, allowRulesOptional = true }: FileUploadProps) {
-  const [draggedFileType, setDraggedFileType] = useState<'inventory' | 'rules' | null>(null)
 
   const onDropInventory = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,9 +9,7 @@ import { reportsApi, Report } from '@/lib/reports'
 import { 
   AlertTriangle, 
   Package, 
-  MapPin, 
-  CheckCircle2, 
-  Clock,
+  CheckCircle2,
   TrendingUp,
   FileText,
   Upload
@@ -22,11 +20,7 @@ export function OverviewView() {
   const [isLoading, setIsLoading] = useState(true)
   const [latestReport, setLatestReport] = useState<Report | null>(null)
 
-  useEffect(() => {
-    loadReports()
-  }, [])
-
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     try {
       setIsLoading(true)
       const data = await reportsApi.getReports()
@@ -39,7 +33,11 @@ export function OverviewView() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [setReports, setLatestReport, setIsLoading])
+  
+  useEffect(() => {
+    loadReports()
+  }, [loadReports])
 
   // Calculate summary metrics from reports
   const totalReports = reports.length

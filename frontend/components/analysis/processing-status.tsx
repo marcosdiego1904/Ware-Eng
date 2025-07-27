@@ -6,9 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { 
   CheckCircle2, 
-  AlertCircle, 
   Loader2,
-  FileText,
   BarChart3
 } from 'lucide-react'
 
@@ -18,7 +16,7 @@ interface ProcessingStatusProps {
   onBack: () => void
 }
 
-export function ProcessingStatus({ onComplete, onError, onBack }: ProcessingStatusProps) {
+export function ProcessingStatus({ onComplete, onBack }: ProcessingStatusProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [progress, setProgress] = useState(0)
   const [isProcessing, setIsProcessing] = useState(true)

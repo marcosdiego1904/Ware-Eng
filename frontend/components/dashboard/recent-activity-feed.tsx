@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ReportDetails } from '@/lib/reports'
-import { FileText, Clock, MapPin, AlertTriangle, CheckCircle2, User } from 'lucide-react'
+import { FileText, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 interface RecentActivityFeedProps {
   reports: ReportDetails[]

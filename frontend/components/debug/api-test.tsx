@@ -17,7 +17,7 @@ export function ApiTest() {
     
     try {
       // Test basic connection to Flask backend (without auth)
-      const response = await axios.get('http://localhost:5001/', {
+      await axios.get('http://localhost:5001/', {
         headers: {
           'Content-Type': 'application/json'
         },
@@ -27,22 +27,24 @@ export function ApiTest() {
       
       // Now test a simple auth endpoint
       try {
-        const authTest = await axios.post('http://localhost:5001/api/v1/auth/login', {
+        await axios.post('http://localhost:5001/api/v1/auth/login', {
           username: 'nonexistent',
           password: 'test'
         })
-      } catch (authError: any) {
-        if (authError.response?.status === 401) {
+      } catch (authError: unknown) {
+        const error = authError as { response?: { status?: number }; message?: string }
+        if (error.response?.status === 401) {
           setResult(`✅ Connection successful! Auth endpoint responding correctly (401 for invalid creds)`)
         } else {
-          setResult(`⚠️ Backend connected but auth endpoint error: ${authError.message}`)
+          setResult(`⚠️ Backend connected but auth endpoint error: ${error.message}`)
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; code?: string }
       console.error('Connection test failed:', error)
-      setResult(`❌ Connection failed: ${error.message}
+      setResult(`❌ Connection failed: ${err.message}
         
-Details: ${error.code || 'Unknown error'}
+Details: ${err.code || 'Unknown error'}
 Is your Flask backend running on http://localhost:5001?`)
     } finally {
       setIsLoading(false)
@@ -57,12 +59,13 @@ Is your Flask backend running on http://localhost:5001?`)
       const testUsername = `test_${Date.now()}`
       await authApi.register({ username: testUsername, password: 'test123' })
       setResult(`✅ Registration successful for user: ${testUsername}`)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { status?: number; data?: unknown } }
       console.error('Registration test failed:', error)
-      setResult(`❌ Registration failed: ${error.message}
+      setResult(`❌ Registration failed: ${err.message}
         
-Status: ${error.response?.status}
-Data: ${JSON.stringify(error.response?.data)}`)
+Status: ${err.response?.status}
+Data: ${JSON.stringify(err.response?.data)}`)
     } finally {
       setIsLoading(false)
     }
@@ -76,12 +79,13 @@ Data: ${JSON.stringify(error.response?.data)}`)
       // Try to login with a test user (you might need to create one first)
       const response = await authApi.login({ username: 'testuser', password: 'test123' })
       setResult(`✅ Login successful! Token: ${response.token.substring(0, 20)}...`)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { status?: number; data?: unknown } }
       console.error('Login test failed:', error)
-      setResult(`❌ Login failed: ${error.message}
+      setResult(`❌ Login failed: ${err.message}
         
-Status: ${error.response?.status}
-Data: ${JSON.stringify(error.response?.data)}
+Status: ${err.response?.status}
+Data: ${JSON.stringify(err.response?.data)}
         
 💡 Try clicking "Test Register" first to create a test user!`)
     } finally {
@@ -111,12 +115,13 @@ User: ${testUsername}
 Token: ${response.token.substring(0, 30)}...
         
 🎉 Authentication is working correctly!`)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { status?: number; data?: unknown } }
       console.error('Full flow test failed:', error)
-      setResult(`❌ Full flow failed: ${error.message}
+      setResult(`❌ Full flow failed: ${err.message}
         
-Status: ${error.response?.status}
-Data: ${JSON.stringify(error.response?.data)}`)
+Status: ${err.response?.status}
+Data: ${JSON.stringify(err.response?.data)}`)
     } finally {
       setIsLoading(false)
     }
@@ -135,14 +140,15 @@ Response: ${JSON.stringify(response.data)}
 Status: ${response.status}
 
 🎉 CORS is working correctly!`)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { status?: number; data?: unknown }; code?: string; config?: { url?: string } }
       console.error('CORS test failed:', error)
-      setResult(`❌ CORS test failed: ${error.message}
+      setResult(`❌ CORS test failed: ${err.message}
         
-Status: ${error.response?.status}
-Data: ${JSON.stringify(error.response?.data)}
-Error Code: ${error.code}
-URL: ${error.config?.url}`)
+Status: ${err.response?.status}
+Data: ${JSON.stringify(err.response?.data)}
+Error Code: ${err.code}
+URL: ${err.config?.url}`)
     } finally {
       setIsLoading(false)
     }

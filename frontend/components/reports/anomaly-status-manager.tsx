@@ -11,12 +11,11 @@ import { AlertTriangle, CheckCircle2, Clock, Eye, MessageSquare, User, Calendar 
 import { Anomaly, LocationSummary, reportsApi, getStatusColor, getPriorityColor } from '@/lib/reports'
 
 interface AnomalyStatusManagerProps {
-  reportId: number
   locations: LocationSummary[]
   onStatusUpdate?: () => void
 }
 
-export function AnomalyStatusManager({ reportId, locations, onStatusUpdate }: AnomalyStatusManagerProps) {
+export function AnomalyStatusManager({ locations, onStatusUpdate }: AnomalyStatusManagerProps) {
   const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
   const [newStatus, setNewStatus] = useState<string>('')
@@ -42,7 +41,7 @@ export function AnomalyStatusManager({ reportId, locations, onStatusUpdate }: An
       await reportsApi.updateAnomalyStatus(selectedAnomaly.id, newStatus, comment)
       
       // Update the anomaly in our local state
-      selectedAnomaly.status = newStatus as any
+      selectedAnomaly.status = newStatus as 'New' | 'Acknowledged' | 'In Progress' | 'Resolved'
       if (comment) {
         selectedAnomaly.history.push({
           old_status: selectedAnomaly.status,

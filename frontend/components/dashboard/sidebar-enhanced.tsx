@@ -13,7 +13,6 @@ import {
   User, 
   LogOut,
   Package,
-  AlertTriangle,
   Menu,
   X,
   ChevronLeft,
@@ -196,9 +195,9 @@ export function EnhancedSidebar() {
 }
 
 interface SidebarContentProps {
-  user: any
+  user: { username?: string; name?: string; email?: string } | null
   currentView: string
-  setCurrentView: (view: any) => void
+  setCurrentView: (view: "rules" | "overview" | "new-analysis" | "reports" | "profile") => void
   sidebarCollapsed: boolean
   setSidebarCollapsed: (collapsed: boolean) => void
   theme: string
@@ -206,7 +205,7 @@ interface SidebarContentProps {
   handleLogout: () => void
   previousView: string | null
   goBack: () => void
-  activityBadge: any
+  activityBadge: { count: number; variant: "destructive" | "secondary" } | null
   closeMobileMenu?: () => void
   isMobile: boolean
 }
@@ -372,7 +371,7 @@ function SidebarContent({
                 <span className="text-sm font-semibold text-white">{user?.username}</span>
                 <span className="text-xs text-slate-400">Warehouse Analyst</span>
               </div>
-              <Zap className="w-4 h-4 text-yellow-400" title="Premium User" />
+              <Zap className="w-4 h-4 text-yellow-400" />
             </div>
             
             <Button

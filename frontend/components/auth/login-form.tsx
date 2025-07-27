@@ -35,8 +35,9 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
 
     try {
       await login(data.username, data.password)
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.')
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } }
+      setError(error.response?.data?.message || 'Login failed. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -99,7 +100,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
               onClick={onSwitchToRegister}
               className="text-sm text-blue-600 hover:text-blue-500"
             >
-              Don't have an account? Sign up
+              Don&apos;t have an account? Sign up
             </button>
           </div>
         </form>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import React from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useDashboardStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -11,8 +11,7 @@ import {
   Settings, 
   User, 
   LogOut,
-  Package,
-  AlertTriangle
+  Package
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
