@@ -17,8 +17,30 @@ import jwt
 # Add the 'src' directory to the Python path to resolve local imports in Vercel.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# We assume your engine is in 'main.py' inside the same 'src' folder
+# Import analysis engines - will be done later to avoid circular imports
 from main import run_engine, summarize_anomalies_by_location
+
+# Flag to check if enhanced engine is available
+HAS_ENHANCED_ENGINE = False
+run_enhanced_engine = None
+
+def load_enhanced_engine():
+    """Load enhanced engine with lazy loading to avoid circular imports"""
+    global HAS_ENHANCED_ENGINE, run_enhanced_engine
+    
+    if run_enhanced_engine is not None:
+        return  # Already loaded
+    
+    try:
+        from enhanced_main import run_enhanced_engine as enhanced_engine
+        run_enhanced_engine = enhanced_engine
+        HAS_ENHANCED_ENGINE = True
+        print("Enhanced warehouse rules engine loaded successfully")
+    except ImportError as e:
+        # Fall back to original engine
+        run_enhanced_engine = run_engine
+        HAS_ENHANCED_ENGINE = False
+        print(f"Enhanced engine not available, using legacy engine: {e}")
 
 # --- Flask Application Configuration ---
 # Robust and cross-platform path configuration.
@@ -902,7 +924,30 @@ def create_analysis_report(current_user):
         
         args = Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
         
-        anomalies = run_engine(inventory_df, rules_df, args)
+        # Load enhanced engine if not already loaded
+        load_enhanced_engine()
+        
+        # Use enhanced engine if available, otherwise fall back to original
+        if HAS_ENHANCED_ENGINE:
+            # Check for rule_ids in form data (for custom rule selection)
+            rule_ids_str = request.form.get('rule_ids')
+            rule_ids = None
+            if rule_ids_str:
+                try:
+                    rule_ids = json.loads(rule_ids_str)
+                except json.JSONDecodeError:
+                    pass
+            
+            anomalies = run_enhanced_engine(
+                inventory_df, 
+                rules_df, 
+                args, 
+                use_database_rules=True,
+                rule_ids=rule_ids,
+                report_id=None  # Will be set after report creation
+            )
+        else:
+            anomalies = run_enhanced_engine(inventory_df, rules_df, args)
         
         # Generate and save the report
         location_summary = summarize_anomalies_by_location(anomalies)
@@ -1066,6 +1111,19 @@ def change_api_anomaly_status(current_user, anomaly_id):
 
 # Register the Blueprint with the main application
 app.register_blueprint(api_bp)
+
+# Load enhanced engine and register Rules API
+load_enhanced_engine()
+
+if HAS_ENHANCED_ENGINE:
+    try:
+        from rules_api import register_rules_api
+        register_rules_api(app)
+        print("Enhanced Rules API registered successfully")
+    except ImportError as e:
+        print(f"Rules API not available: {e}")
+else:
+    print("Enhanced engine not available, rules API disabled")
 
 
 import os
