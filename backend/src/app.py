@@ -29,8 +29,11 @@ _data_folder = os.path.join(_project_root, 'data')
 app = Flask(__name__, template_folder=_template_folder)
 
 # Configure CORS - use only Flask-CORS to avoid duplicate headers
+# Get allowed origins from environment variable or use defaults
+allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001,http://localhost:3002').split(',')
+
 CORS(app, 
-     origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"], 
+     origins=allowed_origins, 
      allow_headers=["Content-Type", "Authorization", "X-Requested-With"], 
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      supports_credentials=True,
@@ -48,7 +51,7 @@ def test_cors():
 # Manual CORS handler for all requests
 def add_cors_headers(response):
     origin = request.headers.get('Origin')
-    if origin in ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002']:
+    if origin in allowed_origins:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
@@ -95,13 +98,17 @@ if IS_PRODUCTION:
     # Production environment (Render/Vercel): Use PostgreSQL
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
-        raise ValueError("DATABASE_URL environment variable is not set in production")
-
-    # SQLAlchemy requires 'postgresql://' but Render provides 'postgres://'
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        print("WARNING: DATABASE_URL environment variable is not set in production")
+        # Fallback to local SQLite for debugging
+        instance_path = os.path.join('/tmp', 'instance')
+        os.makedirs(instance_path, exist_ok=True)
+        db_path = os.path.join(instance_path, 'database.db')
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    else:
+        # SQLAlchemy requires 'postgresql://' but Render provides 'postgres://'
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
     # Local development environment: use the instance folder with SQLite
     instance_path = os.path.join(_project_root, 'instance')
@@ -671,38 +678,56 @@ def default_json_serializer(obj):
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
-    data = request.get_json()
-    if not data or not data.get('username') or not data.get('password'):
-        return jsonify({'message': 'Could not verify'}), 401
+    try:
+        data = request.get_json()
+        if not data or not data.get('username') or not data.get('password'):
+            return jsonify({'message': 'Username and password are required'}), 400
 
-    user = User.query.filter_by(username=data['username']).first()
+        user = User.query.filter_by(username=data['username']).first()
 
-    if user and user.check_password(data['password']):
-        # Generate the JWT token
-        token = jwt.encode({
-            'user_id': user.id,
-            'exp': datetime.utcnow() + timedelta(hours=24)  # Token valid for 24 hours
-        }, app.config['SECRET_KEY'], algorithm="HS256")
+        if user and user.check_password(data['password']):
+            # Generate the JWT token
+            token = jwt.encode({
+                'user_id': user.id,
+                'exp': datetime.utcnow() + timedelta(hours=24)  # Token valid for 24 hours
+            }, app.config['SECRET_KEY'], algorithm="HS256")
 
-        return jsonify({'token': token, 'username': user.username})
+            return jsonify({'token': token, 'username': user.username})
 
-    return jsonify({'message': 'Login failed!'}), 401
+        return jsonify({'message': 'Invalid username or password'}), 401
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({'message': 'An error occurred during login'}), 500
 
 @api_bp.route('/auth/register', methods=['POST'])
 def api_register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
+    try:
+        data = request.get_json()
+        if not data or not data.get('username') or not data.get('password'):
+            return jsonify({'message': 'Username and password are required'}), 400
+            
+        username = data.get('username')
+        password = data.get('password')
 
-    if User.query.filter_by(username=username).first():
-        return jsonify({'message': 'Username already exists.'}), 409
+        # Basic validation
+        if len(username) < 3:
+            return jsonify({'message': 'Username must be at least 3 characters long'}), 400
+        if len(password) < 6:
+            return jsonify({'message': 'Password must be at least 6 characters long'}), 400
 
-    new_user = User(username=username)
-    new_user.set_password(password)
-    db.session.add(new_user)
-    db.session.commit()
+        if User.query.filter_by(username=username).first():
+            return jsonify({'message': 'Username already exists'}), 409
 
-    return jsonify({'message': 'New user created!'}), 201
+        new_user = User(username=username)
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({'message': 'Account created successfully!'}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Registration error: {e}")
+        return jsonify({'message': 'An error occurred during registration'}), 500
 
 @api_bp.route('/reports', methods=['GET'])
 @token_required
