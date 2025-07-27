@@ -945,6 +945,25 @@ def change_api_anomaly_status(current_user, anomaly_id):
 # Register the Blueprint with the main application
 app.register_blueprint(api_bp)
 
+
+import os
+
+# Usa una variable de entorno o una clave secreta difícil de adivinar
+SECRET_INIT_KEY = os.environ.get('DB_INIT_KEY', '25cf3e7ec8bdab0cc3114fd8f73c2899')
+
+@app.route(f'/init-db/{SECRET_INIT_KEY}')
+def init_database():
+    """
+    Ruta secreta para crear las tablas de la base de datos.
+    Debería ser eliminada después del primer uso en producción.
+    """
+    try:
+        with app.app_context():
+            db.create_all()
+        return "<h1>Base de datos inicializada correctamente!</h1><p>Ahora puedes eliminar esta ruta de tu archivo app.py por seguridad.</p>"
+    except Exception as e:
+        return f"<h1>Error al inicializar la base de datos:</h1><p>{str(e)}</p>", 500
+
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
