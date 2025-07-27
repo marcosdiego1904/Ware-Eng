@@ -31,7 +31,9 @@ app = Flask(__name__, template_folder=_template_folder)
 # Configure CORS - use only Flask-CORS to avoid duplicate headers
 # Get allowed origins from environment variable or use defaults
 allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001,http://localhost:3002')
-allowed_origins = [origin.strip() for origin in allowed_origins_env.split(',')]
+# Clean up any newlines and whitespace in environment variable
+allowed_origins_env = allowed_origins_env.replace('\n', '').replace('\r', '')
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(',') if origin.strip()]
 
 # Add production origins if not already included
 production_origins = [
@@ -202,7 +204,7 @@ login_manager.login_view = 'login' # type: ignore
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
+    password_hash = db.Column(db.String(200))  # Increased to accommodate scrypt hashes
     reports = db.relationship('AnalysisReport', backref='author', lazy=True)
 
     def set_password(self, password):
@@ -1058,6 +1060,27 @@ def init_database():
         return "<h1>Base de datos inicializada correctamente!</h1><p>Ahora puedes eliminar esta ruta de tu archivo app.py por seguridad.</p>"
     except Exception as e:
         return f"<h1>Error al inicializar la base de datos:</h1><p>{str(e)}</p>", 500
+
+@app.route(f'/migrate-db/{SECRET_INIT_KEY}')
+def migrate_database():
+    """
+    Ruta secreta para actualizar el esquema de la base de datos.
+    Específicamente para aumentar el tamaño de password_hash.
+    """
+    try:
+        with app.app_context():
+            # For PostgreSQL, we need to alter the column
+            if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']:
+                from sqlalchemy import text
+                db.session.execute(text("ALTER TABLE \"user\" ALTER COLUMN password_hash TYPE VARCHAR(200);"))
+                db.session.commit()
+                return "<h1>Esquema de base de datos actualizado!</h1><p>La columna password_hash ahora soporta 200 caracteres.</p>"
+            else:
+                # For SQLite, recreate the table (simpler approach)
+                db.create_all()
+                return "<h1>Esquema de base de datos actualizado (SQLite)!</h1><p>Las tablas han sido recreadas.</p>"
+    except Exception as e:
+        return f"<h1>Error al migrar la base de datos:</h1><p>{str(e)}</p>", 500
 
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':
