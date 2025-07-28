@@ -13,7 +13,9 @@ from flask import Blueprint, request, jsonify
 from functools import wraps
 
 # Import the token_required decorator and database models
-from app import db, token_required, User, AnalysisReport
+from database import db
+from app import token_required
+from core_models import User, AnalysisReport
 from models import (
     Rule, RuleCategory, RuleHistory, RuleTemplate, 
     RulePerformance, Location

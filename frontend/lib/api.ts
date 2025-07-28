@@ -50,10 +50,17 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Token expired or invalid
-      if (typeof window !== 'undefined') {
+      console.warn('401 Unauthorized response received:', error.config?.url);
+      
+      // Only redirect to auth if this is NOT a rules API call (for debugging)
+      const isRulesApiCall = error.config?.url?.includes('/rules') || error.config?.url?.includes('/categories');
+      
+      if (!isRulesApiCall && typeof window !== 'undefined') {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
         window.location.href = '/auth';
+      } else if (isRulesApiCall) {
+        console.warn('Rules API call failed with 401 - check if backend is running and rules endpoints are configured');
       }
     }
     return Promise.reject(error);

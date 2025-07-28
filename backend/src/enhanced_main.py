@@ -15,7 +15,8 @@ from typing import List, Dict, Any, Optional
 
 from rule_engine import RuleEngine
 from models import Rule, RuleCategory, RulePerformance
-from app import db, AnalysisReport
+from database import db
+from app import AnalysisReport
 
 def run_enhanced_engine(inventory_df: pd.DataFrame, 
                        rules_df: pd.DataFrame = None, 

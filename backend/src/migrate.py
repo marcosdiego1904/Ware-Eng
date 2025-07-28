@@ -21,7 +21,8 @@ from flask import Flask
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import Flask app and database
-from app import app, db, User, AnalysisReport, Anomaly, AnomalyHistory
+from app import app, User, AnalysisReport, Anomaly, AnomalyHistory
+from database import db
 from models import (
     RuleCategory, Rule, RuleHistory, RuleTemplate, 
     RulePerformance, Location, create_default_categories, 

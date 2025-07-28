@@ -4,6 +4,10 @@ import sys
 import tempfile
 import json
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory, flash, jsonify, Blueprint, make_response
 from flask_cors import CORS, cross_origin 
 import pandas as pd
@@ -216,50 +220,17 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+# Import shared database instance
+from database import db
+db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.init_app(app)
 login_manager.login_view = 'login' # type: ignore
 
 
 # --- Database Models ---
-class User(db.Model, UserMixin):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200))  # Increased to accommodate scrypt hashes
-    reports = db.relationship('AnalysisReport', backref='author', lazy=True)
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-
-class AnomalyHistory(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    anomaly_id = db.Column(db.Integer, db.ForeignKey('anomaly.id'), nullable=False)
-    old_status = db.Column(db.String(20), nullable=True)
-    new_status = db.Column(db.String(20), nullable=False)
-    comment = db.Column(db.Text, nullable=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    user = db.relationship('User')
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-class AnalysisReport(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    report_name = db.Column(db.String(120), nullable=False, default=f"Analysis Report")
-    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    anomalies = db.relationship('Anomaly', backref='report', lazy=True, cascade="all, delete-orphan")
-    location_summary = db.Column(db.Text, nullable=True) # Stores a JSON string of the location summary
-
-class Anomaly(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    description = db.Column(db.String(255), nullable=False)
-    details = db.Column(db.Text, nullable=True) # Could store JSON or other details
-    report_id = db.Column(db.Integer, db.ForeignKey('analysis_report.id'), nullable=False)
-    status = db.Column(db.String(20), default='New', nullable=False)
-    history = db.relationship('AnomalyHistory', backref='anomaly', lazy='dynamic', cascade="all, delete-orphan")
+# Import core models to avoid circular imports
+from core_models import User, AnalysisReport, Anomaly, AnomalyHistory
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -1113,17 +1084,15 @@ def change_api_anomaly_status(current_user, anomaly_id):
 app.register_blueprint(api_bp)
 
 # Load enhanced engine and register Rules API
-load_enhanced_engine()
+# Temporarily disabled to fix circular imports
+# load_enhanced_engine()
 
-if HAS_ENHANCED_ENGINE:
-    try:
-        from rules_api import register_rules_api
-        register_rules_api(app)
-        print("Enhanced Rules API registered successfully")
-    except ImportError as e:
-        print(f"Rules API not available: {e}")
-else:
-    print("Enhanced engine not available, rules API disabled")
+try:
+    from rules_api import register_rules_api
+    register_rules_api(app)
+    print("Rules API registered successfully")
+except ImportError as e:
+    print(f"Rules API not available: {e}")
 
 
 import os

@@ -12,8 +12,8 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 
-# Import the existing db instance from app.py
-from app import db
+# Import the shared database instance
+from database import db
 
 # ==== EXISTING MODELS (Reference from app.py) ====
 # These models already exist in app.py - keeping here for reference

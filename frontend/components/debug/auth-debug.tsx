@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ClearAuth } from './clear-auth'
 
 export function AuthDebug() {
   const { login, register, user, isAuth, isLoading } = useAuth()
@@ -13,6 +14,7 @@ export function AuthDebug() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [mounted, setMounted] = useState(false)
+  const [apiTestResult, setApiTestResult] = useState<any>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -41,6 +43,34 @@ export function AuthDebug() {
       const error = err as { response?: { data?: { message?: string } }; message?: string }
       console.error('Register error:', err)
       setError(error.response?.data?.message || error.message || 'Registration failed')
+    }
+  }
+
+  const testRulesAPI = async () => {
+    try {
+      const token = localStorage.getItem('auth_token')
+      console.log('Testing rules API with token:', token ? 'Present' : 'None')
+      
+      // Import the configured API instance
+      const { api } = await import('@/lib/api')
+      
+      const response = await api.get('/rules')
+      
+      setApiTestResult({
+        status: response.status,
+        statusText: response.statusText,
+        success: response.status < 400,
+        data: response.data,
+        timestamp: new Date().toISOString()
+      })
+    } catch (err: any) {
+      console.error('API test error:', err)
+      setApiTestResult({
+        success: false,
+        error: err.response?.data?.message || err.message || 'Unknown error',
+        status: err.response?.status,
+        timestamp: new Date().toISOString()
+      })
     }
   }
 
@@ -81,6 +111,10 @@ export function AuthDebug() {
             </Button>
           </div>
 
+          <Button onClick={testRulesAPI} className="w-full" variant="secondary">
+            Test Rules API
+          </Button>
+
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
               {error}
@@ -92,8 +126,19 @@ export function AuthDebug() {
               {success}
             </div>
           )}
+
+          {apiTestResult && (
+            <div className="p-2 border rounded text-sm">
+              <strong>Rules API Test Result:</strong>
+              <pre className="mt-1 text-xs overflow-auto max-h-32">
+                {JSON.stringify(apiTestResult, null, 2)}
+              </pre>
+            </div>
+          )}
         </CardContent>
       </Card>
+      
+      <ClearAuth />
     </div>
   )
 }
