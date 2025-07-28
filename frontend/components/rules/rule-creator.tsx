@@ -14,12 +14,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select'
-import { Tabs, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
 import { 
   Save, 
-  
   ArrowLeft, 
   ArrowRight, 
   Eye,
@@ -28,11 +27,18 @@ import {
   CheckCircle,
   Info,
   Zap,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  Rocket,
+  Wrench
 } from 'lucide-react'
 import { useRulesStore, useRulesFormState } from '@/lib/rules-store'
 import { PRIORITY_LEVELS, RULE_TYPES, type RuleFormData, type CreateRuleRequest } from '@/lib/rules-types'
 import { toast } from '@/lib/hooks/use-toast'
+import { VisualRuleBuilder } from './visual-rule-builder'
+import { SmartTemplates } from './smart-templates'
+import { QuickRuleCreator } from './quick-rule-creator'
+import { ContextHelp, SmartHelpSuggestions } from './context-help'
 
 export function RuleCreator() {
   const { 
@@ -60,6 +66,7 @@ export function RuleCreator() {
   } = useRulesFormState()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [creationMode, setCreationMode] = useState<'quick' | 'template' | 'advanced'>('quick')
   const isEditMode = !!selectedRule
 
   // Initialize form for editing
@@ -193,526 +200,398 @@ export function RuleCreator() {
     resetForm()
   }
 
+  // Handle template selection
+  const handleTemplateSelect = async (template: any, configuration: Record<string, any>) => {
+    try {
+      const categoryId = categories.find(c => c.display_name.includes(template.category.replace('_', ' ')))?.id || 1
+      
+      const ruleData: CreateRuleRequest = {
+        name: configuration.name || template.name,
+        description: configuration.description || template.description,
+        category_id: categoryId,
+        rule_type: template.conditions.rule_type || 'STAGNANT_PALLETS',
+        conditions: { ...template.conditions, ...configuration },
+        parameters: template.parameters || {},
+        priority: 'HIGH',
+        is_active: true
+      }
+
+      await createRule(ruleData)
+      toast({
+        title: 'Success',
+        description: 'Rule created from template successfully'
+      })
+      setCurrentSubView('overview')
+      setSelectedRule(null)
+      resetForm()
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to create rule from template'
+      })
+    }
+  }
+
+  // If editing, show advanced mode
+  if (isEditMode) {
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Edit Rule: {selectedRule?.name}</h2>
+            <p className="text-muted-foreground">Modify your existing warehouse rule</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleCancel}>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={isSubmitting}>
+              <Save className="w-4 h-4 mr-2" />
+              {isSubmitting ? 'Saving...' : 'Update Rule'}
+            </Button>
+          </div>
+        </div>
+
+        {/* Advanced form for editing */}
+        <Card>
+          <CardContent className="pt-6">
+            <AdvancedRuleForm 
+              formData={formData}
+              validationErrors={validationErrors}
+              categories={categories}
+              onFormChange={setFormData}
+              onValidate={handleValidate}
+              onPreview={handlePreview}
+              isValidating={isValidating}
+              validationResult={validationResult}
+              previewResult={previewResult}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header with Mode Selection */}
+      <div className="text-center space-y-4">
         <div>
-          <h2 className="text-2xl font-bold">
-            {isEditMode ? `Edit Rule: ${selectedRule?.name}` : 'Create New Rule'}
-          </h2>
-          <p className="text-muted-foreground">
-            {isEditMode ? 'Modify your existing warehouse rule' : 'Define a new rule to detect warehouse anomalies'}
+          <h2 className="text-3xl font-bold">Create a New Rule</h2>
+          <p className="text-muted-foreground text-lg">
+            Choose the best way to create your warehouse rule
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleCancel}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            <Save className="w-4 h-4 mr-2" />
-            {isSubmitting ? 'Saving...' : isEditMode ? 'Update Rule' : 'Create Rule'}
-          </Button>
-        </div>
-      </div>
 
-      {/* Progress Steps */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => {
-              const Icon = step.icon
-              const isActive = step.id === currentStep
-              const isCompleted = index < currentStepIndex
-              
-              return (
-                <div key={step.id} className="flex items-center">
-                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                    isActive ? 'bg-primary text-primary-foreground' :
-                    isCompleted ? 'bg-green-100 text-green-700' :
-                    'bg-gray-100 text-gray-500'
-                  }`} onClick={() => setCurrentStep(step.id as any)}>
-                    <Icon className="w-4 h-4" />
-                    <span className="font-medium">{step.label}</span>
-                  </div>
-                  {index < steps.length - 1 && (
-                    <div className={`w-8 h-0.5 mx-2 ${
-                      index < currentStepIndex ? 'bg-green-500' : 'bg-gray-200'
-                    }`} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+        {/* Mode Selection Tabs */}
+        <Tabs value={creationMode} onValueChange={(value: any) => setCreationMode(value)} className="w-full">
+          <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-3">
+            <TabsTrigger value="quick" className="flex items-center gap-2">
+              <Rocket className="w-4 h-4" />
+              Quick Setup
+            </TabsTrigger>
+            <TabsTrigger value="template" className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              Use Template
+            </TabsTrigger>
+            <TabsTrigger value="advanced" className="flex items-center gap-2">
+              <Wrench className="w-4 h-4" />
+              Advanced Builder
+            </TabsTrigger>
+          </TabsList>
 
-      {/* Form Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Form */}
-        <div className="lg:col-span-2">
-          <Tabs value={currentStep} onValueChange={(value) => setCurrentStep(value as any)}>
-            <TabsContent value="basic">
-              <BasicInfoStep 
+          {/* Mode Descriptions */}
+          <div className="max-w-4xl mx-auto">
+            <TabsContent value="quick" className="space-y-4">
+              <Alert className="border-green-200 bg-green-50">
+                <Rocket className="h-4 w-4 text-green-600" />
+                <AlertDescription>
+                  <strong>Recommended for beginners.</strong> Answer a few simple questions to create common warehouse rules in under 2 minutes.
+                </AlertDescription>
+              </Alert>
+              <QuickRuleCreator 
+                categories={categories}
+                onSave={async (ruleData) => {
+                  setIsSubmitting(true)
+                  try {
+                    await createRule(ruleData)
+                    toast({
+                      title: 'Success',
+                      description: 'Rule created successfully'
+                    })
+                    setCurrentSubView('overview')
+                  } catch {
+                    toast({
+                      variant: 'destructive',
+                      title: 'Error',
+                      description: 'Failed to create rule'
+                    })
+                  } finally {
+                    setIsSubmitting(false)
+                  }
+                }}
+                onCancel={handleCancel}
+                onPreview={handlePreview}
+                isSubmitting={isSubmitting}
+              />
+            </TabsContent>
+
+            <TabsContent value="template" className="space-y-4">
+              <Alert className="border-blue-200 bg-blue-50">
+                <Sparkles className="h-4 w-4 text-blue-600" />
+                <AlertDescription>
+                  <strong>Great for common scenarios.</strong> Start with a proven template and customize it for your specific needs.
+                </AlertDescription>
+              </Alert>
+              <SmartTemplates 
+                onTemplateSelect={handleTemplateSelect}
+                onCancel={handleCancel}
+                categories={categories}
+              />
+            </TabsContent>
+
+            <TabsContent value="advanced" className="space-y-4">
+              <Alert className="border-purple-200 bg-purple-50">
+                <Wrench className="h-4 w-4 text-purple-600" />
+                <AlertDescription>
+                  <strong>For experienced users.</strong> Full control over rule conditions and parameters with visual tools.
+                </AlertDescription>
+              </Alert>
+              <AdvancedRuleCreator 
                 formData={formData}
                 validationErrors={validationErrors}
                 categories={categories}
                 onFormChange={setFormData}
-              />
-            </TabsContent>
-
-            <TabsContent value="conditions">
-              <ConditionsStep 
-                formData={formData}
-                validationErrors={validationErrors}
-                onFormChange={setFormData}
+                onSubmit={handleSubmit}
+                onCancel={handleCancel}
                 onValidate={handleValidate}
+                onPreview={handlePreview}
+                isSubmitting={isSubmitting}
                 isValidating={isValidating}
                 validationResult={validationResult}
-              />
-            </TabsContent>
-
-            <TabsContent value="parameters">
-              <ParametersStep 
-                formData={formData}
-                validationErrors={validationErrors}
-                onFormChange={setFormData}
-              />
-            </TabsContent>
-
-            <TabsContent value="preview">
-              <PreviewStep 
-                formData={formData}
                 previewResult={previewResult}
-                onPreview={handlePreview}
-                isValidating={isValidating}
               />
             </TabsContent>
-          </Tabs>
-
-          {/* Navigation */}
-          <div className="flex justify-between mt-6">
-            <Button 
-              variant="outline" 
-              onClick={handlePrevious}
-              disabled={currentStepIndex === 0}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Previous
-            </Button>
-            
-            <div className="flex gap-2">
-              {currentStep === 'conditions' && (
-                <Button variant="outline" onClick={handleValidate} disabled={isValidating}>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  {isValidating ? 'Validating...' : 'Validate'}
-                </Button>
-              )}
-              
-              {currentStep === 'parameters' && (
-                <Button variant="outline" onClick={handlePreview} disabled={isValidating}>
-                  <Eye className="w-4 h-4 mr-2" />
-                  {isValidating ? 'Generating...' : 'Preview'}
-                </Button>
-              )}
-              
-              <Button 
-                onClick={currentStepIndex === steps.length - 1 ? handleSubmit : handleNext}
-                disabled={currentStepIndex === steps.length - 1 ? isSubmitting : false}
-              >
-                {currentStepIndex === steps.length - 1 ? (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    {isSubmitting ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
-                  </>
-                ) : (
-                  <>
-                    Next
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </>
-                )}
-              </Button>
-            </div>
           </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-4">
-          <RuleInfoSidebar formData={formData} />
-          <QuickActionsSidebar 
-            onValidate={handleValidate}
-            onPreview={handlePreview}
-            onReset={resetForm}
-            isValidating={isValidating}
-          />
-        </div>
+        </Tabs>
       </div>
     </div>
   )
 }
 
-// Step Components
-function BasicInfoStep({ 
-  formData, 
-  validationErrors, 
-  categories, 
-  onFormChange 
+// Advanced Rule Creator Component
+function AdvancedRuleCreator({
+  formData,
+  validationErrors,
+  categories,
+  onFormChange,
+  onSubmit,
+  onCancel,
+  onValidate,
+  onPreview,
+  isSubmitting,
+  isValidating,
+  validationResult,
+  previewResult
 }: {
   formData: Partial<RuleFormData>
   validationErrors: Record<string, string>
   categories: Array<{ id: number; display_name: string }>
   onFormChange: (data: Partial<RuleFormData>) => void
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Basic Information</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Rule Name *</Label>
-            <Input
-              id="name"
-              placeholder="Enter rule name"
-              value={formData.name || ''}
-              onChange={(e) => onFormChange({ name: e.target.value })}
-              className={validationErrors.name ? 'border-red-500' : ''}
-            />
-            {validationErrors.name && (
-              <p className="text-sm text-red-500">{validationErrors.name}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="priority">Priority *</Label>
-            <Select value={formData.priority} onValueChange={(value) => onFormChange({ priority: value as 'VERY_HIGH' | 'HIGH' | 'MEDIUM' | 'LOW' })}>
-              <SelectTrigger className={validationErrors.priority ? 'border-red-500' : ''}>
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(PRIORITY_LEVELS).map(([key, priority]) => (
-                  <SelectItem key={key} value={key}>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={priority.color as any}>{priority.label}</Badge>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {validationErrors.priority && (
-              <p className="text-sm text-red-500">{validationErrors.priority}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="description">Description *</Label>
-          <Textarea
-            id="description"
-            placeholder="Describe what this rule detects"
-            value={formData.description || ''}
-            onChange={(e) => onFormChange({ description: e.target.value })}
-            className={validationErrors.description ? 'border-red-500' : ''}
-            rows={3}
-          />
-          {validationErrors.description && (
-            <p className="text-sm text-red-500">{validationErrors.description}</p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="category">Category *</Label>
-            <Select 
-              value={formData.category_id?.toString()} 
-              onValueChange={(value) => onFormChange({ category_id: parseInt(value) })}
-            >
-              <SelectTrigger className={validationErrors.category_id ? 'border-red-500' : ''}>
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id.toString()}>
-                    {category.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {validationErrors.category_id && (
-              <p className="text-sm text-red-500">{validationErrors.category_id}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="rule_type">Rule Type *</Label>
-            <Select 
-              value={formData.rule_type} 
-              onValueChange={(value) => onFormChange({ rule_type: value })}
-            >
-              <SelectTrigger className={validationErrors.rule_type ? 'border-red-500' : ''}>
-                <SelectValue placeholder="Select rule type" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(RULE_TYPES).map(([key, type]) => (
-                  <SelectItem key={key} value={key}>
-                    <div className="space-y-1">
-                      <div className="font-medium">{type.label}</div>
-                      <div className="text-sm text-muted-foreground">{type.description}</div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {validationErrors.rule_type && (
-              <p className="text-sm text-red-500">{validationErrors.rule_type}</p>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function ConditionsStep({ 
-  formData, 
-  validationErrors, 
-  onFormChange, 
-  onValidate, 
-  isValidating, 
-  validationResult 
-}: {
-  formData: Partial<RuleFormData>
-  validationErrors: Record<string, string>
-  onFormChange: (data: Partial<RuleFormData>) => void
+  onSubmit: () => void
+  onCancel: () => void
   onValidate: () => void
+  onPreview: () => void
+  isSubmitting: boolean
   isValidating: boolean
   validationResult: { success: boolean; error?: string } | null
-}) {
-  const [conditionsJson, setConditionsJson] = useState(
-    JSON.stringify(formData.conditions || {}, null, 2)
-  )
-
-  const handleConditionsChange = (value: string) => {
-    setConditionsJson(value)
-    try {
-      const parsed = JSON.parse(value)
-      onFormChange({ conditions: parsed })
-    } catch {
-      // Invalid JSON, don't update store
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Rule Conditions</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            Define the conditions that trigger this rule. Use JSON format with operators like &gt;, &lt;, ==, !=.
-          </AlertDescription>
-        </Alert>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="conditions">Conditions (JSON) *</Label>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={onValidate}
-              disabled={isValidating}
-            >
-              <CheckCircle className="w-4 h-4 mr-2" />
-              {isValidating ? 'Validating...' : 'Validate'}
-            </Button>
-          </div>
-          <Textarea
-            id="conditions"
-            placeholder='{"days_stagnant": {">=": 7}, "location_zone": {"==": "A"}}'
-            value={conditionsJson}
-            onChange={(e) => handleConditionsChange(e.target.value)}
-            className={`font-mono ${validationErrors.conditions ? 'border-red-500' : ''}`}
-            rows={8}
-          />
-          {validationErrors.conditions && (
-            <p className="text-sm text-red-500">{validationErrors.conditions}</p>
-          )}
-        </div>
-
-        {validationResult && (
-          <Alert className={validationResult.success ? 'border-green-500' : 'border-red-500'}>
-            {validationResult.success ? (
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            ) : (
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-            )}
-            <AlertDescription>
-              {validationResult.success ? 
-                'Conditions are valid!' : 
-                `Validation error: ${validationResult.error}`
-              }
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function ParametersStep({ 
-  formData, 
-  validationErrors, 
-  onFormChange 
-}: {
-  formData: Partial<RuleFormData>
-  validationErrors: Record<string, string>
-  onFormChange: (data: Partial<RuleFormData>) => void
-}) {
-  const [parametersJson, setParametersJson] = useState(
-    JSON.stringify(formData.parameters || {}, null, 2)
-  )
-
-  const handleParametersChange = (value: string) => {
-    setParametersJson(value)
-    try {
-      const parsed = JSON.parse(value)
-      onFormChange({ parameters: parsed })
-    } catch {
-      // Invalid JSON, don't update store
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Rule Parameters</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Alert>
-          <Settings className="h-4 w-4" />
-          <AlertDescription>
-            Configure additional parameters for this rule such as thresholds, weights, or custom settings.
-          </AlertDescription>
-        </Alert>
-
-        <div className="space-y-2">
-          <Label htmlFor="parameters">Parameters (JSON)</Label>
-          <Textarea
-            id="parameters"
-            placeholder='{"threshold": 0.8, "include_weekends": false}'
-            value={parametersJson}
-            onChange={(e) => handleParametersChange(e.target.value)}
-            className="font-mono"
-            rows={6}
-          />
-          <p className="text-sm text-muted-foreground">
-            Optional: Additional configuration for rule execution
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="is_active"
-            checked={formData.is_active ?? true}
-            onChange={(e) => onFormChange({ is_active: e.target.checked })}
-            className="rounded border-gray-300"
-          />
-          <Label htmlFor="is_active">Activate rule immediately after creation</Label>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function PreviewStep({ 
-  formData, 
-  previewResult, 
-  onPreview, 
-  isValidating 
-}: {
-  formData: Partial<RuleFormData>
-  previewResult: { 
-    success: boolean;
-    preview_results?: { anomalies_found: number; execution_time_ms: number };
-    performance_estimate?: { estimated_anomalies: number; confidence_level: number; performance_prediction: string };
-  } | null
-  onPreview: () => void
-  isValidating: boolean
+  previewResult: any
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Rule Preview</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-muted-foreground">
-            Preview how this rule will behave when applied to your data
-          </p>
-          <Button onClick={onPreview} disabled={isValidating}>
-            <Eye className="w-4 h-4 mr-2" />
-            {isValidating ? 'Generating...' : 'Generate Preview'}
-          </Button>
-        </div>
-
-        {previewResult && (
-          <div className="space-y-4">
-            <Alert>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-              <AlertDescription>
-                Preview generated successfully
-              </AlertDescription>
-            </Alert>
-
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Main Form */}
+      <div className="lg:col-span-2 space-y-6">
+        {/* Basic Info */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Basic Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Estimated Matches</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {previewResult.performance_estimate?.estimated_anomalies || 0}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Based on historical data
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="space-y-2">
+                <Label htmlFor="name">Rule Name *</Label>
+                <Input
+                  id="name"
+                  placeholder="Enter rule name"
+                  value={formData.name || ''}
+                  onChange={(e) => onFormChange({ name: e.target.value })}
+                  className={validationErrors.name ? 'border-red-500' : ''}
+                />
+                {validationErrors.name && (
+                  <p className="text-sm text-red-500">{validationErrors.name}</p>
+                )}
+              </div>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Confidence Level</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-green-600">
-                    {((previewResult.performance_estimate?.confidence_level || 0) * 100).toFixed(1)}%
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Prediction accuracy
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="space-y-2">
+                <Label htmlFor="priority">Priority *</Label>
+                <Select value={formData.priority} onValueChange={(value) => onFormChange({ priority: value as any })}>
+                  <SelectTrigger className={validationErrors.priority ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PRIORITY_LEVELS).map(([key, priority]) => (
+                      <SelectItem key={key} value={key}>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={priority.color as any}>{priority.label}</Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {validationErrors.priority && (
+                  <p className="text-sm text-red-500">{validationErrors.priority}</p>
+                )}
+              </div>
             </div>
 
-            {previewResult.performance_estimate?.performance_prediction && (
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Performance Prediction:</strong> {previewResult.performance_estimate.performance_prediction}
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description *</Label>
+              <Textarea
+                id="description"
+                placeholder="Describe what this rule detects"
+                value={formData.description || ''}
+                onChange={(e) => onFormChange({ description: e.target.value })}
+                className={validationErrors.description ? 'border-red-500' : ''}
+                rows={3}
+              />
+              {validationErrors.description && (
+                <p className="text-sm text-red-500">{validationErrors.description}</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="category">Category *</Label>
+                <Select 
+                  value={formData.category_id?.toString()} 
+                  onValueChange={(value) => onFormChange({ category_id: parseInt(value) })}
+                >
+                  <SelectTrigger className={validationErrors.category_id ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id.toString()}>
+                        {category.display_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {validationErrors.category_id && (
+                  <p className="text-sm text-red-500">{validationErrors.category_id}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rule_type">Rule Type *</Label>
+                <Select 
+                  value={formData.rule_type} 
+                  onValueChange={(value) => onFormChange({ rule_type: value })}
+                >
+                  <SelectTrigger className={validationErrors.rule_type ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select rule type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(RULE_TYPES).map(([key, type]) => (
+                      <SelectItem key={key} value={key}>
+                        <div className="space-y-1">
+                          <div className="font-medium">{type.label}</div>
+                          <div className="text-sm text-muted-foreground">{type.description}</div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {validationErrors.rule_type && (
+                  <p className="text-sm text-red-500">{validationErrors.rule_type}</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Visual Rule Builder */}
+        <VisualRuleBuilder
+          initialConditions={formData.conditions}
+          ruleType={formData.rule_type}
+          onConditionsChange={(conditions) => onFormChange({ conditions })}
+          onValidate={onValidate}
+          isValidating={isValidating}
+          validationResult={validationResult}
+        />
+
+        {/* Preview Results */}
+        {previewResult && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Preview Results</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {previewResult.preview_results?.anomalies_found || 0}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Anomalies Found</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    {previewResult.preview_results?.execution_time_ms || 0}ms
+                  </div>
+                  <div className="text-sm text-muted-foreground">Execution Time</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
-      </CardContent>
-    </Card>
+
+        {/* Action Buttons */}
+        <div className="flex justify-between">
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onPreview} disabled={isValidating}>
+              <Eye className="w-4 h-4 mr-2" />
+              {isValidating ? 'Generating...' : 'Preview'}
+            </Button>
+            <Button onClick={onSubmit} disabled={isSubmitting}>
+              <Save className="w-4 h-4 mr-2" />
+              {isSubmitting ? 'Creating...' : 'Create Rule'}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Sidebar */}
+      <div className="space-y-4">
+        <RuleInfoSidebar formData={formData} />
+        <SmartHelpSuggestions 
+          ruleType={formData.rule_type}
+          currentFields={formData.conditions}
+        />
+        <ContextHelp 
+          context="rule_type"
+          ruleType={formData.rule_type}
+        />
+      </div>
+    </div>
   )
 }
+
 
 // Sidebar Components
 function RuleInfoSidebar({ formData }: { formData: Partial<RuleFormData> }) {
