@@ -168,7 +168,7 @@ export function VisualRuleBuilder({
             id: `condition-${index}`,
             field: key,
             operator: convertOperatorFromJson(operator),
-            value: operatorValue,
+            value: operatorValue as string | number | string[],
             connector: index > 0 ? 'AND' : undefined
           })
         })
@@ -324,8 +324,8 @@ export function VisualRuleBuilder({
 
   const getFieldDefinition = (fieldKey: string) => {
     for (const category of Object.values(FIELD_DEFINITIONS)) {
-      if (category.fields[fieldKey]) {
-        return category.fields[fieldKey]
+      if ((category.fields as any)[fieldKey]) {
+        return (category.fields as any)[fieldKey]
       }
     }
     return null
@@ -399,9 +399,9 @@ export function VisualRuleBuilder({
                   <SelectValue placeholder="Select operator" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableOperators.map(op => (
+                  {availableOperators.map((op: string) => (
                     <SelectItem key={op} value={op}>
-                      {OPERATORS[op]?.label || op}
+                      {(OPERATORS as any)[op]?.label || op}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -424,7 +424,7 @@ export function VisualRuleBuilder({
                 {fieldDef.suggestions && (
                   <div className="mt-2">
                     <span className="text-sm font-medium">Typical values: </span>
-                    {fieldDef.suggestions.map((suggestion, idx) => (
+                    {fieldDef.suggestions.map((suggestion: any, idx: number) => (
                       <Button
                         key={idx}
                         variant="outline"
@@ -535,7 +535,7 @@ export function VisualRuleBuilder({
                   onChange={(e) => {
                     const newValues = [...textValues]
                     newValues[idx] = e.target.value
-                    updateCondition(condition.id, { value: newValues.filter(v => v) })
+                    updateCondition(condition.id, { value: newValues.filter(v => v).map(String) })
                   }}
                   placeholder="Enter pattern (use * for wildcards)"
                 />
@@ -545,7 +545,7 @@ export function VisualRuleBuilder({
                     size="sm"
                     onClick={() => {
                       const newValues = textValues.filter((_, i) => i !== idx)
-                      updateCondition(condition.id, { value: newValues })
+                      updateCondition(condition.id, { value: newValues.map(String) })
                     }}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -556,7 +556,7 @@ export function VisualRuleBuilder({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => updateCondition(condition.id, { value: [...textValues, ''] })}
+              onClick={() => updateCondition(condition.id, { value: [...textValues.map(String), ''] })}
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Pattern

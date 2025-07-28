@@ -256,21 +256,20 @@ export function RuleCreator() {
         </div>
 
         {/* Advanced form for editing */}
-        <Card>
-          <CardContent className="pt-6">
-            <AdvancedRuleForm 
-              formData={formData}
-              validationErrors={validationErrors}
-              categories={categories}
-              onFormChange={setFormData}
-              onValidate={handleValidate}
-              onPreview={handlePreview}
-              isValidating={isValidating}
-              validationResult={validationResult}
-              previewResult={previewResult}
-            />
-          </CardContent>
-        </Card>
+        <AdvancedRuleCreator 
+          formData={formData}
+          validationErrors={validationErrors}
+          categories={categories}
+          onFormChange={setFormData}
+          onSubmit={handleSubmit}
+          onCancel={handleCancel}
+          onValidate={handleValidate}
+          onPreview={handlePreview}
+          isSubmitting={isSubmitting}
+          isValidating={isValidating}
+          validationResult={validationResult}
+          previewResult={previewResult}
+        />
       </div>
     )
   }
