@@ -254,8 +254,13 @@ def summarize_anomalies_by_location(anomalies):
     grouped = anomalies_df.groupby('location')
     
     summary_list = []
-    priority_map = {'VERY HIGH': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
-    reverse_priority_map = {v: k for k, v in priority_map.items()}
+    priority_map = {
+        'VERY_HIGH': 4, 'VERY HIGH': 4,  # Support both formats
+        'HIGH': 3, 
+        'MEDIUM': 2, 
+        'LOW': 1
+    }
+    reverse_priority_map = {4: 'VERY_HIGH', 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW'}
 
     for location_name, group in grouped:
         anomaly_count = len(group)
