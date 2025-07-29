@@ -88,6 +88,29 @@ CORS(app,
 # Create the API Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
 
+# JWT Token Required Decorator (needs to be early in file before usage)
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            # The token is expected in the "Bearer <token>" format
+            token = request.headers['Authorization'].split(" ")[1]
+
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 401
+
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            from core_models import User
+            current_user = User.query.get(data['user_id'])
+        except Exception as e:
+            return jsonify({'message': 'Token is invalid!', 'error': str(e)}), 401
+
+        # Pass the authenticated user to the route
+        return f(current_user, *args, **kwargs)
+    return decorated
+
 # Simple test endpoint to verify CORS is working
 @api_bp.route('/test', methods=['GET', 'POST', 'OPTIONS'])
 def test_cors():
@@ -318,28 +341,6 @@ login_manager.login_view = 'login' # type: ignore
 # --- Database Models ---
 # Import core models to avoid circular imports
 from core_models import User, AnalysisReport, Anomaly, AnomalyHistory
-
-# JWT Token Required Decorator
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            # The token is expected in the "Bearer <token>" format
-            token = request.headers['Authorization'].split(" ")[1]
-
-        if not token:
-            return jsonify({'message': 'Token is missing!'}), 401
-
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = User.query.get(data['user_id'])
-        except Exception as e:
-            return jsonify({'message': 'Token is invalid!', 'error': str(e)}), 401
-
-        # Pass the authenticated user to the route
-        return f(current_user, *args, **kwargs)
-    return decorated
 
 @login_manager.user_loader
 def load_user(user_id):
