@@ -181,6 +181,93 @@ def debug_config():
         'environment_origins': os.environ.get('ALLOWED_ORIGINS', 'not set')
     })
 
+# Health check endpoint for database and rules
+@api_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint that verifies database and rules are working"""
+    try:
+        from models import Rule, RuleCategory, Location
+        from migrations import migration_runner
+        
+        # Check database connection
+        db.session.execute('SELECT 1')
+        
+        # Check if rules exist
+        rule_count = Rule.query.filter_by(is_active=True).count()
+        category_count = RuleCategory.query.count()
+        location_count = Location.query.filter_by(is_active=True).count()
+        
+        # Check migration status
+        current_version = migration_runner.get_current_version()
+        pending_migrations = migration_runner.get_pending_migrations()
+        
+        status = "healthy" if rule_count > 0 and len(pending_migrations) == 0 else "degraded"
+        
+        return jsonify({
+            'status': status,
+            'database': 'connected',
+            'rules': {
+                'active_rules': rule_count,
+                'categories': category_count,
+                'locations': location_count
+            },
+            'migrations': {
+                'current_version': current_version,
+                'pending_count': len(pending_migrations)
+            },
+            'enhanced_engine': HAS_ENHANCED_ENGINE,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+# Migration management endpoint (protected)
+@api_bp.route('/admin/migrations', methods=['GET'])
+@token_required
+def get_migration_status(current_user):
+    """Get detailed migration status"""
+    try:
+        from migrations import migration_runner
+        
+        current_version = migration_runner.get_current_version()
+        pending = migration_runner.get_pending_migrations()
+        
+        return jsonify({
+            'current_version': current_version,
+            'pending_migrations': [
+                {
+                    'version': m.version,
+                    'description': m.description
+                } for m in pending
+            ],
+            'total_migrations': len(migration_runner.migrations)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/admin/migrations/run', methods=['POST'])
+@token_required  
+def run_migrations_endpoint(current_user):
+    """Manually trigger migrations"""
+    try:
+        from migrations import force_run_migrations
+        
+        success = force_run_migrations()
+        
+        if success:
+            return jsonify({'message': 'Migrations completed successfully'})
+        else:
+            return jsonify({'error': 'Migrations failed'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Database and Login Manager Configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY')
 if not app.config['SECRET_KEY']:
@@ -262,10 +349,16 @@ def token_required(f):
 # IMPORTANT: Change this to a real and unique secret key in a production environment.
 # app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-insecure') # This line is removed as per the new_code
 
-# --- Initialize Database ---
-# This replaces the deprecated @before_first_request
+# --- Initialize Database with Professional Migration System ---
+# Run migrations only when needed (efficient approach)
+from migrations import run_migrations_if_needed
+
 with app.app_context():
-    db.create_all()
+    try:
+        run_migrations_if_needed()
+    except Exception as e:
+        print(f"Migration failed: {e}")
+        # App continues to work even if migrations fail
 
 # --- Authentication Routes (DEPRECATED - Use JWT API endpoints instead) ---
 

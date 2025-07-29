@@ -92,8 +92,28 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
         
     except Exception as e:
         print(f"Error in database rules engine: {e}")
-        # Fall back to empty results rather than crash
-        return []
+        print("Falling back to legacy Excel-based engine...")
+        
+        # Fall back to legacy engine if database rules fail
+        try:
+            from main import run_engine as legacy_run_engine
+            # Try to load rules from Excel file if available
+            import pandas as pd
+            import os
+            
+            # Look for default rules file
+            rules_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'warehouse_rules.xlsx')
+            if os.path.exists(rules_path):
+                rules_df = pd.read_excel(rules_path)
+                import argparse
+                args = argparse.Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
+                return legacy_run_engine(inventory_df, rules_df, args)
+            else:
+                print("No fallback rules file found. Database migration required.")
+                return []
+        except Exception as fallback_error:
+            print(f"Legacy engine also failed: {fallback_error}")
+            return []
 
 def _record_rule_performance(result, report_id: int):
     """Record rule performance metrics"""
