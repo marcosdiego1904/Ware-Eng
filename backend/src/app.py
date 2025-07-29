@@ -924,26 +924,33 @@ def create_analysis_report(current_user):
         location_summary = summarize_anomalies_by_location(anomalies)
         report_name = f"Analysis - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
         
-        new_report = AnalysisReport()
-        new_report.report_name = report_name
-        new_report.user_id = current_user.id
-        new_report.location_summary = json.dumps(location_summary)
-        
-        db.session.add(new_report)
-        db.session.flush()
-
-        for item in anomalies:
-            anomaly = Anomaly()
-            if isinstance(item, dict):
-                anomaly.description = item.get('anomaly_type', 'Uncategorized Anomaly')
-                anomaly.details = json.dumps(item, default=default_json_serializer)
-            else:
-                anomaly.description = str(item)
-                anomaly.details = None
-            anomaly.report_id = new_report.id
-            db.session.add(anomaly)
+        try:
+            # Start a new transaction to ensure clean state
+            db.session.rollback()  # Clear any previous transaction state
             
-        db.session.commit()
+            new_report = AnalysisReport()
+            new_report.report_name = report_name
+            new_report.user_id = current_user.id
+            new_report.location_summary = json.dumps(location_summary)
+            
+            db.session.add(new_report)
+            db.session.flush()
+
+            for item in anomalies:
+                anomaly = Anomaly()
+                if isinstance(item, dict):
+                    anomaly.description = item.get('anomaly_type', 'Uncategorized Anomaly')
+                    anomaly.details = json.dumps(item, default=default_json_serializer)
+                else:
+                    anomaly.description = str(item)
+                    anomaly.details = None
+                anomaly.report_id = new_report.id
+                db.session.add(anomaly)
+                
+            db.session.commit()
+        except Exception as db_error:
+            db.session.rollback()
+            raise db_error
 
         return jsonify({'message': 'Report created successfully', 'report_id': new_report.id}), 201
 
