@@ -98,6 +98,7 @@
             {% if current_user.is_authenticated %}
                 <a href="{{ url_for('index') }}" class="btn btn-primary">New Analysis</a>
                 <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Dashboard</a>
+                <a href="{{ url_for('rules_management') }}" class="btn btn-secondary">Rules</a>
                 
                 <a href="http://localhost:5173" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Dashboard V2</a>
                 

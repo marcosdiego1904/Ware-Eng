@@ -1213,6 +1213,13 @@ except ImportError as e:
     print(f"Rules API not available: {e}")
 
 
+# ==================== RULES MANAGEMENT WEB INTERFACE ====================
+
+@app.route('/rules')
+def rules_management():
+    """Rule Management Web Interface"""
+    return render_template('rules.html')
+
 import os
 
 # Usa una variable de entorno o una clave secreta difícil de adivinar
