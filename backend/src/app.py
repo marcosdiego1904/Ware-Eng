@@ -319,10 +319,6 @@ login_manager.login_view = 'login' # type: ignore
 # Import core models to avoid circular imports
 from core_models import User, AnalysisReport, Anomaly, AnomalyHistory
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
 # JWT Token Required Decorator
 def token_required(f):
     @wraps(f)
@@ -345,6 +341,9 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # IMPORTANT: Change this to a real and unique secret key in a production environment.
 # app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-insecure') # This line is removed as per the new_code
