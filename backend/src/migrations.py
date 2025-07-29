@@ -104,6 +104,9 @@ class MigrationRunner:
                 print(f"Applying migration {migration.version}: {migration.description}")
                 
                 try:
+                    # Ensure clean transaction state
+                    db.session.rollback()  # Clear any previous transaction state
+                    
                     # Run the migration
                     migration.up()
                     
@@ -119,7 +122,10 @@ class MigrationRunner:
                     
                 except Exception as e:
                     print(f"✗ Migration {migration.version} failed: {e}")
-                    db.session.rollback()
+                    try:
+                        db.session.rollback()
+                    except:
+                        pass  # Transaction might already be rolled back
                     return False
             
             return True
@@ -145,25 +151,37 @@ class CreateRulesTablesMigration(Migration):
     """Create all rules system tables"""
     
     def up(self):
-        # Import here to avoid circular imports
-        from models import RuleCategory, Rule, RuleHistory, RuleTemplate, RulePerformance, Location
-        
-        # Create all tables
-        db.create_all()
+        try:
+            # Import here to avoid circular imports
+            from models import RuleCategory, Rule, RuleHistory, RuleTemplate, RulePerformance, Location
+            
+            # Create all tables
+            db.create_all()
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise e
 
 
 class SeedDefaultRulesMigration(Migration):
     """Seed default warehouse rules"""
     
     def up(self):
-        # Create categories first
-        categories = self._create_categories()
-        
-        # Get/create system user
-        system_user = self._get_system_user()
-        
-        # Create default rules
-        self._create_default_rules(categories, system_user)
+        try:
+            # Create categories first
+            categories = self._create_categories()
+            
+            # Get/create system user
+            system_user = self._get_system_user()
+            
+            # Create default rules
+            self._create_default_rules(categories, system_user)
+            
+            # Commit all changes
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise e
     
     def _create_categories(self) -> Dict[str, RuleCategory]:
         categories_data = [
@@ -320,30 +338,35 @@ class CreateLocationsMigration(Migration):
     """Create basic location mappings"""
     
     def up(self):
-        basic_locations = [
-            {'code': 'RECEIVING', 'pattern': 'RECEIVING*', 'location_type': 'RECEIVING', 'capacity': 50, 'zone': 'INBOUND'},
-            {'code': 'AISLE-A', 'pattern': 'AISLE-A*', 'location_type': 'TRANSITIONAL', 'capacity': 2, 'zone': 'GENERAL'},
-            {'code': 'AISLE-B', 'pattern': 'AISLE-B*', 'location_type': 'TRANSITIONAL', 'capacity': 2, 'zone': 'GENERAL'},
-            {'code': 'FINAL', 'pattern': 'FINAL*', 'location_type': 'FINAL', 'capacity': 1, 'zone': 'STORAGE'}
-        ]
-        
-        created_count = 0
-        for loc_data in basic_locations:
-            existing = Location.query.filter_by(code=loc_data['code']).first()
-            if not existing:
-                location = Location(
-                    code=loc_data['code'],
-                    pattern=loc_data['pattern'],
-                    location_type=loc_data['location_type'],
-                    capacity=loc_data['capacity'],
-                    zone=loc_data['zone'],
-                    is_active=True,
-                    created_at=datetime.utcnow()
-                )
-                db.session.add(location)
-                created_count += 1
-        
-        print(f"Created {created_count} basic locations")
+        try:
+            basic_locations = [
+                {'code': 'RECEIVING', 'pattern': 'RECEIVING*', 'location_type': 'RECEIVING', 'capacity': 50, 'zone': 'INBOUND'},
+                {'code': 'AISLE-A', 'pattern': 'AISLE-A*', 'location_type': 'TRANSITIONAL', 'capacity': 2, 'zone': 'GENERAL'},
+                {'code': 'AISLE-B', 'pattern': 'AISLE-B*', 'location_type': 'TRANSITIONAL', 'capacity': 2, 'zone': 'GENERAL'},
+                {'code': 'FINAL', 'pattern': 'FINAL*', 'location_type': 'FINAL', 'capacity': 1, 'zone': 'STORAGE'}
+            ]
+            
+            created_count = 0
+            for loc_data in basic_locations:
+                existing = Location.query.filter_by(code=loc_data['code']).first()
+                if not existing:
+                    location = Location(
+                        code=loc_data['code'],
+                        pattern=loc_data['pattern'],
+                        location_type=loc_data['location_type'],
+                        capacity=loc_data['capacity'],
+                        zone=loc_data['zone'],
+                        is_active=True,
+                        created_at=datetime.utcnow()
+                    )
+                    db.session.add(location)
+                    created_count += 1
+            
+            print(f"Created {created_count} basic locations")
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            raise e
 
 
 # Global migration runner instance
