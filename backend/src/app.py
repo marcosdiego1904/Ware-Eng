@@ -885,11 +885,25 @@ def create_analysis_report(current_user):
             rules_filepath = DEFAULT_RULES_PATH
 
         # Process the files
+        print(f"\n[DEBUG] Processing file: {inventory_file.filename}")
         inventory_df = pd.read_excel(inventory_filepath)
+        print(f"[DEBUG] Original columns: {list(inventory_df.columns)}")
+        print(f"[DEBUG] Original shape: {inventory_df.shape}")
+        print(f"[DEBUG] Column mapping received: {column_mapping}")
+        
         inventory_df.rename(columns=column_mapping, inplace=True)
+        print(f"[DEBUG] After mapping columns: {list(inventory_df.columns)}")
+        
+        # Show first few rows for debugging
+        print(f"[DEBUG] First 3 rows after mapping:")
+        print(inventory_df.head(3).to_string())
         
         if 'creation_date' in inventory_df.columns:
+            print(f"[DEBUG] Converting creation_date to datetime...")
             inventory_df['creation_date'] = pd.to_datetime(inventory_df['creation_date'])
+            print(f"[DEBUG] Sample creation_date values: {inventory_df['creation_date'].head(3).tolist()}")
+        else:
+            print(f"[DEBUG] WARNING: 'creation_date' column not found after mapping!")
         
         rules_df = pd.read_excel(rules_filepath)
         
@@ -909,6 +923,7 @@ def create_analysis_report(current_user):
                 except json.JSONDecodeError:
                     pass
             
+            print(f"[DEBUG] Running enhanced engine with database rules...")
             anomalies = run_enhanced_engine(
                 inventory_df, 
                 rules_df, 
@@ -917,8 +932,11 @@ def create_analysis_report(current_user):
                 rule_ids=rule_ids,
                 report_id=None  # Will be set after report creation
             )
+            print(f"[DEBUG] Enhanced engine returned {len(anomalies)} anomalies")
         else:
+            print(f"[DEBUG] Running legacy engine...")
             anomalies = run_enhanced_engine(inventory_df, rules_df, args)
+            print(f"[DEBUG] Legacy engine returned {len(anomalies)} anomalies")
         
         # Generate and save the report
         location_summary = summarize_anomalies_by_location(anomalies)
