@@ -316,9 +316,19 @@ export const useRulesStore = create<RulesState>()(
           errors.rule_type = 'Rule type is required';
         }
         
-        // Conditions validation
+        // Conditions validation - only for non-default rules
         if (!formData.conditions || Object.keys(formData.conditions).length === 0) {
           errors.conditions = 'At least one condition is required';
+        } else {
+          // Additional validation: check if conditions have actual values
+          const hasValidConditions = Object.entries(formData.conditions).some(([key, value]) => {
+            if (key === 'rule_type') return false; // Skip rule_type field
+            return value !== null && value !== undefined && value !== '';
+          });
+          
+          if (!hasValidConditions) {
+            errors.conditions = 'Conditions must have valid values';
+          }
         }
         
         set({ validationErrors: errors });
@@ -422,7 +432,10 @@ export const useRulesStore = create<RulesState>()(
       updateRule: async (id: number, data: UpdateRuleRequest) => {
         try {
           set({ isEditing: true, error: null });
+          console.log('Store: Updating rule', id, 'with data:', data);
+          
           const response = await ruleManagementApi.rules.updateRule(id, data);
+          console.log('Store: Update response:', response);
           
           if (response.success && response.rule) {
             // Update rule in the list
@@ -435,9 +448,10 @@ export const useRulesStore = create<RulesState>()(
             
             get().applyFilters();
           } else {
-            throw new Error('Failed to update rule');
+            throw new Error(response.message || 'Failed to update rule');
           }
         } catch (error) {
+          console.error('Store: Rule update error:', error);
           const errorMessage = ruleManagementApi.getErrorMessage(error);
           set({ error: errorMessage, lastError: error as Error });
           throw error;

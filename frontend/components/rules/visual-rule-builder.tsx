@@ -143,9 +143,20 @@ export function VisualRuleBuilder({
 
   // Initialize conditions from props
   useEffect(() => {
-    if (Object.keys(initialConditions).length > 0) {
-      const parsedConditions = parseConditionsFromObject(initialConditions)
-      setConditions(parsedConditions)
+    if (initialConditions && Object.keys(initialConditions).length > 0) {
+      try {
+        const parsedConditions = parseConditionsFromObject(initialConditions)
+        if (parsedConditions.length > 0) {
+          setConditions(parsedConditions)
+        } else {
+          // If parsing failed or returned empty, add default condition
+          addDefaultCondition()
+        }
+      } catch (error) {
+        console.warn('Failed to parse initial conditions:', error)
+        // Fallback to default condition if parsing fails
+        addDefaultCondition()
+      }
     } else if (conditions.length === 0) {
       // Add a default condition based on rule type
       addDefaultCondition()
@@ -160,25 +171,33 @@ export function VisualRuleBuilder({
 
   const parseConditionsFromObject = (obj: Record<string, any>): RuleCondition[] => {
     const parsed: RuleCondition[] = []
+    let conditionIndex = 0
     
-    Object.entries(obj).forEach(([key, value], index) => {
-      if (typeof value === 'object' && value !== null) {
+    Object.entries(obj).forEach(([key, value]) => {
+      if (key === 'rule_type') {
+        // Skip rule_type field as it's not a condition
+        return
+      }
+      
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // Handle complex conditions like { ">=": 6 }
         Object.entries(value).forEach(([operator, operatorValue]) => {
           parsed.push({
-            id: `condition-${index}`,
+            id: `condition-${Date.now()}-${conditionIndex++}`,
             field: key,
             operator: convertOperatorFromJson(operator),
             value: operatorValue as string | number | string[],
-            connector: index > 0 ? 'AND' : undefined
+            connector: parsed.length > 0 ? 'AND' : undefined
           })
         })
       } else {
+        // Handle simple conditions like "field": "value"
         parsed.push({
-          id: `condition-${index}`,
+          id: `condition-${Date.now()}-${conditionIndex++}`,
           field: key,
           operator: 'equals',
           value: value,
-          connector: index > 0 ? 'AND' : undefined
+          connector: parsed.length > 0 ? 'AND' : undefined
         })
       }
     })
@@ -193,8 +212,14 @@ export function VisualRuleBuilder({
       '<=': 'less_than',
       '<': 'less_than',
       '==': 'equals',
+      '=': 'equals',
       '!=': 'not_equals',
-      'in': 'includes'
+      'in': 'includes',
+      'not_in': 'excludes',
+      'matches': 'matches',
+      'not_matches': 'not_matches',
+      'contains': 'includes',
+      'not_contains': 'excludes'
     }
     return mapping[jsonOp] || 'equals'
   }

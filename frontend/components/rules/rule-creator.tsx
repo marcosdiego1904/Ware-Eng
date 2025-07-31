@@ -72,13 +72,16 @@ export function RuleCreator() {
   // Initialize form for editing
   useEffect(() => {
     if (selectedRule && isEditMode) {
+      // Ensure conditions is always an object
+      const conditions = selectedRule.conditions || {}
+      
       setFormData({
         name: selectedRule.name,
         description: selectedRule.description,
         category_id: selectedRule.category_id,
         rule_type: selectedRule.rule_type,
-        conditions: selectedRule.conditions,
-        parameters: selectedRule.parameters,
+        conditions: conditions,
+        parameters: selectedRule.parameters || {},
         priority: selectedRule.priority,
         is_active: selectedRule.is_active
       })
@@ -160,11 +163,13 @@ export function RuleCreator() {
         description: formData.description!,
         category_id: formData.category_id!,
         rule_type: formData.rule_type!,
-        conditions: formData.conditions!,
+        conditions: formData.conditions || {},
         parameters: formData.parameters || {},
         priority: formData.priority!,
         is_active: formData.is_active ?? true
       }
+
+      console.log('Submitting rule data:', ruleData)
 
       if (isEditMode && selectedRule) {
         await updateRule(selectedRule.id, ruleData)
@@ -183,11 +188,12 @@ export function RuleCreator() {
       setCurrentSubView('overview')
       setSelectedRule(null)
       resetForm()
-    } catch {
+    } catch (error) {
+      console.error('Rule submission error:', error)
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: `Failed to ${isEditMode ? 'update' : 'create'} rule`
+        description: `Failed to ${isEditMode ? 'update' : 'create'} rule: ${error instanceof Error ? error.message : 'Unknown error'}`
       })
     } finally {
       setIsSubmitting(false)
@@ -593,14 +599,14 @@ function AdvancedRuleCreator({
               </Alert>
               <div className="p-4 bg-gray-50 rounded-lg">
                 <pre className="text-sm text-gray-700 overflow-auto">
-                  {JSON.stringify(formData.conditions, null, 2)}
+                  {JSON.stringify(formData.conditions || {}, null, 2)}
                 </pre>
               </div>
             </CardContent>
           </Card>
         ) : (
           <VisualRuleBuilder
-            initialConditions={formData.conditions}
+            initialConditions={formData.conditions || {}}
             ruleType={formData.rule_type}
             onConditionsChange={(conditions) => onFormChange({ conditions })}
             onValidate={onValidate}
