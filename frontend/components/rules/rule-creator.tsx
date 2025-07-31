@@ -39,6 +39,7 @@ import { VisualRuleBuilder } from './visual-rule-builder'
 import { SmartTemplates } from './smart-templates'
 import { QuickRuleCreator } from './quick-rule-creator'
 import { ContextHelp, SmartHelpSuggestions } from './context-help'
+import { SimpleErrorBoundary } from '@/components/ui/error-boundary'
 
 export function RuleCreator() {
   const { 
@@ -53,7 +54,8 @@ export function RuleCreator() {
     setFormData,
     setCurrentStep,
     resetForm,
-    validateForm
+    validateForm,
+    isLoading
   } = useRulesStore()
 
   const {
@@ -69,26 +71,58 @@ export function RuleCreator() {
   const [creationMode, setCreationMode] = useState<'quick' | 'template' | 'advanced'>('quick')
   const isEditMode = !!selectedRule
 
+  // Show loading spinner if categories are not loaded yet
+  if (isLoading || categories.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+      </div>
+    )
+  }
+
   // Initialize form for editing
   useEffect(() => {
-    if (selectedRule && isEditMode) {
-      // Ensure conditions is always an object
-      const conditions = selectedRule.conditions || {}
-      
-      setFormData({
-        name: selectedRule.name,
-        description: selectedRule.description,
-        category_id: selectedRule.category_id,
-        rule_type: selectedRule.rule_type,
-        conditions: conditions,
-        parameters: selectedRule.parameters || {},
-        priority: selectedRule.priority,
-        is_active: selectedRule.is_active
+    try {
+      if (selectedRule && isEditMode) {
+        console.log('Initializing form for editing rule:', selectedRule)
+        
+        // Ensure conditions is always an object
+        const conditions = selectedRule.conditions || {}
+        const parameters = selectedRule.parameters || {}
+        
+        // Validate required fields
+        if (!selectedRule.name || !selectedRule.rule_type || !selectedRule.category_id) {
+          console.error('Selected rule is missing required fields:', selectedRule)
+          throw new Error('Invalid rule data: missing required fields')
+        }
+        
+        setFormData({
+          name: selectedRule.name,
+          description: selectedRule.description || '',
+          category_id: selectedRule.category_id,
+          rule_type: selectedRule.rule_type,
+          conditions: conditions,
+          parameters: parameters,
+          priority: selectedRule.priority || 'MEDIUM',
+          is_active: selectedRule.is_active ?? true
+        })
+        
+        console.log('Form data set successfully for edit mode')
+      } else if (!isEditMode) {
+        resetForm()
+      }
+    } catch (error) {
+      console.error('Error initializing form for editing:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load rule for editing. Please try again.'
       })
-    } else {
-      resetForm()
+      // Reset to overview on error
+      setCurrentSubView('overview')
+      setSelectedRule(null)
     }
-  }, [selectedRule, isEditMode, setFormData, resetForm])
+  }, [selectedRule, isEditMode, setFormData, resetForm, setCurrentSubView, setSelectedRule])
 
   const steps = [
     { id: 'basic', label: 'Basic Info', icon: Info },
@@ -241,74 +275,103 @@ export function RuleCreator() {
 
   // If editing, show advanced mode
   if (isEditMode) {
-    const isDefaultRule = selectedRule?.is_default
+    if (!selectedRule) {
+      console.error('Edit mode is true but selectedRule is null')
+      return (
+        <div className="p-4 text-center">
+          <p className="text-red-600">Error: No rule selected for editing</p>
+          <Button onClick={() => setCurrentSubView('overview')} className="mt-2">
+            Back to Overview
+          </Button>
+        </div>
+      )
+    }
+
+    const isDefaultRule = selectedRule.is_default
     
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-2xl font-bold">{isDefaultRule ? 'View/Edit' : 'Edit'} Rule: {selectedRule?.name}</h2>
-                {isDefaultRule && (
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500" />
-                    <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
-                      System Rule
-                    </Badge>
-                  </div>
-                )}
+    try {
+      return (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="text-2xl font-bold">{isDefaultRule ? 'View/Edit' : 'Edit'} Rule: {selectedRule.name || 'Unnamed Rule'}</h2>
+                  {isDefaultRule && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
+                        System Rule
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+                <p className="text-muted-foreground">
+                  {isDefaultRule 
+                    ? 'System default rule - some fields may be protected' 
+                    : 'Modify your custom warehouse rule'
+                  }
+                </p>
               </div>
-              <p className="text-muted-foreground">
-                {isDefaultRule 
-                  ? 'System default rule - some fields may be protected' 
-                  : 'Modify your custom warehouse rule'
-                }
-              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleCancel}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+              <Button onClick={handleSubmit} disabled={isSubmitting}>
+                <Save className="w-4 h-4 mr-2" />
+                {isSubmitting ? 'Saving...' : (isDefaultRule ? 'Update Settings' : 'Update Rule')}
+              </Button>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleCancel}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
-              <Save className="w-4 h-4 mr-2" />
-              {isSubmitting ? 'Saving...' : (isDefaultRule ? 'Update Settings' : 'Update Rule')}
-            </Button>
-          </div>
+
+          {/* Warning for default rules */}
+          {isDefaultRule && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <Info className="h-4 w-4 text-blue-600" />
+              <AlertDescription>
+                <strong>System Default Rule:</strong> This is a protected system rule. You can modify its priority, activation status, and some parameters, but core conditions cannot be changed. Consider duplicating this rule to create a fully customizable version.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Advanced form for editing */}
+          <SimpleErrorBoundary message="Failed to load rule editing form">
+            <AdvancedRuleCreator 
+              formData={formData}
+              validationErrors={validationErrors}
+              categories={categories}
+              onFormChange={setFormData}
+              onSubmit={handleSubmit}
+              onCancel={handleCancel}
+              onValidate={handleValidate}
+              onPreview={handlePreview}
+              isSubmitting={isSubmitting}
+              isValidating={isValidating}
+              validationResult={validationResult}
+              previewResult={previewResult}
+              isEditMode={isEditMode}
+              isDefaultRule={isDefaultRule}
+            />
+          </SimpleErrorBoundary>
         </div>
-
-        {/* Warning for default rules */}
-        {isDefaultRule && (
-          <Alert className="border-blue-200 bg-blue-50">
-            <Info className="h-4 w-4 text-blue-600" />
-            <AlertDescription>
-              <strong>System Default Rule:</strong> This is a protected system rule. You can modify its priority, activation status, and some parameters, but core conditions cannot be changed. Consider duplicating this rule to create a fully customizable version.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Advanced form for editing */}
-        <AdvancedRuleCreator 
-          formData={formData}
-          validationErrors={validationErrors}
-          categories={categories}
-          onFormChange={setFormData}
-          onSubmit={handleSubmit}
-          onCancel={handleCancel}
-          onValidate={handleValidate}
-          onPreview={handlePreview}
-          isSubmitting={isSubmitting}
-          isValidating={isValidating}
-          validationResult={validationResult}
-          previewResult={previewResult}
-          isEditMode={isEditMode}
-          isDefaultRule={isDefaultRule}
-        />
-      </div>
-    )
+      )
+    } catch (error) {
+      console.error('Error rendering edit mode:', error)
+      return (
+        <div className="p-4 text-center">
+          <p className="text-red-600">Error rendering edit form. Please try again.</p>
+          <Button onClick={() => {
+            setCurrentSubView('overview')
+            setSelectedRule(null)
+          }} className="mt-2">
+            Back to Overview
+          </Button>
+        </div>
+      )
+    }
   }
 
   return (

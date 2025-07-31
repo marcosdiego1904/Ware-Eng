@@ -30,17 +30,28 @@ export function RuleEditTest() {
       }
 
       console.log('Testing edit of custom rule:', customRule)
+      console.log('Rule conditions:', customRule.conditions)
+      console.log('Rule parameters:', customRule.parameters)
+
+      // Validate rule data structure
+      const requiredFields = ['name', 'rule_type', 'category_id']
+      const missingFields = requiredFields.filter(field => !customRule[field as keyof typeof customRule])
+      
+      if (missingFields.length > 0) {
+        setError(`Rule is missing required fields: ${missingFields.join(', ')}`)
+        return
+      }
 
       // Try to update the rule with minimal changes
       const updateData = {
         name: customRule.name,
-        description: customRule.description,
+        description: customRule.description || '',
         category_id: customRule.category_id,
         rule_type: customRule.rule_type,
         conditions: customRule.conditions || {},
         parameters: customRule.parameters || {},
-        priority: customRule.priority,
-        is_active: customRule.is_active
+        priority: customRule.priority || 'MEDIUM',
+        is_active: customRule.is_active ?? true
       }
 
       console.log('Update data:', updateData)
@@ -50,6 +61,36 @@ export function RuleEditTest() {
     } catch (err) {
       console.error('Test edit failed:', err)
       setError(`Test edit failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  const testUIEdit = () => {
+    setError(null)
+    setSuccess(null)
+    
+    try {
+      const customRule = rules.find(rule => !rule.is_default)
+      
+      if (!customRule) {
+        setError('No custom rules found to test with')
+        return
+      }
+
+      console.log('Testing UI edit simulation for rule:', customRule)
+      
+      // Simulate what happens when clicking edit
+      const { setSelectedRule, setCurrentSubView } = useRulesStore.getState()
+      
+      console.log('Setting selected rule...')
+      setSelectedRule(customRule)
+      
+      console.log('Setting current sub view to create...')
+      setCurrentSubView('create')
+      
+      setSuccess('UI edit simulation completed - check the Create Rule tab')
+    } catch (err) {
+      console.error('UI edit simulation failed:', err)
+      setError(`UI edit simulation failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -100,12 +141,15 @@ export function RuleEditTest() {
           Found {rules.length} rules ({rules.filter(r => !r.is_default).length} custom, {rules.filter(r => r.is_default).length} default)
         </div>
         
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap">
           <Button onClick={testEditCustomRule} variant="outline">
-            Test Edit Custom Rule
+            Test Edit Custom Rule (API)
           </Button>
           <Button onClick={testEditDefaultRule} variant="outline">
-            Test Edit Default Rule
+            Test Edit Default Rule (API)
+          </Button>
+          <Button onClick={testUIEdit} variant="secondary">
+            Test UI Edit Flow
           </Button>
         </div>
 
