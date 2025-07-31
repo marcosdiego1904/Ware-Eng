@@ -289,6 +289,31 @@ function RulesFiltersAndActions({
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
+        
+        {/* New Rule Type Filter */}
+        <Select 
+          value={filters.rule_type || 'all'} 
+          onValueChange={(value) => onFiltersChange({ rule_type: value === 'all' ? undefined : value })}
+        >
+          <SelectTrigger className="w-36">
+            <SelectValue placeholder="Rule Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="system" className="text-blue-700">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                System Rules
+              </div>
+            </SelectItem>
+            <SelectItem value="custom" className="text-green-700">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                Custom Rules
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Action Buttons */}
@@ -301,9 +326,9 @@ function RulesFiltersAndActions({
           <Download className="w-4 h-4 mr-2" />
           Export
         </Button>
-        <Button onClick={onCreateRule} size="sm">
+        <Button onClick={onCreateRule} size="sm" className="bg-green-600 hover:bg-green-700">
           <Plus className="w-4 h-4 mr-2" />
-          Create Rule
+          Create Custom Rule
         </Button>
       </div>
     </div>
@@ -370,13 +395,34 @@ function RuleCard({
   onSelect: (rule: Rule) => void
 }) {
   const priorityConfig = PRIORITY_LEVELS[rule.priority]
+  const isDefaultRule = rule.is_default
 
   return (
-    <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-      <CardHeader className="pb-3">
+    <Card className={`hover:shadow-md transition-all cursor-pointer group relative overflow-hidden ${
+      isDefaultRule 
+        ? 'border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent' 
+        : 'border-l-4 border-l-green-500 bg-gradient-to-r from-green-50/50 to-transparent'
+    }`}>
+      {/* Rule type indicator ribbon */}
+      <div className={`absolute top-0 right-0 px-3 py-1 text-xs font-medium ${
+        isDefaultRule 
+          ? 'bg-blue-100 text-blue-800' 
+          : 'bg-green-100 text-green-800'
+      } rounded-bl-md`}>
+        {isDefaultRule ? 'System' : 'Custom'}
+      </div>
+      
+      <CardHeader className="pb-3 pt-6">
         <div className="flex items-start justify-between">
           <div className="space-y-2 flex-1" onClick={() => onSelect(rule)}>
-            <CardTitle className="text-base leading-tight">{rule.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className={`text-base leading-tight ${
+                isDefaultRule ? 'text-blue-900' : 'text-green-900'
+              }`}>{rule.name}</CardTitle>
+              {isDefaultRule && (
+                <div className="w-2 h-2 rounded-full bg-blue-500" title="System Default Rule" />
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <Badge variant={rule.is_active ? "default" : "secondary"}>
                 {rule.is_active ? "Active" : "Inactive"}
@@ -384,8 +430,10 @@ function RuleCard({
               <Badge variant={priorityConfig.color as 'default' | 'secondary' | 'destructive' | 'outline'}>
                 {priorityConfig.label}
               </Badge>
-              {rule.is_default && (
-                <Badge variant="outline">Default</Badge>
+              {isDefaultRule && (
+                <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
+                  Protected
+                </Badge>
               )}
             </div>
           </div>
@@ -403,7 +451,7 @@ function RuleCard({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onAction('edit', rule)}>
                 <Edit className="w-4 h-4 mr-2" />
-                Edit
+                {isDefaultRule ? 'View/Edit' : 'Edit'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onAction('duplicate', rule)}>
                 <Copy className="w-4 h-4 mr-2" />
@@ -425,11 +473,12 @@ function RuleCard({
               <DropdownMenuSeparator />
               <DropdownMenuItem 
                 onClick={() => onAction('delete', rule)}
-                className="text-destructive"
-                disabled={rule.is_default}
+                className={isDefaultRule ? 'text-muted-foreground' : 'text-destructive'}
+                disabled={isDefaultRule}
+                title={isDefaultRule ? 'System default rules cannot be deleted' : undefined}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                Delete
+                {isDefaultRule ? 'Cannot Delete' : 'Delete'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -444,8 +493,10 @@ function RuleCard({
           <span className="text-muted-foreground">
             {rule.rule_type.replace(/_/g, ' ')}
           </span>
-          <span className="text-muted-foreground">
-            By {rule.creator_username}
+          <span className={`text-sm ${
+            isDefaultRule ? 'text-blue-600 font-medium' : 'text-green-600 font-medium'
+          }`}>
+            {isDefaultRule ? 'System Rule' : `By ${rule.creator_username}`}
           </span>
         </div>
       </CardContent>

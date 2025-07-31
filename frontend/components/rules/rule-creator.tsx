@@ -235,13 +235,32 @@ export function RuleCreator() {
 
   // If editing, show advanced mode
   if (isEditMode) {
+    const isDefaultRule = selectedRule?.is_default
+    
     return (
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold">Edit Rule: {selectedRule?.name}</h2>
-            <p className="text-muted-foreground">Modify your existing warehouse rule</p>
+          <div className="flex items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-2xl font-bold">{isDefaultRule ? 'View/Edit' : 'Edit'} Rule: {selectedRule?.name}</h2>
+                {isDefaultRule && (
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                    <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
+                      System Rule
+                    </Badge>
+                  </div>
+                )}
+              </div>
+              <p className="text-muted-foreground">
+                {isDefaultRule 
+                  ? 'System default rule - some fields may be protected' 
+                  : 'Modify your custom warehouse rule'
+                }
+              </p>
+            </div>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={handleCancel}>
@@ -250,10 +269,20 @@ export function RuleCreator() {
             </Button>
             <Button onClick={handleSubmit} disabled={isSubmitting}>
               <Save className="w-4 h-4 mr-2" />
-              {isSubmitting ? 'Saving...' : 'Update Rule'}
+              {isSubmitting ? 'Saving...' : (isDefaultRule ? 'Update Settings' : 'Update Rule')}
             </Button>
           </div>
         </div>
+
+        {/* Warning for default rules */}
+        {isDefaultRule && (
+          <Alert className="border-blue-200 bg-blue-50">
+            <Info className="h-4 w-4 text-blue-600" />
+            <AlertDescription>
+              <strong>System Default Rule:</strong> This is a protected system rule. You can modify its priority, activation status, and some parameters, but core conditions cannot be changed. Consider duplicating this rule to create a fully customizable version.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Advanced form for editing */}
         <AdvancedRuleCreator 
@@ -269,6 +298,8 @@ export function RuleCreator() {
           isValidating={isValidating}
           validationResult={validationResult}
           previewResult={previewResult}
+          isEditMode={isEditMode}
+          isDefaultRule={isDefaultRule}
         />
       </div>
     )
@@ -372,6 +403,8 @@ export function RuleCreator() {
                 isValidating={isValidating}
                 validationResult={validationResult}
                 previewResult={previewResult}
+                isEditMode={false}
+                isDefaultRule={false}
               />
             </TabsContent>
           </div>
@@ -394,7 +427,9 @@ function AdvancedRuleCreator({
   isSubmitting,
   isValidating,
   validationResult,
-  previewResult
+  previewResult,
+  isEditMode = false,
+  isDefaultRule = false
 }: {
   formData: Partial<RuleFormData>
   validationErrors: Record<string, string>
@@ -408,6 +443,8 @@ function AdvancedRuleCreator({
   isValidating: boolean
   validationResult: { success: boolean; error?: string } | null
   previewResult: any
+  isEditMode?: boolean
+  isDefaultRule?: boolean
 }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -428,7 +465,11 @@ function AdvancedRuleCreator({
                   value={formData.name || ''}
                   onChange={(e) => onFormChange({ name: e.target.value })}
                   className={validationErrors.name ? 'border-red-500' : ''}
+                  disabled={isDefaultRule}
                 />
+                {isDefaultRule && (
+                  <p className="text-xs text-blue-600">System rule names cannot be modified</p>
+                )}
                 {validationErrors.name && (
                   <p className="text-sm text-red-500">{validationErrors.name}</p>
                 )}
@@ -465,7 +506,11 @@ function AdvancedRuleCreator({
                 onChange={(e) => onFormChange({ description: e.target.value })}
                 className={validationErrors.description ? 'border-red-500' : ''}
                 rows={3}
+                disabled={isDefaultRule}
               />
+              {isDefaultRule && (
+                <p className="text-xs text-blue-600">System rule descriptions cannot be modified</p>
+              )}
               {validationErrors.description && (
                 <p className="text-sm text-red-500">{validationErrors.description}</p>
               )}
@@ -477,6 +522,7 @@ function AdvancedRuleCreator({
                 <Select 
                   value={formData.category_id?.toString()} 
                   onValueChange={(value) => onFormChange({ category_id: parseInt(value) })}
+                  disabled={isDefaultRule}
                 >
                   <SelectTrigger className={validationErrors.category_id ? 'border-red-500' : ''}>
                     <SelectValue placeholder="Select category" />
@@ -489,6 +535,9 @@ function AdvancedRuleCreator({
                     ))}
                   </SelectContent>
                 </Select>
+                {isDefaultRule && (
+                  <p className="text-xs text-blue-600">System rule category cannot be changed</p>
+                )}
                 {validationErrors.category_id && (
                   <p className="text-sm text-red-500">{validationErrors.category_id}</p>
                 )}
@@ -499,6 +548,7 @@ function AdvancedRuleCreator({
                 <Select 
                   value={formData.rule_type} 
                   onValueChange={(value) => onFormChange({ rule_type: value })}
+                  disabled={isDefaultRule}
                 >
                   <SelectTrigger className={validationErrors.rule_type ? 'border-red-500' : ''}>
                     <SelectValue placeholder="Select rule type" />
@@ -514,6 +564,9 @@ function AdvancedRuleCreator({
                     ))}
                   </SelectContent>
                 </Select>
+                {isDefaultRule && (
+                  <p className="text-xs text-blue-600">System rule type cannot be changed</p>
+                )}
                 {validationErrors.rule_type && (
                   <p className="text-sm text-red-500">{validationErrors.rule_type}</p>
                 )}
@@ -523,14 +576,38 @@ function AdvancedRuleCreator({
         </Card>
 
         {/* Visual Rule Builder */}
-        <VisualRuleBuilder
-          initialConditions={formData.conditions}
-          ruleType={formData.rule_type}
-          onConditionsChange={(conditions) => onFormChange({ conditions })}
-          onValidate={onValidate}
-          isValidating={isValidating}
-          validationResult={validationResult}
-        />
+        {isDefaultRule ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                Rule Conditions (Read-Only)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Alert className="border-blue-200 bg-blue-50 mb-4">
+                <Info className="h-4 w-4 text-blue-600" />
+                <AlertDescription>
+                  System rule conditions are protected and cannot be modified. The logic is maintained by the system to ensure consistency.
+                </AlertDescription>
+              </Alert>
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <pre className="text-sm text-gray-700 overflow-auto">
+                  {JSON.stringify(formData.conditions, null, 2)}
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <VisualRuleBuilder
+            initialConditions={formData.conditions}
+            ruleType={formData.rule_type}
+            onConditionsChange={(conditions) => onFormChange({ conditions })}
+            onValidate={onValidate}
+            isValidating={isValidating}
+            validationResult={validationResult}
+          />
+        )}
 
         {/* Preview Results */}
         {previewResult && (
@@ -577,15 +654,52 @@ function AdvancedRuleCreator({
 
       {/* Sidebar */}
       <div className="space-y-4">
-        <RuleInfoSidebar formData={formData} />
-        <SmartHelpSuggestions 
-          ruleType={formData.rule_type}
-          currentFields={formData.conditions}
-        />
-        <ContextHelp 
-          context="rule_type"
-          ruleType={formData.rule_type}
-        />
+        <RuleInfoSidebar formData={formData} isDefaultRule={isDefaultRule} />
+        {!isDefaultRule && (
+          <>
+            <SmartHelpSuggestions 
+              ruleType={formData.rule_type}
+              currentFields={formData.conditions}
+            />
+            <ContextHelp 
+              context="rule_type"
+              ruleType={formData.rule_type}
+            />
+          </>
+        )}
+        {isDefaultRule && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Info className="w-4 h-4 text-blue-600" />
+                Default Rule Options
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                As a system default rule, you can only modify:
+              </p>
+              <ul className="text-sm space-y-1 ml-4">
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-3 h-3 text-green-600" />
+                  Priority level
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-3 h-3 text-green-600" />
+                  Active/Inactive status
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="w-3 h-3 text-green-600" />
+                  Some parameters
+                </li>
+              </ul>
+              <Separator />
+              <p className="text-xs text-blue-600">
+                Want full control? Duplicate this rule to create a custom version.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )
@@ -593,16 +707,23 @@ function AdvancedRuleCreator({
 
 
 // Sidebar Components
-function RuleInfoSidebar({ formData }: { formData: Partial<RuleFormData> }) {
+function RuleInfoSidebar({ formData, isDefaultRule = false }: { formData: Partial<RuleFormData>; isDefaultRule?: boolean }) {
   return (
-    <Card>
+    <Card className={isDefaultRule ? 'border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent' : ''}>
       <CardHeader>
-        <CardTitle className="text-base">Rule Summary</CardTitle>
+        <CardTitle className="text-base flex items-center gap-2">
+          Rule Summary
+          {isDefaultRule && (
+            <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 text-xs">
+              System
+            </Badge>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
           <Label className="text-sm font-medium">Name</Label>
-          <p className="text-sm text-muted-foreground">
+          <p className={`text-sm ${isDefaultRule ? 'text-blue-700 font-medium' : 'text-muted-foreground'}`}>
             {formData.name || 'Untitled Rule'}
           </p>
         </div>
@@ -624,7 +745,7 @@ function RuleInfoSidebar({ formData }: { formData: Partial<RuleFormData> }) {
         
         <div>
           <Label className="text-sm font-medium">Type</Label>
-          <p className="text-sm text-muted-foreground">
+          <p className={`text-sm ${isDefaultRule ? 'text-blue-700' : 'text-muted-foreground'}`}>
             {formData.rule_type ? 
               RULE_TYPES[formData.rule_type]?.label || formData.rule_type :
               'Not selected'
@@ -638,6 +759,16 @@ function RuleInfoSidebar({ formData }: { formData: Partial<RuleFormData> }) {
             {formData.is_active ? 'Active' : 'Inactive'}
           </Badge>
         </div>
+        
+        {isDefaultRule && (
+          <>
+            <Separator />
+            <div className="flex items-center gap-2 text-xs text-blue-600">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <span>Protected System Rule</span>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )

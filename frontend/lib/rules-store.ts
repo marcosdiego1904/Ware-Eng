@@ -244,9 +244,13 @@ export const useRulesStore = create<RulesState>()(
           filtered = filtered.filter(rule => rule.priority === filters.priority);
         }
         
-        // Apply rule type filter
+        // Apply rule type filter (system vs custom)
         if (filters.rule_type) {
-          filtered = filtered.filter(rule => rule.rule_type === filters.rule_type);
+          if (filters.rule_type === 'system') {
+            filtered = filtered.filter(rule => rule.is_default);
+          } else if (filters.rule_type === 'custom') {
+            filtered = filtered.filter(rule => !rule.is_default);
+          }
         }
         
         // Apply search query
