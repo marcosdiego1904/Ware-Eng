@@ -81,6 +81,7 @@ export interface RulesResponse {
 export interface RuleResponse {
   success: boolean;
   rule: Rule;
+  message?: string;
 }
 
 export interface CategoriesResponse {
