@@ -83,7 +83,7 @@ export function RulesOverview() {
       {/* Rules by Category */}
       <div className="space-y-6">
         {Object.entries(RULE_CATEGORIES).map(([categoryKey, categoryInfo]) => {
-          const categoryRules = rulesByCategory[categoryInfo.display_name] || []
+          const categoryRules = rulesByCategory[categoryInfo.name] || []
           
           if (categoryRules.length === 0) return null
 
