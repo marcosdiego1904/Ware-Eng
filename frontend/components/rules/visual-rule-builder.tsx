@@ -235,28 +235,43 @@ export function VisualRuleBuilder({
     
     Object.entries(obj).forEach(([key, value]) => {
       if (key === 'rule_type') {
-        // Skip rule_type field as it's not a condition
         return
       }
       
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         // Handle complex conditions like { ">=": 6 }
         Object.entries(value).forEach(([operator, operatorValue]) => {
+          let finalValue = operatorValue;
+          if (key === 'completion_threshold' && typeof operatorValue === 'number') {
+            finalValue = operatorValue * 100;
+          }
           parsed.push({
             id: `condition-${Date.now()}-${conditionIndex++}`,
             field: key,
             operator: convertOperatorFromJson(operator),
-            value: operatorValue as string | number | string[],
+            value: finalValue as string | number | string[],
             connector: parsed.length > 0 ? 'AND' : undefined
           })
         })
       } else {
         // Handle simple conditions like "field": "value"
+        let operator = 'equals';
+        let finalValue = value;
+
+        if (key === 'completion_threshold' && typeof value === 'number') {
+          operator = 'greater_than';
+          finalValue = value * 100;
+        } else if (key.startsWith('time_threshold') && typeof value === 'number') {
+          operator = 'greater_than';
+        } else if (Array.isArray(value)) {
+          operator = 'includes';
+        }
+
         parsed.push({
           id: `condition-${Date.now()}-${conditionIndex++}`,
           field: key,
-          operator: 'equals',
-          value: value,
+          operator: operator,
+          value: finalValue,
           connector: parsed.length > 0 ? 'AND' : undefined
         })
       }
