@@ -696,24 +696,25 @@ export const useRulesStore = create<RulesState>()(
 // ==================== SELECTORS ====================
 
 // Selector hooks for computed values
-export const useFilteredRules = () => useRulesStore((state) => state.filteredRules);
-export const useActiveRules = () => useRulesStore((state) => state.rules.filter(r => r.is_active));
+export const useFilteredRules = () => useRulesStore((state) => state.filteredRules || []);
+export const useActiveRules = () => useRulesStore((state) => (state.rules || []).filter(r => r.is_active));
 export const useRulesByCategory = () => useRulesStore((state) => {
-  const rules = state.filteredRules;
+  const rules = state.filteredRules || [];
   const grouped: Record<string, Rule[]> = {};
   
   rules.forEach(rule => {
-    if (!grouped[rule.category_name]) {
-      grouped[rule.category_name] = [];
+    const categoryName = rule.category_name || 'Uncategorized';
+    if (!grouped[categoryName]) {
+      grouped[categoryName] = [];
     }
-    grouped[rule.category_name].push(rule);
+    grouped[categoryName].push(rule);
   });
   
   return grouped;
 });
 
 export const useRulesStats = () => useRulesStore((state) => {
-  const { rules } = state;
+  const rules = state.rules || [];
   return {
     total: rules.length,
     active: rules.filter(r => r.is_active).length,

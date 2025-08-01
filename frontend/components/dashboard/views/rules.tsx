@@ -9,6 +9,7 @@ import { RuleCreator } from '@/components/rules/rule-creator'
 import { RuleTemplates } from '@/components/rules/rule-templates'
 import { RuleAnalytics } from '@/components/rules/rule-analytics'
 import { LoadingSpinner } from '@/components/ui/loading'
+import { SimpleErrorBoundary } from '@/components/ui/error-boundary'
 
 export function RulesView() {
   const { setCurrentSubView, loadRules, loadCategories, isLoading } = useRulesStore()
@@ -71,19 +72,27 @@ export function RulesView() {
 
         {/* Tab Contents */}
         <TabsContent value="overview" className="mt-6">
-          <RulesOverview />
+          <SimpleErrorBoundary message="Failed to load rules overview">
+            <RulesOverview />
+          </SimpleErrorBoundary>
         </TabsContent>
 
         <TabsContent value="create" className="mt-6">
-          <RuleCreator />
+          <SimpleErrorBoundary message="Failed to load rule creator">
+            <RuleCreator />
+          </SimpleErrorBoundary>
         </TabsContent>
 
         <TabsContent value="templates" className="mt-6">
-          <RuleTemplates />
+          <SimpleErrorBoundary message="Failed to load rule templates">
+            <RuleTemplates />
+          </SimpleErrorBoundary>
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-6">
-          <RuleAnalytics />
+          <SimpleErrorBoundary message="Failed to load rule analytics">
+            <RuleAnalytics />
+          </SimpleErrorBoundary>
         </TabsContent>
       </Tabs>
     </div>
