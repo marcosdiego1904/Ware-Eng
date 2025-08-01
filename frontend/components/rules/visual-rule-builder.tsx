@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -140,6 +140,9 @@ export function VisualRuleBuilder({
 }: VisualRuleBuilderProps) {
   const [conditions, setConditions] = useState<RuleCondition[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
+  
+  // Add ref to track previous conditions to prevent infinite loops
+  const prevConditionsRef = useRef<Record<string, any>>({})
 
   const addDefaultCondition = () => {
     let defaultCondition: RuleCondition
@@ -219,8 +222,12 @@ export function VisualRuleBuilder({
   // Convert visual conditions to JSON format
   useEffect(() => {
     const jsonConditions = convertToJsonConditions(conditions)
-    onConditionsChange(jsonConditions)
-  }, [conditions])
+    // Prevent infinite loops by only calling onConditionsChange if conditions actually changed
+    if (JSON.stringify(jsonConditions) !== JSON.stringify(prevConditionsRef.current)) {
+      onConditionsChange(jsonConditions)
+      prevConditionsRef.current = jsonConditions
+    }
+  }, [conditions, onConditionsChange])
 
   const parseConditionsFromObject = (obj: Record<string, any>): RuleCondition[] => {
     const parsed: RuleCondition[] = []

@@ -28,7 +28,8 @@
       "Bash(npm run build:*)",
       "Bash(pkill:*)",
       "Bash(true)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "WebFetch(domain:react.dev)"
     ],
     "deny": []
   }
