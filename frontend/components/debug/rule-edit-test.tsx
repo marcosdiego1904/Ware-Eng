@@ -8,7 +8,7 @@ import { useRulesStore } from '@/lib/rules-store'
 export function RuleEditTest() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const { rules, loadRules, updateRule } = useRulesStore()
+  const { rules, loadRules, updateRule, setSelectedRule, setCurrentSubView } = useRulesStore()
 
   useEffect(() => {
     loadRules().catch(err => {
@@ -79,8 +79,6 @@ export function RuleEditTest() {
       console.log('Testing UI edit simulation for rule:', customRule)
       
       // Simulate what happens when clicking edit
-      const { setSelectedRule, setCurrentSubView } = useRulesStore.getState()
-      
       console.log('Setting selected rule...')
       setSelectedRule(customRule)
       

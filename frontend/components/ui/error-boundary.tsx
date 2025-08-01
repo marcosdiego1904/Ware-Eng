@@ -159,13 +159,33 @@ export function SimpleErrorBoundary({
 }) {
   return (
     <ErrorBoundary
-      fallback={({ resetError }) => (
+      onError={(error, errorInfo) => {
+        console.error('SimpleErrorBoundary caught error:', error);
+        console.error('Error info:', errorInfo);
+        console.error('Component stack:', errorInfo.componentStack);
+      }}
+      fallback={({ error, resetError }) => (
         <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
           <div className="flex items-center gap-2 text-red-800 mb-2">
             <AlertTriangle className="w-4 h-4" />
             <span className="text-sm font-medium">Error</span>
           </div>
           <p className="text-sm text-red-700 mb-3">{message}</p>
+          
+          {process.env.NODE_ENV === 'development' && (
+            <details className="mb-3">
+              <summary className="cursor-pointer text-xs text-red-600 hover:text-red-800">
+                Technical Details (Development Only)
+              </summary>
+              <div className="mt-2 p-2 bg-red-100 rounded text-xs font-mono text-red-800 overflow-auto max-h-32">
+                <div><strong>Error:</strong> {error.message}</div>
+                {error.stack && (
+                  <pre className="mt-1 whitespace-pre-wrap text-xs">{error.stack}</pre>
+                )}
+              </div>
+            </details>
+          )}
+          
           <Button 
             size="sm" 
             variant="outline"
