@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EnhancedVisualBuilder } from '@/components/rules/enhanced-visual-builder'
+import { EnhancedSmartBuilder } from '@/components/rules/enhanced-smart-builder'
 import { VisualRuleBuilder } from '@/components/rules/visual-rule-builder'
 import { 
   ArrowRight, 
@@ -19,7 +20,7 @@ import {
 } from 'lucide-react'
 
 export default function DemoEnhancedBuilderPage() {
-  const [currentView, setCurrentView] = useState<'comparison' | 'enhanced' | 'original'>('comparison')
+  const [currentView, setCurrentView] = useState<'comparison' | 'enhanced' | 'smart' | 'original'>('comparison')
   const [createdRule, setCreatedRule] = useState<any>(null)
 
   const handleRuleCreate = (ruleData: any) => {
@@ -58,7 +59,7 @@ export default function DemoEnhancedBuilderPage() {
         </Alert>
 
         {/* Comparison Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Current Builder */}
           <Card className="border-2 border-orange-200">
             <CardHeader className="bg-orange-50">
@@ -111,40 +112,77 @@ export default function DemoEnhancedBuilderPage() {
                   <Sparkles className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-xl">Enhanced Builder</CardTitle>
-                  <p className="text-muted-foreground">Human-centered, problem-focused</p>
-                  <Badge variant="outline" className="mt-1 border-green-300 text-green-700 bg-green-50">
-                    New Approach
+                  <CardTitle className="text-lg">Enhanced Visual Builder</CardTitle>
+                  <p className="text-muted-foreground text-sm">Problem-focused approach</p>
+                  <Badge variant="outline" className="mt-1 border-green-300 text-green-700 bg-green-50 text-xs">
+                    Level 1
                   </Badge>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4 pt-6">
-              <div className="space-y-3">
-                <h4 className="font-medium">Enhanced Approach:</h4>
-                <ul className="space-y-2 text-sm text-muted-foreground">
+            <CardContent className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">Enhanced Approach:</h4>
+                <ul className="space-y-1 text-xs text-muted-foreground">
                   <li>• Start with real warehouse problems</li>
                   <li>• Visual scenarios with examples</li>
                   <li>• Natural language configuration</li>
                   <li>• Business impact context</li>
-                  <li>• Progressive confidence building</li>
                 </ul>
-              </div>
-              
-              <div className="space-y-3">
-                <h4 className="font-medium">User Experience:</h4>
-                <div className="bg-green-50 p-3 rounded-lg text-sm">
-                  <p>"This will catch pallets sitting since yesterday morning"</p>
-                  <p className="text-muted-foreground mt-1">- Clear, understandable language</p>
-                </div>
               </div>
 
               <Button 
                 onClick={() => setCurrentView('enhanced')}
-                className="w-full bg-green-600 hover:bg-green-700"
+                variant="outline"
+                className="w-full"
               >
                 <Sparkles className="w-4 h-4 mr-2" />
                 Try Enhanced Builder
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Smart Builder */}
+          <Card className="border-2 border-blue-200 shadow-xl ring-2 ring-blue-100">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-gradient-to-r from-blue-100 to-purple-100">
+                  <Sparkles className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Smart AI Builder</CardTitle>
+                  <p className="text-muted-foreground text-sm">AI-powered suggestions</p>
+                  <Badge variant="outline" className="mt-1 border-blue-300 text-blue-700 bg-blue-50 text-xs">
+                    Level 2 - NEW! ✨
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">Smart Features:</h4>
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  <li>• AI-powered smart suggestions</li>
+                  <li>• Context-aware recommendations</li>
+                  <li>• Intelligent parameter tuning</li>
+                  <li>• Performance predictions</li>
+                  <li>• Advanced visual conditions</li>
+                </ul>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-lg text-xs">
+                  <p className="font-medium">"AI suggests: 4-hour limit for your warehouse size"</p>
+                  <p className="text-muted-foreground">- Intelligent recommendations</p>
+                </div>
+              </div>
+
+              <Button 
+                onClick={() => setCurrentView('smart')}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Try Smart Builder
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </CardContent>
@@ -233,6 +271,21 @@ export default function DemoEnhancedBuilderPage() {
     </div>
   )
 
+  const renderSmartBuilder = () => (
+    <div>
+      <div className="fixed top-4 left-4 z-50">
+        <Button variant="outline" onClick={() => setCurrentView('comparison')}>
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Comparison
+        </Button>
+      </div>
+      <EnhancedSmartBuilder 
+        onRuleCreate={handleRuleCreate}
+        onCancel={() => setCurrentView('comparison')}
+      />
+    </div>
+  )
+
   const renderOriginalBuilder = () => (
     <div className="min-h-screen bg-white p-6">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -271,6 +324,7 @@ export default function DemoEnhancedBuilderPage() {
     <div>
       {currentView === 'comparison' && renderComparison()}
       {currentView === 'enhanced' && renderEnhancedBuilder()}
+      {currentView === 'smart' && renderSmartBuilder()}
       {currentView === 'original' && renderOriginalBuilder()}
     </div>
   )
