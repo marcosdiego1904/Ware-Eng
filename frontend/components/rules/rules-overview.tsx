@@ -45,6 +45,7 @@ import {
 import { PRIORITY_LEVELS, RULE_CATEGORIES } from '@/lib/rules-types'
 import type { Rule, RuleFilters } from '@/lib/rules-types'
 import { toast } from '@/lib/hooks/use-toast'
+import { SimpleErrorBoundary } from '@/components/ui/error-boundary'
 
 export function RulesOverview() {
   const {
@@ -113,8 +114,10 @@ export function RulesOverview() {
     </div>
   )
 
-  async function handleRuleAction(action: string, rule: Rule) {
+  const handleRuleAction = React.useCallback(async (action: string, rule: Rule) => {
     try {
+      console.log('Rule action triggered:', action, 'for rule:', rule.id)
+      
       switch (action) {
         case 'toggle':
           await toggleRuleActivation(rule.id, !rule.is_active)
@@ -143,18 +146,21 @@ export function RulesOverview() {
           break
           
         case 'edit':
+          console.log('Setting selected rule:', rule)
           setSelectedRule(rule)
+          console.log('Changing sub view to create')
           setCurrentSubView('create') // Will be edit mode
           break
       }
-    } catch {
+    } catch (error) {
+      console.error('Rule action error:', error)
       toast({
         variant: 'destructive',
         title: 'Error',
         description: `Failed to ${action} rule`
       })
     }
-  }
+  }, [toggleRuleActivation, duplicateRule, deleteRule, setSelectedRule, setCurrentSubView])
 }
 
 // Stats Cards Component
@@ -371,12 +377,13 @@ function CategorySection({
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {rules.map((rule) => (
-            <RuleCard
-              key={rule.id}
-              rule={rule}
-              onAction={onRuleAction}
-              onSelect={onRuleSelect}
-            />
+            <SimpleErrorBoundary key={rule.id} message={`Failed to load rule: ${rule.name}`}>
+              <RuleCard
+                rule={rule}
+                onAction={onRuleAction}
+                onSelect={onRuleSelect}
+              />
+            </SimpleErrorBoundary>
           ))}
         </div>
       </CardContent>
@@ -438,50 +445,90 @@ function RuleCard({
             </div>
           </div>
           
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onAction('edit', rule)}>
-                <Edit className="w-4 h-4 mr-2" />
-                {isDefaultRule ? 'View/Edit' : 'Edit'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onAction('duplicate', rule)}>
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onAction('toggle', rule)}>
-                {rule.is_active ? (
-                  <>
-                    <Pause className="w-4 h-4 mr-2" />
-                    Deactivate
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Activate
-                  </>
-                )}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                onClick={() => onAction('delete', rule)}
-                className={isDefaultRule ? 'text-muted-foreground' : 'text-destructive'}
-                disabled={isDefaultRule}
-                title={isDefaultRule ? 'System default rules cannot be deleted' : undefined}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                {isDefaultRule ? 'Cannot Delete' : 'Delete'}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <SimpleErrorBoundary message="Failed to load rule actions">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    try {
+                      onAction('edit', rule)
+                    } catch (error) {
+                      console.error('Edit action error:', error)
+                    }
+                  }}
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  {isDefaultRule ? 'View/Edit' : 'Edit'}
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    try {
+                      onAction('duplicate', rule)
+                    } catch (error) {
+                      console.error('Duplicate action error:', error)
+                    }
+                  }}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    try {
+                      onAction('toggle', rule)
+                    } catch (error) {
+                      console.error('Toggle action error:', error)
+                    }
+                  }}
+                >
+                  {rule.is_active ? (
+                    <>
+                      <Pause className="w-4 h-4 mr-2" />
+                      Deactivate
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Activate
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    try {
+                      onAction('delete', rule)
+                    } catch (error) {
+                      console.error('Delete action error:', error)
+                    }
+                  }}
+                  className={isDefaultRule ? 'text-muted-foreground' : 'text-destructive'}
+                  disabled={isDefaultRule}
+                  title={isDefaultRule ? 'System default rules cannot be deleted' : undefined}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {isDefaultRule ? 'Cannot Delete' : 'Delete'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SimpleErrorBoundary>
         </div>
       </CardHeader>
       
