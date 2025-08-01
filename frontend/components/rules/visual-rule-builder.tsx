@@ -141,14 +141,66 @@ export function VisualRuleBuilder({
   const [conditions, setConditions] = useState<RuleCondition[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
 
+  const addDefaultCondition = () => {
+    let defaultCondition: RuleCondition
+
+    // Suggest condition based on rule type
+    switch (ruleType) {
+      case 'STAGNANT_PALLETS':
+        defaultCondition = {
+          id: `condition-${Date.now()}`,
+          field: 'time_threshold_hours',
+          operator: 'greater_than',
+          value: 6
+        }
+        break
+      case 'UNCOORDINATED_LOTS':
+        defaultCondition = {
+          id: `condition-${Date.now()}`,
+          field: 'location_types',
+          operator: 'includes',
+          value: ['RECEIVING']
+        }
+        break
+      case 'AGED_INVENTORY':
+        defaultCondition = {
+          id: `condition-${Date.now()}`,
+          field: 'time_threshold_hours',
+          operator: 'greater_than',
+          value: 48
+        }
+        break
+      case 'QUANTITY_DISCREPANCIES':
+        defaultCondition = {
+          id: `condition-${Date.now()}`,
+          field: 'quantity_threshold',
+          operator: 'greater_than',
+          value: 0
+        }
+        break
+      default:
+        defaultCondition = {
+          id: `condition-${Date.now()}`,
+          field: 'time_threshold_hours',
+          operator: 'greater_than',
+          value: 6
+        }
+    }
+
+    setConditions([defaultCondition])
+  }
+
   // Initialize conditions from props
   useEffect(() => {
     if (initialConditions && Object.keys(initialConditions).length > 0) {
       try {
+        console.log('Parsing initial conditions:', initialConditions)
         const parsedConditions = parseConditionsFromObject(initialConditions)
         if (parsedConditions.length > 0) {
+          console.log('Successfully parsed conditions:', parsedConditions)
           setConditions(parsedConditions)
         } else {
+          console.log('No conditions parsed, adding default')
           // If parsing failed or returned empty, add default condition
           addDefaultCondition()
         }
@@ -159,9 +211,10 @@ export function VisualRuleBuilder({
       }
     } else if (conditions.length === 0) {
       // Add a default condition based on rule type
+      console.log('No initial conditions, adding default for rule type:', ruleType)
       addDefaultCondition()
     }
-  }, [initialConditions, ruleType])
+  }, [initialConditions, ruleType, conditions.length])
 
   // Convert visual conditions to JSON format
   useEffect(() => {
@@ -285,46 +338,6 @@ export function VisualRuleBuilder({
     return result
   }
 
-  const addDefaultCondition = () => {
-    let defaultCondition: RuleCondition
-
-    // Suggest condition based on rule type
-    switch (ruleType) {
-      case 'STAGNANT_PALLETS':
-        defaultCondition = {
-          id: `condition-${Date.now()}`,
-          field: 'time_threshold_hours',
-          operator: 'greater_than',
-          value: 6
-        }
-        break
-      case 'UNCOORDINATED_LOTS':
-        defaultCondition = {
-          id: `condition-${Date.now()}`,
-          field: 'completion_threshold', 
-          operator: 'greater_than',
-          value: 80
-        }
-        break
-      case 'LOCATION_SPECIFIC_STAGNANT':
-        defaultCondition = {
-          id: `condition-${Date.now()}`,
-          field: 'location_pattern',
-          operator: 'matches',
-          value: 'AISLE*'
-        }
-        break
-      default:
-        defaultCondition = {
-          id: `condition-${Date.now()}`,
-          field: 'time_threshold_hours',
-          operator: 'greater_than', 
-          value: 6
-        }
-    }
-
-    setConditions([defaultCondition])
-  }
 
   const addCondition = () => {
     const newCondition: RuleCondition = {
