@@ -66,54 +66,6 @@ export function RulesOverview() {
   const rulesStats = useRulesStats()
   const rulesByCategory = useRulesByCategory()
 
-  return (
-    <div className="space-y-6">
-      {/* Stats Cards */}
-      <RulesStatsCards stats={rulesStats} />
-      
-      {/* Actions and Filters */}
-      <RulesFiltersAndActions 
-        filters={filters}
-        searchQuery={searchQuery}
-        categories={categories}
-        onFiltersChange={setFilters}
-        onSearchChange={setSearchQuery}
-        onCreateRule={() => setCurrentSubView('create')}
-      />
-
-      {/* Rules by Category */}
-      <div className="space-y-6">
-        {Object.entries(RULE_CATEGORIES).map(([categoryKey, categoryInfo]) => {
-          const categoryRules = rulesByCategory[categoryInfo.name] || []
-          
-          if (categoryRules.length === 0) return null
-
-          return (
-            <CategorySection
-              key={categoryKey}
-              category={categoryInfo}
-              rules={categoryRules}
-              onRuleAction={handleRuleAction}
-              onRuleSelect={setSelectedRule}
-            />
-          )
-        })}
-      </div>
-
-      {/* Empty State */}
-      {filteredRules.length === 0 && !isLoading && (
-        <EmptyState 
-          hasFilters={Object.keys(filters).length > 1 || searchQuery.length > 0}
-          onClearFilters={() => {
-            setFilters({ status: 'all' })
-            setSearchQuery('')
-          }}
-          onCreateRule={() => setCurrentSubView('create')}
-        />
-      )}
-    </div>
-  )
-
   const handleRuleAction = React.useCallback(async (action: string, rule: Rule) => {
     try {
       console.log('Rule action triggered:', action, 'for rule:', rule.id)
@@ -161,6 +113,54 @@ export function RulesOverview() {
       })
     }
   }, [toggleRuleActivation, duplicateRule, deleteRule, setSelectedRule, setCurrentSubView])
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <RulesStatsCards stats={rulesStats} />
+      
+      {/* Actions and Filters */}
+      <RulesFiltersAndActions 
+        filters={filters}
+        searchQuery={searchQuery}
+        categories={categories}
+        onFiltersChange={setFilters}
+        onSearchChange={setSearchQuery}
+        onCreateRule={() => setCurrentSubView('create')}
+      />
+
+      {/* Rules by Category */}
+      <div className="space-y-6">
+        {Object.entries(RULE_CATEGORIES).map(([categoryKey, categoryInfo]) => {
+          const categoryRules = rulesByCategory[categoryInfo.name] || []
+          
+          if (categoryRules.length === 0) return null
+
+          return (
+            <CategorySection
+              key={categoryKey}
+              category={categoryInfo}
+              rules={categoryRules}
+              onRuleAction={handleRuleAction}
+              onRuleSelect={setSelectedRule}
+            />
+          )
+        })}
+      </div>
+
+      {/* Empty State */}
+      {filteredRules.length === 0 && !isLoading && (
+        <EmptyState 
+          hasFilters={Object.keys(filters).length > 1 || searchQuery.length > 0}
+          onClearFilters={() => {
+            setFilters({ status: 'all' })
+            setSearchQuery('')
+          }}
+          onCreateRule={() => setCurrentSubView('create')}
+        />
+      )}
+    </div>
+  )
 }
 
 // Stats Cards Component

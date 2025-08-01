@@ -27,7 +27,8 @@
       "Bash(npm install:*)",
       "Bash(npm run build:*)",
       "Bash(pkill:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(npm run lint)"
     ],
     "deny": []
   }
