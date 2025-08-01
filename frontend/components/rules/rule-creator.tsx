@@ -287,6 +287,16 @@ export function RuleCreator() {
       )
     }
 
+    // Check if form data is synced with the selected rule to prevent rendering with stale state
+    if (formData.name !== selectedRule.name || formData.rule_type !== selectedRule.rule_type) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />
+          <p className="ml-4 text-muted-foreground">Loading rule editor...</p>
+        </div>
+      );
+    }
+
     const isDefaultRule = selectedRule.is_default
     
     try {
