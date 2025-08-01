@@ -80,17 +80,17 @@ export function RuleCreator() {
     )
   }
 
+  const [isFormInitialized, setIsFormInitialized] = useState(false);
+
   // Initialize form for editing
   useEffect(() => {
-    try {
-      if (selectedRule && isEditMode) {
+    if (selectedRule && isEditMode) {
+      try {
         console.log('Initializing form for editing rule:', selectedRule)
         
-        // Ensure conditions is always an object
         const conditions = selectedRule.conditions || {}
         const parameters = selectedRule.parameters || {}
         
-        // Validate required fields
         if (!selectedRule.name || !selectedRule.rule_type || !selectedRule.category_id) {
           console.error('Selected rule is missing required fields:', selectedRule)
           throw new Error('Invalid rule data: missing required fields')
@@ -107,22 +107,25 @@ export function RuleCreator() {
           is_active: selectedRule.is_active ?? true
         })
         
+        setIsFormInitialized(true);
         console.log('Form data set successfully for edit mode')
-      } else if (!isEditMode) {
-        resetForm()
+      } catch (error) {
+        console.error('Error initializing form for editing:', error)
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Failed to load rule for editing. Please try again.'
+        })
+        setCurrentSubView('overview')
+        setSelectedRule(null)
       }
-    } catch (error) {
-      console.error('Error initializing form for editing:', error)
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to load rule for editing. Please try again.'
-      })
-      // Reset to overview on error
-      setCurrentSubView('overview')
-      setSelectedRule(null)
+    } else {
+      setIsFormInitialized(false);
+      if (!isEditMode) {
+        resetForm();
+      }
     }
-  }, [selectedRule, isEditMode])
+  }, [selectedRule, isEditMode, setFormData, resetForm])
 
   const steps = [
     { id: 'basic', label: 'Basic Info', icon: Info },
@@ -288,7 +291,7 @@ export function RuleCreator() {
     }
 
     // Check if form data is synced with the selected rule to prevent rendering with stale state
-    if (formData.name !== selectedRule.name || formData.rule_type !== selectedRule.rule_type) {
+    if (!isFormInitialized) {
       return (
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />
