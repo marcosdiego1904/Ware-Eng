@@ -344,7 +344,16 @@ export const useRulesStore = create<RulesState>()(
           const response = await ruleManagementApi.rules.getRules(filters);
           
           if (response.success) {
-            set({ rules: response.rules });
+            const parsedRules = response.rules.map(rule => {
+              const conditions = typeof rule.conditions === 'string' ? JSON.parse(rule.conditions) : rule.conditions;
+              const parameters = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+              return {
+                ...rule,
+                conditions: conditions || {},
+                parameters: parameters || {},
+              };
+            });
+            set({ rules: parsedRules });
             get().applyFilters();
           } else {
             throw new Error('Failed to load rules');
@@ -408,15 +417,24 @@ export const useRulesStore = create<RulesState>()(
           const response = await ruleManagementApi.rules.createRule(data);
           
           if (response.success && response.rule) {
+            const rule = response.rule;
+            const conditions = typeof rule.conditions === 'string' ? JSON.parse(rule.conditions) : rule.conditions;
+            const parameters = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+            const newRule = {
+              ...rule,
+              conditions: conditions || {},
+              parameters: parameters || {},
+            };
+
             // Add new rule to the list
             set((state) => ({
-              rules: [response.rule, ...state.rules]
+              rules: [newRule, ...state.rules]
             }));
             
             get().applyFilters();
             get().resetForm();
             
-            return response.rule.id;
+            return newRule.id;
           } else {
             throw new Error('Failed to create rule');
           }
@@ -438,12 +456,21 @@ export const useRulesStore = create<RulesState>()(
           console.log('Store: Update response:', response);
           
           if (response.success && response.rule) {
+            const rule = response.rule;
+            const conditions = typeof rule.conditions === 'string' ? JSON.parse(rule.conditions) : rule.conditions;
+            const parameters = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+            const updatedRule = {
+              ...rule,
+              conditions: conditions || {},
+              parameters: parameters || {},
+            };
+
             // Update rule in the list
             set((state) => ({
               rules: state.rules.map(rule => 
-                rule.id === id ? response.rule : rule
+                rule.id === id ? updatedRule : rule
               ),
-              selectedRule: state.selectedRule?.id === id ? response.rule : state.selectedRule
+              selectedRule: state.selectedRule?.id === id ? updatedRule : state.selectedRule
             }));
             
             get().applyFilters();
@@ -489,13 +516,22 @@ export const useRulesStore = create<RulesState>()(
           const response = await ruleManagementApi.rules.duplicateRule(id, newName);
           
           if (response.success && response.rule) {
+            const rule = response.rule;
+            const conditions = typeof rule.conditions === 'string' ? JSON.parse(rule.conditions) : rule.conditions;
+            const parameters = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+            const newRule = {
+              ...rule,
+              conditions: conditions || {},
+              parameters: parameters || {},
+            };
+
             // Add duplicated rule to the list
             set((state) => ({
-              rules: [response.rule, ...state.rules]
+              rules: [newRule, ...state.rules]
             }));
             
             get().applyFilters();
-            return response.rule.id;
+            return newRule.id;
           } else {
             throw new Error('Failed to duplicate rule');
           }
@@ -512,12 +548,21 @@ export const useRulesStore = create<RulesState>()(
           const response = await ruleManagementApi.rules.toggleRuleActivation(id, isActive);
           
           if (response.success && response.rule) {
+            const rule = response.rule;
+            const conditions = typeof rule.conditions === 'string' ? JSON.parse(rule.conditions) : rule.conditions;
+            const parameters = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+            const updatedRule = {
+              ...rule,
+              conditions: conditions || {},
+              parameters: parameters || {},
+            };
+
             // Update rule in the list
             set((state) => ({
               rules: state.rules.map(rule => 
-                rule.id === id ? response.rule : rule
+                rule.id === id ? updatedRule : rule
               ),
-              selectedRule: state.selectedRule?.id === id ? response.rule : state.selectedRule
+              selectedRule: state.selectedRule?.id === id ? updatedRule : state.selectedRule
             }));
             
             get().applyFilters();
