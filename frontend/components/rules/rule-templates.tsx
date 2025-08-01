@@ -62,7 +62,7 @@ export function RuleTemplates() {
 
   useEffect(() => {
     loadTemplates()
-  }, [loadTemplates])
+  }, [])
 
   const filteredTemplates = templates.filter(template => {
     const matchesSearch = template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

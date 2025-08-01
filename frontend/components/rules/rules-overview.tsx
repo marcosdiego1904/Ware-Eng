@@ -112,7 +112,7 @@ export function RulesOverview() {
         description: `Failed to ${action} rule`
       })
     }
-  }, [toggleRuleActivation, duplicateRule, deleteRule, setSelectedRule, setCurrentSubView])
+  }, [])
 
   return (
     <div className="space-y-6">

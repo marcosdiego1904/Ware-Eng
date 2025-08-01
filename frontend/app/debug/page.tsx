@@ -3,6 +3,7 @@
 import { AuthDebug } from '@/components/debug/auth-debug'
 import { RuleEditTest } from '@/components/debug/rule-edit-test'
 import { MinimalRuleTest } from '@/components/debug/minimal-rule-test'
+import { HookIsolationTest } from '@/components/debug/hook-isolation-test'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export default function DebugPage() {
@@ -15,6 +16,7 @@ export default function DebugPage() {
           <TabsTrigger value="auth">Auth Debug</TabsTrigger>
           <TabsTrigger value="rules">Rule Edit Test</TabsTrigger>
           <TabsTrigger value="minimal">Hook Test</TabsTrigger>
+          <TabsTrigger value="isolation">Hook Isolation</TabsTrigger>
         </TabsList>
         
         <TabsContent value="auth">
@@ -27,6 +29,10 @@ export default function DebugPage() {
         
         <TabsContent value="minimal">
           <MinimalRuleTest />
+        </TabsContent>
+        
+        <TabsContent value="isolation">
+          <HookIsolationTest />
         </TabsContent>
       </Tabs>
     </div>

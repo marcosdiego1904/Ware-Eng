@@ -214,7 +214,7 @@ export function VisualRuleBuilder({
       console.log('No initial conditions, adding default for rule type:', ruleType)
       addDefaultCondition()
     }
-  }, [initialConditions, ruleType, conditions.length])
+  }, [initialConditions, ruleType])
 
   // Convert visual conditions to JSON format
   useEffect(() => {

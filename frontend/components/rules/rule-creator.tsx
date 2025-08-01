@@ -122,7 +122,7 @@ export function RuleCreator() {
       setCurrentSubView('overview')
       setSelectedRule(null)
     }
-  }, [selectedRule, isEditMode, setFormData, resetForm, setCurrentSubView, setSelectedRule])
+  }, [selectedRule, isEditMode])
 
   const steps = [
     { id: 'basic', label: 'Basic Info', icon: Info },

@@ -44,7 +44,7 @@ export function RuleAnalytics() {
 
   useEffect(() => {
     loadAnalytics()
-  }, [loadAnalytics])
+  }, [])
 
   const mockAnalyticsData = {
     totalDetections: 1247,
