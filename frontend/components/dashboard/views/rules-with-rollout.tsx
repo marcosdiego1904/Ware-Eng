@@ -1,19 +1,24 @@
 "use client"
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Settings, Plus, Zap, BarChart3, Brain, Sparkles } from 'lucide-react'
 import { useRulesStore, useRulesViewState } from '@/lib/rules-store'
 import { RulesOverview } from '@/components/rules/rules-overview'
 import { EnhancedRuleCreator } from '@/components/rules/enhanced-rule-creator'
+import { RolloutStrategy } from '@/components/rules/rollout-strategy'
 import { RuleTemplates } from '@/components/rules/rule-templates'
 import { RuleAnalytics } from '@/components/rules/rule-analytics'
 import { LoadingSpinner } from '@/components/ui/loading'
 import { SimpleErrorBoundary } from '@/components/ui/error-boundary'
 
-export function RulesView() {
+// Feature flag - you can control this from environment variables or admin settings
+const ENABLE_ROLLOUT_STRATEGY = process.env.NEXT_PUBLIC_ENABLE_ROLLOUT_STRATEGY === 'true' || false
+
+export function RulesViewWithRollout() {
   const { setCurrentSubView, loadRules, loadCategories, isLoading } = useRulesStore()
   const { currentSubView } = useRulesViewState()
+  const [showRolloutStrategy, setShowRolloutStrategy] = useState(ENABLE_ROLLOUT_STRATEGY)
 
   // Load initial data
   useEffect(() => {
@@ -26,6 +31,14 @@ export function RulesView() {
     
     initializeRules()
   }, [loadRules, loadCategories])
+
+  // Check if user has made a preference choice
+  useEffect(() => {
+    const userPreference = localStorage.getItem('ruleBuilderPreference')
+    if (userPreference && userPreference !== 'auto') {
+      setShowRolloutStrategy(false)
+    }
+  }, [])
 
   if (isLoading) {
     return (
@@ -85,7 +98,17 @@ export function RulesView() {
 
         <TabsContent value="create" className="mt-6">
           <SimpleErrorBoundary message="Failed to load AI-powered rule creator">
-            <EnhancedRuleCreator />
+            {showRolloutStrategy ? (
+              <RolloutStrategy 
+                onModeChange={(mode) => {
+                  // User has made a choice, disable rollout strategy
+                  setShowRolloutStrategy(false)
+                  localStorage.setItem('ruleBuilderMode', mode)
+                }}
+              />
+            ) : (
+              <EnhancedRuleCreator />
+            )}
           </SimpleErrorBoundary>
         </TabsContent>
 
