@@ -1,0 +1,178 @@
+
+# Warehouse Rule System Documentation
+
+This document provides a comprehensive overview of the dynamic warehouse rule system. It is intended to be used as a reference for developers and as a context file for AI assistants.
+
+## 1. Core Concepts
+
+The system is designed to be dynamic, extensible, and manageable via an API. It revolves around three core components:
+
+- **Rule Engine (`rule_engine.py`):** A Python-based engine that loads rules from the database and evaluates them against inventory data (provided as a Pandas DataFrame). It uses a system of specialized "evaluators" for each rule type.
+- **Database Models (`models.py`):** A set of SQLAlchemy models that define the structure of rules, categories, locations, and their related data in the database. This allows rules to be stored and managed dynamically.
+- **REST API (`rules_api.py`):** A Flask-based API that provides endpoints for creating, reading, updating, deleting (CRUD), and testing rules.
+
+## 2. Rule Categories (The Three Pillars)
+
+Rules are organized into three main categories, providing a high-level framework for warehouse optimization.
+
+- **`FLOW_TIME` (Flow & Time Rules):**
+  - **Purpose:** To detect inefficiencies in the movement and processing of pallets.
+  - **Focus:** Identifies bottlenecks, stagnant items, and coordination issues.
+  - **Priority:** Highest (1).
+
+- **`SPACE` (Space Management Rules):**
+  - **Purpose:** To ensure efficient and compliant use of warehouse space.
+  - **Focus:** Manages location capacity, data integrity, and location validity.
+  - **Priority:** High (2).
+
+- **`PRODUCT` (Product Compatibility Rules):**
+  - **Purpose:** To ensure products are stored in appropriate locations and conditions.
+  - **Focus:** Manages product/location restrictions and environmental conditions (e.g., temperature).
+  - **Priority:** Medium (3).
+
+## 3. Rule Types and Evaluators
+
+Each `rule_type` corresponds to a specific evaluator class in `rule_engine.py`. These evaluators contain the logic for detecting anomalies.
+
+---
+
+### `STAGNANT_PALLETS`
+- **Purpose:** Detects pallets that have remained in a specific type of location for too long.
+- **Logic:** Checks the `creation_date` of each pallet in specified `location_types`. If the time elapsed since creation exceeds a threshold, it's flagged as an anomaly.
+- **Configurable Conditions (JSON):**
+  - `time_threshold_hours` (integer): The maximum number of hours a pallet can remain in the location.
+  - `location_types` (list of strings): The location types to monitor (e.g., `["RECEIVING", "TRANSITIONAL"]`).
+
+---
+
+### `UNCOORDINATED_LOTS`
+- **Purpose:** Finds "straggler" pallets left behind when the rest of their lot has been moved to final storage.
+- **Logic:** Groups pallets by `receipt_number`. It calculates the ratio of pallets from a lot that are in a "FINAL" location. If this ratio exceeds a `completion_threshold`, any remaining pallets from that same lot still in staging `location_types` are flagged.
+- **Configurable Conditions (JSON):**
+  - `completion_threshold` (float): The percentage (0.0 to 1.0) of a lot that must be in a "FINAL" location to trigger the check.
+  - `location_types` (list of strings): The staging location types where stragglers are identified (e.g., `["RECEIVING"]`).
+
+---
+
+### `OVERCAPACITY`
+- **Purpose:** Identifies locations holding more pallets than their designated capacity.
+- **Logic:** Counts the number of pallets in each location and compares it to the `capacity` defined for that location in the `Location` database table.
+- **Configurable Conditions (JSON):**
+  - This rule currently has no specific JSON conditions. It operates based on the `Location` table's capacity data.
+
+---
+
+### `INVALID_LOCATION`
+- **Purpose:** Flags pallets assigned to a location code that is not officially defined.
+- **Logic:** Checks if a pallet's `location` exists as a `code` or matches a `pattern` in the `Location` database table.
+- **Configurable Conditions (JSON):**
+  - This rule currently has no specific JSON conditions. It operates based on the `Location` table's data.
+
+---
+
+### `LOCATION_SPECIFIC_STAGNANT`
+- **Purpose:** A more granular version of `STAGNANT_PALLETS` that applies to locations matching a specific name pattern.
+- **Logic:** Filters pallets whose `location` matches a string pattern. For those pallets, it checks if the time since `creation_date` exceeds a threshold.
+- **Configurable Conditions (JSON):**
+  - `location_pattern` (string): A wildcard pattern to match location names (e.g., `"AISLE*"`).
+  - `time_threshold_hours` (integer): The maximum number of hours a pallet can remain in the matching locations.
+
+---
+
+### `TEMPERATURE_ZONE_MISMATCH`
+- **Purpose:** Detects temperature-sensitive products stored in the wrong warehouse zone.
+- **Logic:** Checks if a pallet's `description` matches any of the `product_patterns`. If it does, it then checks if the pallet's location `zone` (from the `Location` table) is one of the `prohibited_zones`.
+- **Configurable Conditions (JSON):**
+  - `product_patterns` (list of strings): Wildcard patterns to identify temperature-sensitive products (e.g., `["*FROZEN*", "*REFRIGERATED*"]`).
+  - `prohibited_zones` (list of strings): A list of zones where these products should not be stored (e.g., `["AMBIENT", "GENERAL"]`).
+
+---
+
+### `DATA_INTEGRITY`
+- **Purpose:** Checks for common data quality issues, typically caused by scanner or entry errors.
+- **Logic:** Performs two checks:
+  1.  **Duplicate Scans:** Identifies if the same `pallet_id` appears more than once in the dataset.
+  2.  **Impossible Locations:** Flags locations that are clearly invalid (e.g., too long or contain special characters).
+- **Configurable Conditions (JSON):**
+  - `check_duplicate_scans` (boolean): Set to `true` to enable the duplicate scan check.
+  - `check_impossible_locations` (boolean): Set to `true` to enable the impossible location check.
+
+---
+
+### `MISSING_LOCATION`
+- **Purpose:** Finds pallets that have no location assigned.
+- **Logic:** Identifies pallets where the `location` field is null, empty, or 'NAN'.
+- **Configurable Conditions (JSON):**
+  - This rule currently has no specific JSON conditions.
+
+---
+
+### `PRODUCT_INCOMPATIBILITY`
+- **Purpose:** Ensures products are stored only in locations that explicitly allow them.
+- **Logic:** For a given pallet, it checks the `allowed_products` list for its `location` (defined in the `Location` table). If the pallet's `description` does not match any of the allowed product patterns, it is flagged.
+- **Configurable Conditions (JSON):**
+  - This rule currently has no specific JSON conditions. It operates based on the `Location` table's `allowed_products` data.
+
+---
+
+### `LOCATION_MAPPING_ERROR`
+- **Purpose:** A placeholder for more complex location mapping validation logic.
+- **Logic:** Currently not implemented. Intended to find inconsistencies in location type mapping or pattern definitions.
+- **Configurable Conditions (JSON):**
+  - `validate_location_types` (boolean)
+  - `check_pattern_consistency` (boolean)
+
+## 4. Default Rule Set
+
+The system is seeded with a default set of rules that provide immediate value.
+
+1.  **Name:** `Forgotten Pallets Alert`
+    - **Type:** `STAGNANT_PALLETS`
+    - **Description:** Detects pallets sitting in receiving/transitional areas for too long.
+    - **Default Conditions:** `{"location_types": ["RECEIVING", "TRANSITIONAL"], "time_threshold_hours": 6}`
+
+2.  **Name:** `Incomplete Lots Alert`
+    - **Type:** `UNCOORDINATED_LOTS`
+    - **Description:** Identifies pallets left in receiving when most of their lot is stored.
+    - **Default Conditions:** `{"completion_threshold": 0.8, "location_types": ["RECEIVING"]}`
+
+3.  **Name:** `Overcapacity Alert`
+    - **Type:** `OVERCAPACITY`
+    - **Description:** Detects locations that exceed their designated storage capacity.
+    - **Default Conditions:** `{"check_all_locations": true}`
+
+4.  **Name:** `Invalid Locations Alert`
+    - **Type:** `INVALID_LOCATION`
+    - **Description:** Finds pallets in locations not defined in warehouse rules.
+    - **Default Conditions:** `{"check_undefined_locations": true}`
+
+5.  **Name:** `AISLE Stuck Pallets`
+    - **Type:** `LOCATION_SPECIFIC_STAGNANT`
+    - **Description:** Detects pallets stuck in AISLE locations for extended periods.
+    - **Default Conditions:** `{"location_pattern": "AISLE*", "time_threshold_hours": 4}`
+
+6.  **Name:** `Cold Chain Violations`
+    - **Type:** `TEMPERATURE_ZONE_MISMATCH`
+    - **Description:** Identifies temperature-sensitive products in inappropriate zones.
+    - **Default Conditions:** `{"product_patterns": ["*FROZEN*", "*REFRIGERATED*"], "prohibited_zones": ["AMBIENT", "GENERAL"], "time_threshold_minutes": 30}`
+
+7.  **Name:** `Scanner Error Detection`
+    - **Type:** `DATA_INTEGRITY`
+    - **Description:** Detects data integrity issues from scanning errors.
+    - **Default Conditions:** `{"check_impossible_locations": true, "check_duplicate_scans": true}`
+
+8.  **Name:** `Location Type Mismatches`
+    - **Type:** `LOCATION_MAPPING_ERROR`
+    - **Description:** Identifies inconsistencies in location type mapping.
+    - **Default Conditions:** `{"validate_location_types": true, "check_pattern_consistency": true}`
+
+## 5. Managing Rules via the API
+
+The API provides several endpoints for managing rules under the `/api/v1` prefix.
+
+- **`GET /rules`**: Lists all rules. Can be filtered by `category`, `active_only`, and `rule_type`.
+- **`POST /rules`**: Creates a new rule. Requires `name`, `rule_type`, `category_id`, and `conditions` in the JSON body.
+- **`PUT /rules/<rule_id>`**: Updates an existing rule.
+- **`DELETE /rules/<rule_id>`**: Deletes a rule.
+- **`POST /rules/test`**: Tests a set of rules against an uploaded data file (`.xlsx` or `.csv`).
+- **`POST /rules/preview`**: Previews the results of a single, unsaved rule against sample data.

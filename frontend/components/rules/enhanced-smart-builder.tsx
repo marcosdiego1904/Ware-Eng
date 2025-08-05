@@ -42,30 +42,9 @@ import {
   Info
 } from 'lucide-react'
 
-// Enhanced warehouse problems with more context
+// Enhanced warehouse problems with more context - ALL 10 RULE TYPES
 const WAREHOUSE_PROBLEMS = [
-  {
-    id: 'traffic-jams',
-    title: 'Pallets Creating Traffic Jams',
-    description: 'Pallets blocking aisles and creating bottlenecks',
-    icon: Truck,
-    illustration: '🚛➡️📦📦📦⛔', 
-    realWorldExample: 'Like when forklifts can\'t get through aisle 3 because pallets are scattered everywhere',
-    businessImpact: 'Costs 2-3 hours of overtime per occurrence',
-    frequency: 'Happens 2-4 times per week in busy warehouses',
-    category: 'flow',
-    color: 'bg-orange-100 border-orange-300 text-orange-800',
-    smartSuggestions: [
-      'Most warehouses your size use 2-4 hour limits for aisles',
-      'Consider different limits for main vs. side aisles',
-      'Peak hours (10am-2pm) might need stricter rules'
-    ],
-    relatedConditions: [
-      { field: 'location_priority', label: 'High-traffic areas get priority', suggested: true },
-      { field: 'time_of_day', label: 'Stricter during peak hours', suggested: false },
-      { field: 'pallet_count', label: 'Alert when multiple pallets in same aisle', suggested: true }
-    ]
-  },
+  // EXISTING PROBLEMS (Fixed with correct rule types)
   {
     id: 'forgotten-items',
     title: 'Items Getting "Forgotten"',
@@ -75,8 +54,9 @@ const WAREHOUSE_PROBLEMS = [
     realWorldExample: 'Like that pallet of dog food that sat in receiving for 3 days last month',
     businessImpact: 'Delays customer orders and wastes storage space',
     frequency: 'Usually 5-10 items per day get forgotten',
-    category: 'time',
+    category: 'flow',
     color: 'bg-red-100 border-red-300 text-red-800',
+    ruleType: 'STAGNANT_PALLETS',
     smartSuggestions: [
       'Grocery warehouses typically use 4-6 hours',
       'Electronics/high-value items often use 2-3 hours',
@@ -89,6 +69,29 @@ const WAREHOUSE_PROBLEMS = [
     ]
   },
   {
+    id: 'traffic-jams',
+    title: 'Pallets Creating Traffic Jams',
+    description: 'Pallets blocking aisles and creating bottlenecks',
+    icon: Truck,
+    illustration: '🚛➡️📦📦📦⛔', 
+    realWorldExample: 'Like when forklifts can\'t get through aisle 3 because pallets are scattered everywhere',
+    businessImpact: 'Costs 2-3 hours of overtime per occurrence',
+    frequency: 'Happens 2-4 times per week in busy warehouses',
+    category: 'flow',
+    color: 'bg-orange-100 border-orange-300 text-orange-800',
+    ruleType: 'LOCATION_SPECIFIC_STAGNANT',
+    smartSuggestions: [
+      'Most warehouses your size use 2-4 hour limits for aisles',
+      'Consider different limits for main vs. side aisles',
+      'Peak hours (10am-2pm) might need stricter rules'
+    ],
+    relatedConditions: [
+      { field: 'location_priority', label: 'High-traffic areas get priority', suggested: true },
+      { field: 'time_of_day', label: 'Stricter during peak hours', suggested: false },
+      { field: 'pallet_count', label: 'Alert when multiple pallets in same aisle', suggested: true }
+    ]
+  },
+  {
     id: 'temperature-violations',
     title: 'Cold Products Getting Warm',
     description: 'Frozen/refrigerated items in wrong temperature zones',
@@ -97,8 +100,9 @@ const WAREHOUSE_PROBLEMS = [
     realWorldExample: 'Like when frozen vegetables end up in the ambient storage area',
     businessImpact: 'Product spoilage can cost $500-2000 per incident',
     frequency: 'Critical - even one incident is too many',
-    category: 'safety',
+    category: 'product',
     color: 'bg-blue-100 border-blue-300 text-blue-800',
+    ruleType: 'TEMPERATURE_ZONE_MISMATCH',
     smartSuggestions: [
       'Food safety requires immediate alerts (0-15 minutes)',
       'Different products have different temperature tolerances',
@@ -119,8 +123,9 @@ const WAREHOUSE_PROBLEMS = [
     realWorldExample: 'Like when 90% of a truck is unloaded but 2 pallets are still sitting in receiving',
     businessImpact: 'Causes delivery delays and customer complaints',
     frequency: 'Happens with 1 in 10 large deliveries',
-    category: 'completion',
+    category: 'flow',
     color: 'bg-purple-100 border-purple-300 text-purple-800',
+    ruleType: 'UNCOORDINATED_LOTS',
     smartSuggestions: [
       'Most effective at 80-90% completion threshold',
       'Smaller deliveries might need different rules',
@@ -130,6 +135,145 @@ const WAREHOUSE_PROBLEMS = [
       { field: 'delivery_size', label: 'Different thresholds for small vs large trucks', suggested: true },
       { field: 'delivery_priority', label: 'Rush deliveries get immediate alerts', suggested: false },
       { field: 'dock_assignment', label: 'Different rules per dock door', suggested: true }
+    ]
+  },
+  // NEW PROBLEMS - Missing 6 rule types
+  {
+    id: 'scanner-errors',
+    title: 'Scanner & Data Entry Errors',
+    description: 'Duplicate scans and impossible location codes',
+    icon: AlertTriangle,
+    illustration: '📱❌📊⚠️',
+    realWorldExample: 'Same pallet scanned twice or locations like "AISLE999999"',
+    businessImpact: 'Inventory discrepancies cost 2-4 hours weekly to resolve',
+    frequency: 'Happens 5-10 times per day in busy operations',
+    category: 'data',
+    color: 'bg-yellow-100 border-yellow-300 text-yellow-800',
+    ruleType: 'DATA_INTEGRITY',
+    smartSuggestions: [
+      'Check for duplicates every 2-4 hours during busy periods',
+      'Flag location codes longer than 15 characters',
+      'Monitor for special characters in location names'
+    ],
+    relatedConditions: [
+      { field: 'check_duplicate_scans', label: 'Detect duplicate pallet scans', suggested: true },
+      { field: 'check_impossible_locations', label: 'Flag unrealistic location codes', suggested: true },
+      { field: 'max_location_length', label: 'Maximum location code length', suggested: false }
+    ]
+  },
+  {
+    id: 'lost-pallets',
+    title: 'Pallets with No Location',
+    description: 'Items scanned but location field is empty',
+    icon: MapPin,
+    illustration: '📦❓🗺️❌',
+    realWorldExample: 'Pallet exists in system but shows blank or null location',
+    businessImpact: 'Lost items take 30-60 minutes each to physically locate',
+    frequency: 'Usually 2-5 items per day go missing',
+    category: 'space',
+    color: 'bg-gray-100 border-gray-300 text-gray-800',
+    ruleType: 'MISSING_LOCATION',
+    smartSuggestions: [
+      'Check for missing locations hourly during receiving',
+      'Most common after system updates or network issues',
+      'Often happens during shift changes'
+    ],
+    relatedConditions: [
+      { field: 'check_null_locations', label: 'Flag null/empty locations', suggested: true },
+      { field: 'check_nan_locations', label: 'Flag NaN location values', suggested: true },
+      { field: 'recent_scan_window', label: 'Only check recently scanned items', suggested: false }
+    ]
+  },
+  {
+    id: 'wrong-locations',
+    title: 'Items in Non-Existent Locations',
+    description: 'Pallets assigned to undefined location codes',
+    icon: AlertCircle,
+    illustration: '📦➡️🏗️❌',
+    realWorldExample: 'Pallet shows location "DOCK-Z" but that dock doesn\'t exist',
+    businessImpact: 'Creates confusion and picking errors',
+    frequency: 'Common after location changes or system updates',
+    category: 'space',
+    color: 'bg-red-100 border-red-300 text-red-800',
+    ruleType: 'INVALID_LOCATION',
+    smartSuggestions: [
+      'Run after any warehouse layout changes',
+      'Check against master location database',
+      'Flag locations that don\'t match naming patterns'
+    ],
+    relatedConditions: [
+      { field: 'validate_location_exists', label: 'Check location exists in master list', suggested: true },
+      { field: 'validate_location_pattern', label: 'Check location follows naming convention', suggested: true },
+      { field: 'ignore_temporary_locations', label: 'Ignore temp locations during moves', suggested: false }
+    ]
+  },
+  {
+    id: 'storage-overflow',
+    title: 'Storage Areas Overflowing',
+    description: 'Locations holding more than their safe capacity',
+    icon: Warehouse,
+    illustration: '📦📦📦📦💥',
+    realWorldExample: 'Dock 2 has 15 pallets but only rated for 8 safely',
+    businessImpact: 'Safety hazard and makes counting impossible',
+    frequency: 'Especially common during peak seasons',
+    category: 'space',
+    color: 'bg-orange-100 border-orange-300 text-orange-800',
+    ruleType: 'OVERCAPACITY',
+    smartSuggestions: [
+      'Alert at 85-90% capacity to prevent overflow',
+      'Different limits for dock doors vs storage areas',
+      'Consider seasonal capacity variations'
+    ],
+    relatedConditions: [
+      { field: 'capacity_buffer', label: 'Alert before reaching 100%', suggested: true },
+      { field: 'priority_locations', label: 'Stricter limits for critical areas', suggested: true },
+      { field: 'seasonal_adjustment', label: 'Adjust for peak seasons', suggested: false }
+    ]
+  },
+  {
+    id: 'wrong-product-areas',
+    title: 'Products in Wrong Storage Types',
+    description: 'Items stored in locations not designed for them',
+    icon: Package,
+    illustration: '🥩➡️🧽❌',
+    realWorldExample: 'Food items stored near cleaning chemicals or hazmat',
+    businessImpact: 'Contamination risk and compliance violations',
+    frequency: 'Critical for food, pharma, and hazmat operations',
+    category: 'product',
+    color: 'bg-red-100 border-red-300 text-red-800',
+    ruleType: 'PRODUCT_INCOMPATIBILITY',
+    smartSuggestions: [
+      'Essential for food safety and pharmaceutical compliance',
+      'Check product categories against location restrictions',
+      'Consider cross-contamination risks'
+    ],
+    relatedConditions: [
+      { field: 'product_category_rules', label: 'Enforce category restrictions', suggested: true },
+      { field: 'contamination_risks', label: 'Check for contamination risks', suggested: true },
+      { field: 'regulatory_compliance', label: 'Enforce regulatory requirements', suggested: false }
+    ]
+  },
+  {
+    id: 'location-setup-errors',
+    title: 'Location Configuration Issues',
+    description: 'Inconsistent location types and mapping patterns',
+    icon: Settings,
+    illustration: '🗺️⚙️❌📍',
+    realWorldExample: 'Location shows as both RECEIVING and FINAL type',
+    businessImpact: 'Causes system confusion and wrong routing',
+    frequency: 'Usually after warehouse layout changes',
+    category: 'system',
+    color: 'bg-purple-100 border-purple-300 text-purple-800',
+    ruleType: 'LOCATION_MAPPING_ERROR',
+    smartSuggestions: [
+      'Run after any WMS configuration changes',
+      'Check for conflicting location type assignments',
+      'Validate location pattern consistency'
+    ],
+    relatedConditions: [
+      { field: 'validate_location_types', label: 'Check for conflicting location types', suggested: true },
+      { field: 'check_pattern_consistency', label: 'Validate naming pattern consistency', suggested: true },
+      { field: 'audit_recent_changes', label: 'Focus on recently changed locations', suggested: false }
     ]
   }
 ]
@@ -242,99 +386,268 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
   const [selectedAreas, setSelectedAreas] = useState<string[]>(['receiving'])
   const [advancedMode, setAdvancedMode] = useState(false)
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([])
-  const [additionalConditions, setAdditionalConditions] = useState<any[]>([])
+  const [additionalConditions] = useState<unknown[]>([])
   const [showSmartSuggestions, setShowSmartSuggestions] = useState(true)
   
   const problem = WAREHOUSE_PROBLEMS.find(p => p.id === selectedProblem)
   const timeOption = TIME_OPTIONS.find(t => t.id === selectedTimeframe)
   const sensitivityInfo = SENSITIVITY_LEVELS.find(s => s.level === sensitivity)
 
-  // Smart suggestions based on context
+  // Enhanced Smart suggestions with contextual intelligence
   const getSmartSuggestions = () => {
     if (!problem) return []
     
     const baseSuggestions = problem.smartSuggestions
     const contextualSuggestions = []
     
-    // Add time-based suggestions
-    if (selectedTimeframe === 'end-of-shift') {
-      contextualSuggestions.push('Consider different rules for night vs day shifts')
-    }
-    if (selectedTimeframe === 'custom' && customHours <= 2) {
-      contextualSuggestions.push('Very short timeframes work best for critical items')
-    }
-    if (selectedTimeframe === 'same-day' && selectedAreas.includes('receiving')) {
-      contextualSuggestions.push('24-hour receiving rules catch most overnight issues')
+    // Rule-type specific contextual suggestions
+    switch (problem.ruleType) {
+      case 'STAGNANT_PALLETS':
+        if (selectedTimeframe === 'end-of-shift') {
+          contextualSuggestions.push('Shift-end rules work well for most operations')
+        }
+        if (selectedTimeframe === 'custom' && customHours <= 2) {
+          contextualSuggestions.push('Short timeframes are ideal for high-value or perishable items')
+        }
+        if (selectedAreas.includes('receiving') && selectedAreas.includes('staging')) {
+          contextualSuggestions.push('Monitoring handoff points reduces 60% of delays')
+        }
+        break
+        
+      case 'LOCATION_SPECIFIC_STAGNANT':
+        if (selectedAreas.includes('aisles')) {
+          contextualSuggestions.push('Aisle monitoring prevents 80% of traffic incidents')
+        }
+        if (customHours <= 2) {
+          contextualSuggestions.push('Short aisle timeframes keep traffic flowing smoothly')
+        }
+        break
+        
+      case 'TEMPERATURE_ZONE_MISMATCH':
+        contextualSuggestions.push('Food safety requires immediate temperature alerts')
+        if (sensitivity >= 4) {
+          contextualSuggestions.push('High sensitivity essential for regulatory compliance')
+        }
+        break
+        
+      case 'UNCOORDINATED_LOTS':
+        if (selectedAreas.includes('receiving')) {
+          contextualSuggestions.push('Most lot coordination issues happen at receiving handoff')
+        }
+        contextualSuggestions.push('80% completion threshold catches most stragglers')
+        break
+        
+      case 'DATA_INTEGRITY':
+        contextualSuggestions.push('Run data checks during off-peak hours for better performance')
+        if (sensitivity >= 4) {
+          contextualSuggestions.push('High sensitivity may flag temporary delays as errors')
+        }
+        break
+        
+      case 'MISSING_LOCATION':
+        contextualSuggestions.push('Check immediately after network issues or system updates')
+        contextualSuggestions.push('Most common during shift changes and busy periods')
+        break
+        
+      case 'INVALID_LOCATION':
+        contextualSuggestions.push('Essential after warehouse layout changes')
+        contextualSuggestions.push('Run weekly as preventive maintenance')
+        break
+        
+      case 'OVERCAPACITY':
+        if (selectedAreas.includes('dock')) {
+          contextualSuggestions.push('Dock capacity alerts prevent delivery delays')
+        }
+        contextualSuggestions.push('85-90% capacity threshold prevents most overflows')
+        break
+        
+      case 'PRODUCT_INCOMPATIBILITY':
+        contextualSuggestions.push('Critical for food, pharmaceutical, and chemical operations')
+        contextualSuggestions.push('Set up location restrictions in master data first')
+        break
+        
+      case 'LOCATION_MAPPING_ERROR':
+        contextualSuggestions.push('Run after any WMS configuration changes')
+        contextualSuggestions.push('Schedule monthly as preventive maintenance')
+        break
     }
     
-    // Add sensitivity-based suggestions
+    // General sensitivity-based suggestions
     if (sensitivity >= 4) {
-      contextualSuggestions.push('High sensitivity works best with good data quality')
+      contextualSuggestions.push('High sensitivity requires good data quality to avoid false alerts')
     }
     if (sensitivity <= 2) {
-      contextualSuggestions.push('Low sensitivity reduces alert fatigue but may miss issues')
+      contextualSuggestions.push('Low sensitivity reduces noise but may miss early warning signs')
     }
     
-    // Add area-based suggestions
-    if (selectedAreas.includes('aisles') && problem.id === 'traffic-jams') {
-      contextualSuggestions.push('Aisle monitoring prevents 80% of traffic jam incidents')
-    }
-    if (selectedAreas.includes('receiving') && selectedAreas.includes('staging')) {
-      contextualSuggestions.push('Monitoring both receiving and staging catches handoff delays')
+    // Industry-specific suggestions
+    const industrySpecific = getIndustrySpecificSuggestions(problem.ruleType)
+    
+    return [...baseSuggestions, ...contextualSuggestions, ...industrySpecific]
+  }
+  
+  // Industry-specific intelligent suggestions
+  const getIndustrySpecificSuggestions = (ruleType: string): string[] => {
+    const suggestions: string[] = []
+    
+    switch (ruleType) {
+      case 'TEMPERATURE_ZONE_MISMATCH':
+        suggestions.push('🍕 Food industry: FDA requires 15-minute maximum for temperature excursions')
+        suggestions.push('💊 Pharmaceutical: USP guidelines demand immediate temperature alerts')
+        break
+        
+      case 'PRODUCT_INCOMPATIBILITY':
+        suggestions.push('🏪 Retail: Keep cosmetics away from food products')
+        suggestions.push('⚗️ Chemical: OSHA requires strict separation of incompatible materials')
+        break
+        
+      case 'OVERCAPACITY':
+        suggestions.push('☢️ Hazmat: OSHA mandates strict capacity limits for dangerous goods')
+        suggestions.push('🍖 Food: HACCP compliance requires documented capacity controls')
+        break
+        
+      case 'DATA_INTEGRITY':
+        suggestions.push('📊 3PL: Multiple clients require separate data validation rules')
+        suggestions.push('🏭 Manufacturing: Quality systems demand 100% data accuracy')
+        break
     }
     
-    return [...baseSuggestions, ...contextualSuggestions]
+    return suggestions
   }
 
-  // Intelligent parameter recommendations based on warehouse context
+  // Enhanced intelligent parameter recommendations with deep warehouse context
   const getIntelligentRecommendations = (): {
     timeframe: string;
     sensitivity: string;
     areas: string;
     businessImpact: string;
+    industryBestPractice: string;
+    riskAssessment: string;
   } => {
     if (!problem) return {
       timeframe: '',
       sensitivity: '',
       areas: '',
-      businessImpact: ''
+      businessImpact: '',
+      industryBestPractice: '',
+      riskAssessment: ''
     }
     
     const recommendations = {
       timeframe: '',
       sensitivity: '',
       areas: '',
-      businessImpact: ''
+      businessImpact: '',
+      industryBestPractice: '',
+      riskAssessment: ''
     }
     
-    // Time recommendations based on problem type
-    if (problem.id === 'temperature-violations') {
-      recommendations.timeframe = 'Use 15-30 minutes max - temperature compliance is critical'
-      recommendations.sensitivity = 'Maximum sensitivity recommended for food safety'
-    } else if (problem.id === 'forgotten-items') {
-      recommendations.timeframe = 'Most warehouses find 4-6 hours optimal for receiving items'
-      recommendations.sensitivity = 'Balanced sensitivity catches 75% of issues with minimal noise'
-    } else if (problem.id === 'traffic-jams') {
-      recommendations.timeframe = '2-4 hours prevents most bottlenecks without over-alerting'
-      recommendations.sensitivity = 'Strict sensitivity helps during peak hours (10am-2pm)'
+    // Rule-type specific intelligent recommendations
+    switch (problem.ruleType) {
+      case 'STAGNANT_PALLETS':
+        recommendations.timeframe = 'Most successful warehouses use 4-6 hours for receiving areas'
+        recommendations.sensitivity = 'Balanced sensitivity catches 75% of issues with minimal false alerts'
+        recommendations.industryBestPractice = 'Grocery: 4-6h | Electronics: 2-3h | General: 6-8h'
+        break
+        
+      case 'TEMPERATURE_ZONE_MISMATCH':
+        recommendations.timeframe = 'FDA requires 15-30 minutes maximum for temperature compliance'
+        recommendations.sensitivity = 'Maximum sensitivity essential for regulatory compliance'
+        recommendations.industryBestPractice = 'Food Safety: 15min | Pharma: 5min | General: 30min'
+        recommendations.riskAssessment = 'HIGH RISK: Product spoilage costs $500-2000 per incident'
+        break
+        
+      case 'LOCATION_SPECIFIC_STAGNANT':
+        recommendations.timeframe = '2-4 hours prevents bottlenecks without over-alerting'
+        recommendations.sensitivity = 'Higher sensitivity recommended during peak hours (10am-2pm)'
+        recommendations.industryBestPractice = 'Main aisles: 2h | Side aisles: 4h | Pick paths: 1h'
+        break
+        
+      case 'DATA_INTEGRITY':
+        recommendations.timeframe = 'Run every 2-4 hours during busy periods'
+        recommendations.sensitivity = 'Medium sensitivity balances accuracy with performance'
+        recommendations.industryBestPractice = '3PL: Every 2h | Retail: Every 4h | Manufacturing: Every 1h'
+        break
+        
+      case 'OVERCAPACITY':
+        recommendations.timeframe = 'Real-time monitoring recommended for capacity violations'
+        recommendations.sensitivity = 'High sensitivity prevents safety hazards'
+        recommendations.industryBestPractice = 'Alert at 85% general, 75% hazmat, 90% dry storage'
+        recommendations.riskAssessment = 'SAFETY RISK: Overcapacity creates accident hazards'
+        break
+        
+      case 'UNCOORDINATED_LOTS':
+        recommendations.timeframe = '80-90% completion threshold most effective'
+        recommendations.sensitivity = 'Balanced sensitivity catches stragglers without noise'
+        recommendations.industryBestPractice = 'Large lots: 85% | Small lots: 75% | Rush orders: 90%'
+        break
+        
+      default:
+        recommendations.timeframe = 'Standard warehouse operations typically use 4-8 hour windows'
+        recommendations.sensitivity = 'Balanced approach recommended for general warehouse rules'
     }
     
-    // Area recommendations
-    if (selectedAreas.length === 1) {
-      recommendations.areas = 'Consider monitoring related areas for better coverage'
+    // Area-specific recommendations
+    if (selectedAreas.length === 0) {
+      recommendations.areas = 'Select specific areas for more targeted monitoring'
+    } else if (selectedAreas.length === 1) {
+      recommendations.areas = 'Consider adding related areas for comprehensive coverage'
     } else if (selectedAreas.length > 3) {
-      recommendations.areas = 'Many areas selected - consider separate rules for different zones'
+      recommendations.areas = 'Multiple areas selected - may want separate rules for better control'
+    } else {
+      recommendations.areas = 'Good coverage - balanced monitoring across key areas'
     }
     
-    // Business impact predictions
+    // Enhanced business impact calculations
     const timeHours = selectedTimeframe === 'custom' ? customHours : (timeOption?.hours || 8)
-    const avgIssuesPerWeek = Math.max(1, Math.floor((10 - sensitivity) * (timeHours / 4) * selectedAreas.length * 0.8))
-    const estimatedSavings = avgIssuesPerWeek * (problem.id === 'temperature-violations' ? 1500 : 
-                                                 problem.id === 'traffic-jams' ? 300 : 200)
+    const ruleComplexity = getRuleComplexityScore(problem.ruleType)
+    const areaMultiplier = Math.max(1, selectedAreas.length * 0.7)
+    const sensitivityMultiplier = sensitivity <= 2 ? 0.4 : sensitivity >= 4 ? 1.6 : 1.0
     
-    recommendations.businessImpact = `Estimated ${avgIssuesPerWeek} issues/week, ~$${estimatedSavings} monthly savings`
+    const estimatedIssuesPerWeek = Math.max(1, Math.floor(
+      ruleComplexity * sensitivityMultiplier * areaMultiplier * (8 / Math.max(1, timeHours)) * 2
+    ))
+    
+    const savingsPerIssue = getSavingsPerIssue(problem.ruleType)
+    const monthlySavings = estimatedIssuesPerWeek * 4.3 * savingsPerIssue
+    
+    recommendations.businessImpact = `Projected: ${estimatedIssuesPerWeek} issues/week → $${Math.floor(monthlySavings).toLocaleString()} monthly savings`
     
     return recommendations
+  }
+  
+  // Helper function to calculate rule complexity scoring
+  const getRuleComplexityScore = (ruleType: string): number => {
+    const complexityMap: Record<string, number> = {
+      'DATA_INTEGRITY': 12, // High frequency, many potential issues
+      'STAGNANT_PALLETS': 8, // Common issue, predictable patterns
+      'MISSING_LOCATION': 6, // Less frequent but critical
+      'TEMPERATURE_ZONE_MISMATCH': 4, // Low frequency but high impact
+      'OVERCAPACITY': 5, // Seasonal variations
+      'LOCATION_SPECIFIC_STAGNANT': 7, // Traffic patterns
+      'UNCOORDINATED_LOTS': 6, // Depends on lot coordination
+      'INVALID_LOCATION': 3, // Usually after system changes
+      'PRODUCT_INCOMPATIBILITY': 2, // Setup-dependent
+      'LOCATION_MAPPING_ERROR': 1 // Rare but critical
+    }
+    return complexityMap[ruleType] || 5
+  }
+  
+  // Helper function to calculate savings per issue by rule type
+  const getSavingsPerIssue = (ruleType: string): number => {
+    const savingsMap: Record<string, number> = {
+      'TEMPERATURE_ZONE_MISMATCH': 1200, // Product spoilage costs
+      'OVERCAPACITY': 800, // Safety and efficiency
+      'STAGNANT_PALLETS': 300, // Labor and space costs
+      'LOCATION_SPECIFIC_STAGNANT': 250, // Traffic delays
+      'DATA_INTEGRITY': 400, // Inventory discrepancies
+      'MISSING_LOCATION': 350, // Search time
+      'UNCOORDINATED_LOTS': 200, // Coordination delays
+      'INVALID_LOCATION': 150, // Confusion costs
+      'PRODUCT_INCOMPATIBILITY': 1000, // Compliance and safety
+      'LOCATION_MAPPING_ERROR': 500 // System efficiency
+    }
+    return savingsMap[ruleType] || 250
   }
 
   const steps = [
@@ -629,8 +942,8 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
           </CardContent>
         </Card>
 
-        {/* Smart Area Selection */}
-        {(selectedProblem === 'forgotten-items' || selectedProblem === 'traffic-jams') && (
+        {/* Smart Area Selection - Show for location-relevant problems */}
+        {(['forgotten-items', 'traffic-jams', 'storage-overflow', 'incomplete-deliveries'].includes(selectedProblem || '')) && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Which areas should we monitor?</CardTitle>
@@ -639,11 +952,12 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {[
-                  { id: 'receiving', label: 'Receiving Docks', icon: '🚚', priority: 'high' },
+                  { id: 'receiving', label: 'Receiving Docks', icon: '🚚', priority: ['forgotten-items', 'incomplete-deliveries'].includes(selectedProblem || '') ? 'high' : 'medium' },
                   { id: 'staging', label: 'Staging Areas', icon: '📦', priority: 'medium' },
                   { id: 'aisles', label: 'Aisles', icon: '🛣️', priority: selectedProblem === 'traffic-jams' ? 'high' : 'low' },
                   { id: 'picking', label: 'Pick Zones', icon: '🛒', priority: 'medium' },
                   { id: 'shipping', label: 'Shipping Docks', icon: '📤', priority: 'low' },
+                  { id: 'dock', label: 'Dock Areas', icon: '🏗️', priority: selectedProblem === 'storage-overflow' ? 'high' : 'low' },
                   { id: 'returns', label: 'Returns Area', icon: '↩️', priority: 'low' }
                 ].map((area) => (
                   <button
@@ -744,20 +1058,67 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
                   </AlertDescription>
                 </Alert>
               )}
+              {recommendations.industryBestPractice && (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-sm">
+                    <strong>Best Practice:</strong> {recommendations.industryBestPractice}
+                  </AlertDescription>
+                </Alert>
+              )}
+              {recommendations.riskAssessment && (
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-sm">
+                    <strong>Risk:</strong> {recommendations.riskAssessment}
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
             
-            {/* Contextual Smart Suggestions */}
+            {/* Enhanced Contextual Smart Suggestions */}
             {smartSuggestions.length > 0 && (
-              <div className="mt-4 p-4 bg-white/80 rounded-lg border border-blue-200">
-                <h4 className="font-medium mb-2 text-sm">💡 Additional Smart Insights:</h4>
-                <ul className="space-y-1">
-                  {smartSuggestions.slice(0, 3).map((suggestion, index) => (
-                    <li key={index} className="text-xs text-muted-foreground flex items-start gap-2">
-                      <span className="text-blue-500 mt-0.5">•</span>
-                      {suggestion}
-                    </li>
-                  ))}
-                </ul>
+              <div className="mt-4 space-y-3">
+                <div className="p-4 bg-white/80 rounded-lg border border-blue-200">
+                  <h4 className="font-medium mb-2 text-sm flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-blue-600" />
+                    💡 AI-Powered Insights
+                  </h4>
+                  <ul className="space-y-2">
+                    {smartSuggestions.slice(0, 4).map((suggestion, index) => {
+                      const isIndustrySpecific = suggestion.includes('🍕') || suggestion.includes('💊') || 
+                                                suggestion.includes('🏪') || suggestion.includes('⚗️') || 
+                                                suggestion.includes('☢️') || suggestion.includes('📊')
+                      return (
+                        <li key={index} className={`text-xs flex items-start gap-2 ${
+                          isIndustrySpecific ? 'text-blue-700 bg-blue-50 p-2 rounded' : 'text-muted-foreground'
+                        }`}>
+                          <span className={`mt-0.5 ${
+                            isIndustrySpecific ? 'text-blue-600' : 'text-blue-500'
+                          }`}>•</span>
+                          <span className={isIndustrySpecific ? 'font-medium' : ''}>{suggestion}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+                
+                {/* Show remaining suggestions if there are more */}
+                {smartSuggestions.length > 4 && (
+                  <details className="p-3 bg-gray-50 rounded-lg">
+                    <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
+                      🔍 View {smartSuggestions.length - 4} more suggestions
+                    </summary>
+                    <ul className="space-y-1 mt-2">
+                      {smartSuggestions.slice(4).map((suggestion, index) => (
+                        <li key={index + 4} className="text-xs text-gray-600 flex items-start gap-2">
+                          <span className="text-gray-500 mt-0.5">•</span>
+                          {suggestion}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             )}
           </CardContent>
@@ -1105,12 +1466,14 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
             <AlertDescription>
               <strong>Smart Rule Summary:</strong>
               <br />
-              This rule will alert you when {problem?.title.toLowerCase()} occur in{' '}
-              {selectedAreas.length > 0 ? selectedAreas.join(' or ') : 'monitored areas'} for longer than{' '}
-              {selectedTimeframe === 'custom' ? `${customHours} hours` : timeOption?.label.toLowerCase()}.
+              This rule will monitor for {problem?.title.toLowerCase()} and alert you when issues are detected{' '}
+              {selectedAreas.length > 0 ? `in ${selectedAreas.join(' or ')} areas` : 'across your warehouse'}{' '}
+              {(['forgotten-items', 'traffic-jams'].includes(selectedProblem || '')) ? 
+                `for longer than ${selectedTimeframe === 'custom' ? `${customHours} hours` : timeOption?.label.toLowerCase()}` : 
+                'based on the configured detection criteria'}.
               <br />
               <br />
-              <strong>Intelligence Level:</strong> {sensitivityInfo?.label} sensitivity with {selectedSuggestions.length} smart enhancements active.
+              <strong>Rule Type:</strong> {problem?.ruleType} | <strong>Intelligence Level:</strong> {sensitivityInfo?.label} sensitivity with {selectedSuggestions.length} smart enhancements active.
             </AlertDescription>
           </Alert>
 
@@ -1222,7 +1585,7 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
             customHours,
             sensitivity,
             areas: selectedAreas,
-            smartSuggestions: selectedSuggestions,
+            selectedSuggestions,
             advancedMode,
             additionalConditions
           })}

@@ -1,12 +1,11 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { 
   Select, 
   SelectContent, 
@@ -14,7 +13,6 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { 
   Clock,
   MapPin,
@@ -26,7 +24,9 @@ import {
   Users,
   Shield,
   ArrowRight,
-  Info
+  Info,
+  AlertCircle,
+  Settings
 } from 'lucide-react'
 
 interface SmartTemplate {
@@ -34,12 +34,13 @@ interface SmartTemplate {
   name: string
   description: string
   category: 'common' | 'advanced' | 'industry'
-  icon: any
+  icon: React.ComponentType<{ className?: string }>
   difficulty: 'beginner' | 'intermediate' | 'advanced'
   estimatedTime: string
   useCase: string
-  conditions: Record<string, any>
-  parameters: Record<string, any>
+  ruleType: string
+  conditions: Record<string, unknown>
+  parameters: Record<string, unknown>
   configurableFields: {
     key: string
     label: string
@@ -60,12 +61,13 @@ interface SmartTemplate {
 }
 
 interface SmartTemplatesProps {
-  onTemplateSelect: (template: SmartTemplate, configuration: Record<string, any>) => void
+  onTemplateSelect: (template: SmartTemplate, configuration: Record<string, unknown>, ruleData?: unknown) => void
   onCancel: () => void
   categories: Array<{ id: number; display_name: string }>
 }
 
 const SMART_TEMPLATES: SmartTemplate[] = [
+  // BASIC TEMPLATES - All 10 rule types covered
   {
     id: 'forgotten-pallets',
     name: 'Find Forgotten Pallets',
@@ -75,6 +77,7 @@ const SMART_TEMPLATES: SmartTemplate[] = [
     difficulty: 'beginner',
     estimatedTime: '2 minutes',
     useCase: 'Daily operations - prevent bottlenecks in receiving',
+    ruleType: 'STAGNANT_PALLETS',
     conditions: {
       location_types: ['RECEIVING'],
       time_threshold_hours: 6
@@ -131,6 +134,7 @@ const SMART_TEMPLATES: SmartTemplate[] = [
     difficulty: 'beginner',
     estimatedTime: '3 minutes',
     useCase: 'Lot coordination - ensure complete lot processing',
+    ruleType: 'UNCOORDINATED_LOTS',
     conditions: {
       completion_threshold: 0.8,
       location_types: ['RECEIVING']
@@ -175,6 +179,7 @@ const SMART_TEMPLATES: SmartTemplate[] = [
     difficulty: 'intermediate',
     estimatedTime: '4 minutes',
     useCase: 'Food safety - prevent temperature violations',
+    ruleType: 'TEMPERATURE_ZONE_MISMATCH',
     conditions: {
       product_patterns: ['*FROZEN*', '*REFRIGERATED*'],
       prohibited_zones: ['AMBIENT', 'GENERAL'],
@@ -234,6 +239,7 @@ const SMART_TEMPLATES: SmartTemplate[] = [
     difficulty: 'intermediate',
     estimatedTime: '3 minutes',
     useCase: 'Traffic flow - keep aisles clear for operations',
+    ruleType: 'LOCATION_SPECIFIC_STAGNANT',
     conditions: {
       location_pattern: 'AISLE*',
       time_threshold_hours: 2
@@ -286,6 +292,7 @@ const SMART_TEMPLATES: SmartTemplate[] = [
     difficulty: 'advanced',
     estimatedTime: '5 minutes',
     useCase: 'Safety & efficiency - prevent overloading locations',
+    ruleType: 'OVERCAPACITY',
     conditions: {
       check_all_locations: true
     },
@@ -327,12 +334,195 @@ const SMART_TEMPLATES: SmartTemplate[] = [
       'Consider seasonal capacity variations',
       'Monitor dock doors more strictly than storage areas'
     ]
+  },
+  // NEW TEMPLATES - Missing rule types
+  {
+    id: 'data-integrity-check',
+    name: 'Scanner Error Detection',
+    description: 'Catch duplicate scans and invalid location codes',
+    category: 'common',
+    icon: AlertTriangle,
+    difficulty: 'beginner',
+    estimatedTime: '2 minutes',
+    useCase: 'Data quality - prevent scanning errors',
+    ruleType: 'DATA_INTEGRITY',
+    conditions: {
+      check_duplicate_scans: true,
+      check_impossible_locations: true
+    },
+    parameters: {},
+    configurableFields: [
+      {
+        key: 'check_duplicate_scans',
+        label: 'Check for duplicate scans',
+        description: 'Flag when same pallet is scanned multiple times',
+        type: 'select',
+        defaultValue: true,
+        options: [
+          { value: true, label: 'Enabled', description: 'Check for duplicate pallet IDs' },
+          { value: false, label: 'Disabled', description: 'Skip duplicate scan checks' }
+        ]
+      },
+      {
+        key: 'check_impossible_locations',
+        label: 'Check for invalid location codes',
+        description: 'Flag locations that are clearly wrong (too long, special characters)',
+        type: 'select',
+        defaultValue: true,
+        options: [
+          { value: true, label: 'Enabled', description: 'Check for invalid location formats' },
+          { value: false, label: 'Disabled', description: 'Skip location format checks' }
+        ]
+      }
+    ],
+    examples: [
+      {
+        scenario: 'Busy receiving dock with multiple scanners',
+        configuration: { check_duplicate_scans: true, check_impossible_locations: true },
+        expectedResult: 'Catch scanning errors and data entry mistakes in real-time'
+      }
+    ],
+    tips: [
+      'Run this check every 2-4 hours during busy periods',
+      'Most common after shift changes or new employee training',
+      'Essential for inventory accuracy'
+    ]
+  },
+  {
+    id: 'missing-locations',
+    name: 'Find Lost Pallets',
+    description: 'Locate pallets with no location assigned',
+    category: 'common',
+    icon: MapPin,
+    difficulty: 'beginner',
+    estimatedTime: '1 minute',
+    useCase: 'Location tracking - find pallets that went missing',
+    ruleType: 'MISSING_LOCATION',
+    conditions: {},
+    parameters: {},
+    configurableFields: [],
+    examples: [
+      {
+        scenario: 'After system update or network issues',
+        configuration: {},
+        expectedResult: 'Quickly identify pallets that lost their location data'
+      }
+    ],
+    tips: [
+      'Run immediately after any system maintenance',
+      'Check hourly during high-volume periods',
+      'Often caused by network interruptions during scanning'
+    ]
+  },
+  {
+    id: 'invalid-locations',
+    name: 'Invalid Location Checker',
+    description: 'Find pallets in non-existent locations',
+    category: 'common',
+    icon: AlertCircle,
+    difficulty: 'beginner',
+    estimatedTime: '2 minutes',
+    useCase: 'Location validation - ensure all locations exist',
+    ruleType: 'INVALID_LOCATION',
+    conditions: {},
+    parameters: {},
+    configurableFields: [],
+    examples: [
+      {
+        scenario: 'After warehouse layout changes',
+        configuration: {},
+        expectedResult: 'Find pallets assigned to old or incorrect location codes'
+      }
+    ],
+    tips: [
+      'Essential after any warehouse reconfiguration',
+      'Run weekly as preventive maintenance',
+      'Helps maintain location master data accuracy'
+    ]
+  },
+  {
+    id: 'product-restrictions',
+    name: 'Product Storage Compliance',
+    description: 'Ensure products are in approved locations only',
+    category: 'advanced',
+    icon: Package,
+    difficulty: 'intermediate',
+    estimatedTime: '4 minutes',
+    useCase: 'Compliance - enforce product placement rules',
+    ruleType: 'PRODUCT_INCOMPATIBILITY',
+    conditions: {},
+    parameters: {},
+    configurableFields: [],
+    examples: [
+      {
+        scenario: 'Food safety compliance in grocery warehouse',
+        configuration: {},
+        expectedResult: 'Prevent food items from being stored near chemicals or hazmat'
+      }
+    ],
+    tips: [
+      'Critical for food, pharmaceutical, and chemical warehouses',
+      'Set up location restrictions in your location master first',
+      'Run continuously for compliance-critical operations'
+    ]
+  },
+  {
+    id: 'location-setup-audit',
+    name: 'Location Configuration Audit',
+    description: 'Find inconsistent location type assignments',
+    category: 'advanced',
+    icon: Settings,
+    difficulty: 'advanced',
+    estimatedTime: '5 minutes',
+    useCase: 'System maintenance - audit location setup',
+    ruleType: 'LOCATION_MAPPING_ERROR',
+    conditions: {
+      validate_location_types: true,
+      check_pattern_consistency: true
+    },
+    parameters: {},
+    configurableFields: [
+      {
+        key: 'validate_location_types',
+        label: 'Check location type consistency',
+        description: 'Flag locations with conflicting type assignments',
+        type: 'select',
+        defaultValue: true,
+        options: [
+          { value: true, label: 'Enabled', description: 'Check for conflicting location types' },
+          { value: false, label: 'Disabled', description: 'Skip location type validation' }
+        ]
+      },
+      {
+        key: 'check_pattern_consistency',
+        label: 'Check naming pattern consistency',
+        description: 'Validate location codes follow naming conventions',
+        type: 'select',
+        defaultValue: true,
+        options: [
+          { value: true, label: 'Enabled', description: 'Check naming pattern consistency' },
+          { value: false, label: 'Disabled', description: 'Skip pattern validation' }
+        ]
+      }
+    ],
+    examples: [
+      {
+        scenario: 'After WMS configuration changes',
+        configuration: { validate_location_types: true, check_pattern_consistency: true },
+        expectedResult: 'Find and fix location setup inconsistencies'
+      }
+    ],
+    tips: [
+      'Run after any WMS updates or configuration changes',
+      'Essential for maintaining data integrity',
+      'Schedule monthly as preventive maintenance'
+    ]
   }
 ]
 
-export function SmartTemplates({ onTemplateSelect, onCancel, categories }: SmartTemplatesProps) {
+export function SmartTemplates({ onTemplateSelect, onCancel }: SmartTemplatesProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<SmartTemplate | null>(null)
-  const [configuration, setConfiguration] = useState<Record<string, any>>({})
+  const [configuration, setConfiguration] = useState<Record<string, unknown>>({})
   const [currentStep, setCurrentStep] = useState<'browse' | 'configure'>('browse')
 
   const handleTemplateClick = (template: SmartTemplate) => {
@@ -349,7 +539,21 @@ export function SmartTemplates({ onTemplateSelect, onCancel, categories }: Smart
 
   const handleCreateRule = () => {
     if (selectedTemplate) {
-      onTemplateSelect(selectedTemplate, configuration)
+      // Create enhanced template data for rule creation
+      const templateRuleData = {
+        name: `${selectedTemplate.name} (Template)`,
+        problem: selectedTemplate.id, // Use template ID as problem identifier
+        ruleType: selectedTemplate.ruleType, // Pass the actual rule type
+        template: selectedTemplate,
+        configuration,
+        timeframe: 'template-based',
+        sensitivity: 3, // Default sensitivity
+        areas: [],
+        selectedSuggestions: [],
+        advancedMode: false,
+        isTemplate: true
+      }
+      onTemplateSelect(selectedTemplate, configuration, templateRuleData)
     }
   }
 

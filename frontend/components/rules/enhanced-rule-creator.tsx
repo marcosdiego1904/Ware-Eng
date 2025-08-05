@@ -131,28 +131,85 @@ export function EnhancedRuleCreator() {
       ? enhancedData.customHours 
       : getTimeOptionHours(enhancedData.selectedTimeframe)
 
+    // Get the correct rule type
+    const ruleType = problemToRuleType[enhancedData.problem] || 'STAGNANT_PALLETS'
+    
+    // Build conditions based on actual rule type requirements
+    const conditions: Record<string, any> = {}
+    
+    switch (ruleType) {
+      case 'STAGNANT_PALLETS':
+        conditions.time_threshold_hours = timeHours
+        if (enhancedData.areas && enhancedData.areas.length > 0) {
+          conditions.location_types = enhancedData.areas.map((area: string) => area.toUpperCase())
+        } else {
+          conditions.location_types = ['RECEIVING', 'TRANSITIONAL']
+        }
+        break
+        
+      case 'LOCATION_SPECIFIC_STAGNANT':
+        conditions.time_threshold_hours = timeHours
+        conditions.location_pattern = 'AISLE*' // Default for traffic jams
+        break
+        
+      case 'TEMPERATURE_ZONE_MISMATCH':
+        conditions.product_patterns = ['*FROZEN*', '*REFRIGERATED*']
+        conditions.prohibited_zones = ['AMBIENT', 'GENERAL']
+        conditions.time_threshold_minutes = Math.max(15, timeHours * 60)
+        break
+        
+      case 'UNCOORDINATED_LOTS':
+        conditions.completion_threshold = 0.8
+        conditions.location_types = ['RECEIVING']
+        break
+        
+      case 'DATA_INTEGRITY':
+        conditions.check_duplicate_scans = true
+        conditions.check_impossible_locations = true
+        break
+        
+      case 'MISSING_LOCATION':
+        // No specific conditions - rule checks for null/empty locations
+        break
+        
+      case 'INVALID_LOCATION':
+        // No specific conditions - rule validates against location master
+        break
+        
+      case 'OVERCAPACITY':
+        conditions.check_all_locations = true
+        break
+        
+      case 'PRODUCT_INCOMPATIBILITY':
+        // No specific conditions - uses location allowed_products
+        break
+        
+      case 'LOCATION_MAPPING_ERROR':
+        conditions.validate_location_types = true
+        conditions.check_pattern_consistency = true
+        break
+        
+      default:
+        conditions.time_threshold_hours = timeHours
+    }
+    
     return {
       name: enhancedData.name || 'AI-Generated Rule',
-      description: `AI-generated rule for ${enhancedData.problem}: Enhanced with smart suggestions and optimized parameters`,
+      description: `AI Smart Builder: ${enhancedData.name || 'Unnamed Rule'} - Monitors for warehouse issues using intelligent detection`,
       category_id: problemToCategory[enhancedData.problem] || 1,
-      rule_type: problemToRuleType[enhancedData.problem] || 'TIME_THRESHOLD',
+      rule_type: ruleType,
       priority: sensitivityToPriority[enhancedData.sensitivity] || 'MEDIUM',
-      conditions: {
-        time_threshold_hours: timeHours,
-        locations: enhancedData.areas || [],
-        sensitivity_level: enhancedData.sensitivity,
-        smart_suggestions: enhancedData.smartSuggestions || [],
-        advanced_conditions: enhancedData.additionalConditions || []
-      },
+      conditions,
       parameters: {
         ai_enhanced: true,
         problem_type: enhancedData.problem,
-        smart_mode: true,
+        sensitivity_level: enhancedData.sensitivity || 3,
+        timeframe_setting: enhancedData.selectedTimeframe,
+        custom_hours: enhancedData.customHours,
+        selected_areas: enhancedData.areas || [],
+        smart_enhancements: enhancedData.selectedSuggestions || [],
         advanced_mode: enhancedData.advancedMode || false,
-        performance_predictions: {
-          expected_issues_per_week: Math.floor((10 - enhancedData.sensitivity) * 2),
-          estimated_monthly_savings: Math.floor(Math.random() * 2000) + 500
-        }
+        created_by: 'ai_smart_builder'
       },
       is_active: true
     }
@@ -186,6 +243,63 @@ export function EnhancedRuleCreator() {
       })
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleTemplateSelect = async (template: any, configuration: any, ruleData?: any) => {
+    setIsSubmitting(true)
+    try {
+      // If ruleData is provided, use it directly (from enhanced template)
+      if (ruleData) {
+        const ruleRequest = convertEnhancedToRuleRequest(ruleData)
+        await createRule(ruleRequest)
+      } else {
+        // Fallback: convert template to rule request
+        const templateRuleRequest = convertTemplateToRuleRequest(template, configuration)
+        await createRule(templateRuleRequest)
+      }
+      
+      toast({
+        title: 'Template Rule Created! 🚀',
+        description: `Your rule "${template.name}" is now active and monitoring your warehouse.`
+      })
+      setCurrentSubView('overview')
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to Create Template Rule',
+        description: 'There was an error creating your template-based rule. Please try again.'
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const convertTemplateToRuleRequest = (template: any, configuration: any): CreateRuleRequest => {
+    // Map template categories to rule categories
+    const categoryMap: Record<string, number> = {
+      'common': 1, // FLOW_TIME
+      'advanced': 2, // SPACE  
+      'industry': 3  // PRODUCT
+    }
+    
+    // Merge template conditions with user configuration
+    const conditions = { ...template.conditions, ...configuration }
+    
+    return {
+      name: template.name,
+      description: `Template: ${template.description}`,
+      category_id: categoryMap[template.category] || 1,
+      rule_type: template.ruleType || 'STAGNANT_PALLETS',
+      conditions,
+      parameters: {
+        template_based: true,
+        template_id: template.id,
+        difficulty: template.difficulty,
+        estimated_time: template.estimatedTime
+      },
+      priority: template.difficulty === 'advanced' ? 'HIGH' : 'MEDIUM',
+      is_active: true
     }
   }
 
@@ -327,11 +441,7 @@ export function EnhancedRuleCreator() {
                 </AlertDescription>
               </Alert>
               <SmartTemplates 
-                onTemplateSelect={(template) => {
-                  // Handle template selection
-                  setFormData(template)
-                  setCreationMode('smart') // Switch to smart builder for customization
-                }}
+                onTemplateSelect={handleTemplateSelect}
                 onCancel={handleCancel}
                 categories={categories}
               />
