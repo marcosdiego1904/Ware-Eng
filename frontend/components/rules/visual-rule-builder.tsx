@@ -217,7 +217,7 @@ export function VisualRuleBuilder({
       console.log('No initial conditions, adding default for rule type:', ruleType)
       addDefaultCondition()
     }
-  }, [initialConditions, ruleType])
+  }, [initialConditions, ruleType]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Convert visual conditions to JSON format
   useEffect(() => {
@@ -362,6 +362,7 @@ export function VisualRuleBuilder({
 
 
   const addCondition = () => {
+    console.log('🔧 ADD CONDITION CLICKED - Current conditions count:', conditions.length)
     const newCondition: RuleCondition = {
       id: `condition-${Date.now()}`,
       field: 'time_threshold_hours',
@@ -369,7 +370,13 @@ export function VisualRuleBuilder({
       value: 6,
       connector: 'AND'
     }
-    setConditions([...conditions, newCondition])
+    console.log('🔧 Creating new condition:', newCondition)
+    
+    setConditions(prevConditions => {
+      const updatedConditions = [...prevConditions, newCondition]
+      console.log('🔧 Updated conditions array:', updatedConditions)
+      return updatedConditions
+    })
   }
 
   const updateCondition = (id: string, updates: Partial<RuleCondition>) => {
@@ -654,7 +661,7 @@ export function VisualRuleBuilder({
           <div className="flex justify-center pt-4">
             <Button variant="outline" onClick={addCondition}>
               <Plus className="w-4 h-4 mr-2" />
-              Add Another Condition
+              Add Another Condition ({conditions.length} current)
             </Button>
           </div>
 
