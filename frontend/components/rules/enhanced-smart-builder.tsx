@@ -41,6 +41,7 @@ import {
   Wand2,
   Info
 } from 'lucide-react'
+import { VisualRuleBuilder } from './visual-rule-builder'
 
 // Enhanced warehouse problems with more context - ALL 10 RULE TYPES
 const WAREHOUSE_PROBLEMS = [
@@ -389,6 +390,11 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
   const [additionalConditions] = useState<unknown[]>([])
   const [showSmartSuggestions, setShowSmartSuggestions] = useState(true)
   
+  // Advanced mode state management
+  const [advancedConditions, setAdvancedConditions] = useState<Record<string, any>>({})
+  const [isValidatingAdvanced, setIsValidatingAdvanced] = useState(false)
+  const [advancedValidationResult, setAdvancedValidationResult] = useState<{ success: boolean; error?: string } | null>(null)
+  
   const problem = WAREHOUSE_PROBLEMS.find(p => p.id === selectedProblem)
   const timeOption = TIME_OPTIONS.find(t => t.id === selectedTimeframe)
   const sensitivityInfo = SENSITIVITY_LEVELS.find(s => s.level === sensitivity)
@@ -513,6 +519,100 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
     }
     
     return suggestions
+  }
+
+  // Advanced mode helper functions
+  const getInitialConditionsForProblem = (): Record<string, any> => {
+    if (!problem) return {}
+    
+    const timeHours = selectedTimeframe === 'custom' ? customHours : (timeOption?.hours || 8)
+    
+    // Generate initial conditions based on the basic configuration
+    const baseConditions: Record<string, any> = {}
+    
+    switch (problem.ruleType) {
+      case 'STAGNANT_PALLETS':
+        baseConditions.time_threshold_hours = timeHours
+        if (selectedAreas.length > 0) {
+          baseConditions.location_types = selectedAreas.map(area => area.toUpperCase())
+        }
+        break
+        
+      case 'LOCATION_SPECIFIC_STAGNANT':
+        baseConditions.time_threshold_hours = timeHours
+        baseConditions.location_pattern = 'AISLE*'
+        break
+        
+      case 'TEMPERATURE_ZONE_MISMATCH':
+        baseConditions.product_patterns = ['*FROZEN*', '*REFRIGERATED*']
+        baseConditions.prohibited_zones = ['AMBIENT', 'GENERAL']
+        baseConditions.time_threshold_minutes = Math.max(15, timeHours * 60)
+        break
+        
+      case 'UNCOORDINATED_LOTS':
+        baseConditions.completion_threshold = 0.8
+        baseConditions.location_types = ['RECEIVING']
+        break
+        
+      case 'DATA_INTEGRITY':
+        baseConditions.check_duplicate_scans = true
+        baseConditions.check_impossible_locations = true
+        break
+        
+      case 'OVERCAPACITY':
+        baseConditions.check_all_locations = true
+        baseConditions.capacity_buffer = sensitivity >= 4 ? 10 : 15
+        break
+        
+      case 'LOCATION_MAPPING_ERROR':
+        baseConditions.validate_location_types = true
+        baseConditions.check_pattern_consistency = true
+        break
+        
+      default:
+        baseConditions.time_threshold_hours = timeHours
+    }
+    
+    return baseConditions
+  }
+
+  const handleAdvancedConditionsChange = (conditions: Record<string, any>) => {
+    setAdvancedConditions(conditions)
+    // Clear previous validation results when conditions change
+    setAdvancedValidationResult(null)
+  }
+
+  const handleValidateAdvancedConditions = async () => {
+    setIsValidatingAdvanced(true)
+    
+    try {
+      // Simulate validation - in real implementation, this would call an API
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Basic validation checks
+      const hasValidConditions = Object.keys(advancedConditions).length > 0
+      const hasComplexConditions = Object.values(advancedConditions).some(value => 
+        typeof value === 'object' && value !== null && !Array.isArray(value)
+      )
+      
+      if (!hasValidConditions) {
+        setAdvancedValidationResult({
+          success: false,
+          error: 'At least one condition is required'
+        })
+      } else {
+        setAdvancedValidationResult({
+          success: true
+        })
+      }
+    } catch (error) {
+      setAdvancedValidationResult({
+        success: false,
+        error: 'Validation failed due to an unexpected error'
+      })
+    } finally {
+      setIsValidatingAdvanced(false)
+    }
   }
 
   // Enhanced intelligent parameter recommendations with deep warehouse context
@@ -1277,7 +1377,7 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-bold">Advanced Visual Rule Builder</h2>
         <p className="text-muted-foreground">
-          Build complex conditions with drag-and-drop simplicity
+          Build complex conditions with interactive drag-and-drop interface
         </p>
         <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
           <Layers className="w-3 h-3 mr-1" />
@@ -1285,117 +1385,75 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
         </Badge>
       </div>
 
-      {/* Visual Condition Builder */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Build Your Conditions Visually</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Drag and drop to create complex logic
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Base Condition (always present) */}
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+      {/* Enhanced Context Alert */}
+      <Alert className="border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50">
+        <Brain className="h-4 w-4 text-purple-600" />
+        <AlertDescription>
+          <strong>Advanced Mode Active:</strong> Create sophisticated multi-condition rules with visual logic building. 
+          Conditions are pre-populated based on your basic configuration and can be customized below.
+        </AlertDescription>
+      </Alert>
+
+      {/* Problem Context Summary */}
+      {problem && (
+        <Card className="border-l-4 border-l-purple-500 bg-purple-50/30">
+          <CardContent className="pt-6">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 rounded bg-blue-500 text-white flex items-center justify-center text-sm font-medium">
-                1
+              <problem.icon className="w-5 h-5 text-purple-600" />
+              <div>
+                <h3 className="font-medium">Building Rule For: {problem.title}</h3>
+                <p className="text-sm text-muted-foreground">Rule Type: {problem.ruleType}</p>
               </div>
-              <div className="font-medium">Main Condition</div>
-              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">
-                Required
-              </Badge>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs">Field</Label>
-                <div className="p-2 bg-white border rounded text-sm">
-                  {selectedTimeframe === 'custom' ? `Time > ${customHours}h` : `Time > ${timeOption?.hours}h`}
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">Location</Label>
-                <div className="p-2 bg-white border rounded text-sm">
-                  {selectedAreas.join(' OR ')}
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">Priority</Label>
-                <div className="p-2 bg-white border rounded text-sm">
-                  {sensitivityInfo?.label}
-                </div>
-              </div>
+            <p className="text-sm">{problem.realWorldExample}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Interactive Visual Rule Builder */}
+      <VisualRuleBuilder
+        key={`${selectedProblem}-${selectedTimeframe}-${customHours}-${sensitivity}-${selectedAreas.join(',')}`} // Force re-render when context changes
+        initialConditions={getInitialConditionsForProblem()}
+        ruleType={problem?.ruleType}
+        onConditionsChange={handleAdvancedConditionsChange}
+        onValidate={handleValidateAdvancedConditions}
+        isValidating={isValidatingAdvanced}
+        validationResult={advancedValidationResult}
+      />
+
+      {/* Advanced Features Summary */}
+      <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
+        <CardContent className="pt-6">
+          <h4 className="font-medium mb-3 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            Advanced Features Available
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>Interactive condition building</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>AND/OR logic operators</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>Multi-field complex conditions</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>Real-time validation & testing</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>Visual JSON preview</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>Intelligent field suggestions</span>
             </div>
           </div>
-
-          {/* Additional Conditions */}
-          {selectedSuggestions.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Additional Conditions</h4>
-                <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
-                  {selectedSuggestions.length} active
-                </Badge>
-              </div>
-              {selectedSuggestions.map((suggestionField, index) => {
-                const condition = problem?.relatedConditions.find(c => c.field === suggestionField)
-                return (
-                  <div key={suggestionField} className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-8 h-8 rounded bg-green-500 text-white flex items-center justify-center text-sm font-medium">
-                        {index + 2}
-                      </div>
-                      <div className="font-medium">{condition?.label}</div>
-                      <div className="text-sm text-muted-foreground">AND</div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelectedSuggestions(prev => prev.filter(s => s !== suggestionField))}
-                        className="ml-auto"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs">Condition</Label>
-                        <div className="p-2 bg-white border rounded text-sm">
-                          {condition?.field.replace(/_/g, ' ')}
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="text-xs">Value</Label>
-                        <div className="p-2 bg-white border rounded text-sm">
-                          Auto-detected
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Add More Conditions */}
-          <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
-            <Button variant="outline" className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Add Another Condition
-            </Button>
-            <p className="text-xs text-muted-foreground mt-2">
-              Connect with AND/OR logic
-            </p>
-          </div>
-
-          {/* Logic Preview */}
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Logic Preview:</strong> Alert when items meet the main condition
-              {selectedSuggestions.length > 0 && (
-                <span> AND {selectedSuggestions.length} additional condition{selectedSuggestions.length > 1 ? 's' : ''}</span>
-              )}
-            </AlertDescription>
-          </Alert>
         </CardContent>
       </Card>
     </div>
@@ -1474,6 +1532,11 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
               <br />
               <br />
               <strong>Rule Type:</strong> {problem?.ruleType} | <strong>Intelligence Level:</strong> {sensitivityInfo?.label} sensitivity with {selectedSuggestions.length} smart enhancements active.
+                {advancedMode && Object.keys(advancedConditions).length > 0 && (
+                  <>
+                    {' '}| <strong>Advanced Mode:</strong> {Object.keys(advancedConditions).length} custom condition{Object.keys(advancedConditions).length > 1 ? 's' : ''} configured.
+                  </>
+                )}
             </AlertDescription>
           </Alert>
 
@@ -1578,17 +1641,22 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
 
       <div className="flex justify-center">
         <Button 
-          onClick={() => onRuleCreate?.({
-            name: ruleName,
-            problem: selectedProblem,
-            timeframe: selectedTimeframe,
-            customHours,
-            sensitivity,
-            areas: selectedAreas,
-            selectedSuggestions,
-            advancedMode,
-            additionalConditions
-          })}
+          onClick={() => {
+            const ruleData = {
+              name: ruleName,
+              problem: selectedProblem,
+              timeframe: selectedTimeframe,
+              customHours,
+              sensitivity,
+              areas: selectedAreas,
+              selectedSuggestions,
+              advancedMode,
+              additionalConditions,
+              // Include advanced conditions if advanced mode was used
+              advancedConditions: advancedMode ? advancedConditions : {}
+            }
+            onRuleCreate?.(ruleData)
+          }}
           size="lg"
           className="px-8 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
         >

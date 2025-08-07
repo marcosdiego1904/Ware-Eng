@@ -153,9 +153,14 @@ export function EnhancedRuleCreator() {
     const ruleType = problemToRuleType[enhancedData.problem] || 'STAGNANT_PALLETS'
     
     // Build conditions based on actual rule type requirements
-    const conditions: Record<string, any> = {}
+    let conditions: Record<string, any> = {}
     
-    switch (ruleType) {
+    // If advanced conditions are provided, use them as the base
+    if (enhancedData.advancedConditions && Object.keys(enhancedData.advancedConditions).length > 0) {
+      conditions = { ...enhancedData.advancedConditions }
+    } else {
+      // Otherwise, build conditions based on basic configuration
+      switch (ruleType) {
       case 'STAGNANT_PALLETS':
         conditions.time_threshold_hours = timeHours
         if (enhancedData.areas && enhancedData.areas.length > 0) {
@@ -223,6 +228,7 @@ export function EnhancedRuleCreator() {
         // Fallback for any unmapped rule types
         conditions.time_threshold_hours = timeHours
         console.warn(`Unmapped rule type: ${ruleType}, using default conditions`)
+      }
     }
     
     return {
@@ -241,6 +247,8 @@ export function EnhancedRuleCreator() {
         selected_areas: enhancedData.areas || [],
         smart_enhancements: enhancedData.selectedSuggestions || [],
         advanced_mode: enhancedData.advancedMode || false,
+        advanced_conditions_used: enhancedData.advancedConditions && Object.keys(enhancedData.advancedConditions).length > 0,
+        advanced_conditions_count: enhancedData.advancedConditions ? Object.keys(enhancedData.advancedConditions).length : 0,
         created_by: 'ai_smart_builder'
       },
       is_active: true
