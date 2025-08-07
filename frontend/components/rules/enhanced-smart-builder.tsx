@@ -1412,7 +1412,6 @@ export function EnhancedSmartBuilder({ onRuleCreate, onCancel }: EnhancedSmartBu
 
       {/* Interactive Visual Rule Builder */}
       <VisualRuleBuilder
-        key={`${selectedProblem}-${selectedTimeframe}-${customHours}-${sensitivity}-${selectedAreas.join(',')}`} // Force re-render when context changes
         initialConditions={getInitialConditionsForProblem()}
         ruleType={problem?.ruleType}
         onConditionsChange={handleAdvancedConditionsChange}

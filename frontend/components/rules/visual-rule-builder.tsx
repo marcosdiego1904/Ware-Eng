@@ -140,6 +140,7 @@ export function VisualRuleBuilder({
 }: VisualRuleBuilderProps) {
   const [conditions, setConditions] = useState<RuleCondition[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
   
   // Add ref to track previous conditions to prevent infinite loops
   const prevConditionsRef = useRef<Record<string, any>>({})
@@ -193,31 +194,34 @@ export function VisualRuleBuilder({
     setConditions([defaultCondition])
   }
 
-  // Initialize conditions from props
+  // Initialize conditions from props - but only once!
   useEffect(() => {
-    if (initialConditions && Object.keys(initialConditions).length > 0) {
-      try {
-        console.log('Parsing initial conditions:', initialConditions)
-        const parsedConditions = parseConditionsFromObject(initialConditions)
-        if (parsedConditions.length > 0) {
-          console.log('Successfully parsed conditions:', parsedConditions)
-          setConditions(parsedConditions)
-        } else {
-          console.log('No conditions parsed, adding default')
-          // If parsing failed or returned empty, add default condition
+    if (!isInitialized) {
+      console.log('🚀 INITIALIZING VisualRuleBuilder - First time only')
+      if (initialConditions && Object.keys(initialConditions).length > 0) {
+        try {
+          console.log('Parsing initial conditions:', initialConditions)
+          const parsedConditions = parseConditionsFromObject(initialConditions)
+          if (parsedConditions.length > 0) {
+            console.log('Successfully parsed conditions:', parsedConditions)
+            setConditions(parsedConditions)
+          } else {
+            console.log('No conditions parsed, adding default')
+            addDefaultCondition()
+          }
+        } catch (error) {
+          console.warn('Failed to parse initial conditions:', error)
           addDefaultCondition()
         }
-      } catch (error) {
-        console.warn('Failed to parse initial conditions:', error)
-        // Fallback to default condition if parsing fails
+      } else {
+        console.log('No initial conditions, adding default for rule type:', ruleType)
         addDefaultCondition()
       }
-    } else if (conditions.length === 0) {
-      // Add a default condition based on rule type
-      console.log('No initial conditions, adding default for rule type:', ruleType)
-      addDefaultCondition()
+      setIsInitialized(true)
+    } else {
+      console.log('🔒 VisualRuleBuilder already initialized - preserving user conditions')
     }
-  }, [initialConditions, ruleType]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialConditions, ruleType, isInitialized]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Convert visual conditions to JSON format
   useEffect(() => {
