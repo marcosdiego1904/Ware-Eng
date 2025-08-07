@@ -100,22 +100,40 @@ export function EnhancedRuleCreator() {
 
   // Convert enhanced builder data to API format
   const convertEnhancedToRuleRequest = (enhancedData: any): CreateRuleRequest => {
-    // Problem type to rule type mapping
+    // Problem type to rule type mapping - CORRECTED to match backend rule types
     const problemToRuleType: Record<string, string> = {
-      'traffic-jams': 'STAGNANT_PALLETS',
-      'forgotten-items': 'TIME_THRESHOLD',
-      'temperature-violations': 'TEMPERATURE_COMPLIANCE',
-      'incomplete-deliveries': 'INCOMPLETE_DELIVERY',
-      'overflow-situations': 'CAPACITY_OVERFLOW'
+      // Original problems - FIXED mappings
+      'forgotten-items': 'STAGNANT_PALLETS',
+      'traffic-jams': 'LOCATION_SPECIFIC_STAGNANT',
+      'temperature-violations': 'TEMPERATURE_ZONE_MISMATCH',
+      'incomplete-deliveries': 'UNCOORDINATED_LOTS',
+      'storage-overflow': 'OVERCAPACITY',
+      
+      // New problems added in enhanced smart builder
+      'scanner-errors': 'DATA_INTEGRITY',
+      'lost-pallets': 'MISSING_LOCATION',
+      'wrong-locations': 'INVALID_LOCATION',
+      'wrong-product-areas': 'PRODUCT_INCOMPATIBILITY',
+      'location-setup-errors': 'LOCATION_MAPPING_ERROR'
     }
 
-    // Problem to category mapping (you'll need to adjust based on your categories)
+    // Problem to category mapping - CORRECTED to align with backend three-pillar system
     const problemToCategory: Record<string, number> = {
-      'traffic-jams': 1, // Assuming category ID for flow issues
-      'forgotten-items': 2, // Time-based issues
-      'temperature-violations': 3, // Safety issues
-      'incomplete-deliveries': 4, // Process completion
-      'overflow-situations': 5 // Capacity issues
+      // FLOW_TIME category (ID: 1) - Highest priority
+      'forgotten-items': 1,
+      'traffic-jams': 1,
+      'incomplete-deliveries': 1,
+      
+      // SPACE category (ID: 2) - High priority
+      'storage-overflow': 2,
+      'scanner-errors': 2,
+      'lost-pallets': 2,
+      'wrong-locations': 2,
+      'location-setup-errors': 2,
+      
+      // PRODUCT category (ID: 3) - Medium priority
+      'temperature-violations': 3,
+      'wrong-product-areas': 3
     }
 
     // Convert sensitivity to priority
@@ -149,13 +167,19 @@ export function EnhancedRuleCreator() {
         
       case 'LOCATION_SPECIFIC_STAGNANT':
         conditions.time_threshold_hours = timeHours
-        conditions.location_pattern = 'AISLE*' // Default for traffic jams
+        // Smart location pattern selection based on problem type
+        if (enhancedData.problem === 'traffic-jams') {
+          conditions.location_pattern = 'AISLE*'
+        } else {
+          conditions.location_pattern = enhancedData.areas?.length > 0 ? 
+            `${enhancedData.areas[0].toUpperCase()}*` : 'AISLE*'
+        }
         break
         
       case 'TEMPERATURE_ZONE_MISMATCH':
         conditions.product_patterns = ['*FROZEN*', '*REFRIGERATED*']
         conditions.prohibited_zones = ['AMBIENT', 'GENERAL']
-        conditions.time_threshold_minutes = Math.max(15, timeHours * 60)
+        conditions.time_threshold_minutes = Math.max(15, Math.min(120, timeHours * 60))
         break
         
       case 'UNCOORDINATED_LOTS':
@@ -173,15 +197,21 @@ export function EnhancedRuleCreator() {
         break
         
       case 'INVALID_LOCATION':
-        // No specific conditions - rule validates against location master
+        conditions.check_undefined_locations = true
         break
         
       case 'OVERCAPACITY':
         conditions.check_all_locations = true
+        // Add safety buffer based on sensitivity
+        if (enhancedData.sensitivity >= 4) {
+          conditions.capacity_buffer = 10 // Alert at 90% capacity
+        } else {
+          conditions.capacity_buffer = 15 // Alert at 85% capacity
+        }
         break
         
       case 'PRODUCT_INCOMPATIBILITY':
-        // No specific conditions - uses location allowed_products
+        // Use location allowed_products - no additional conditions needed
         break
         
       case 'LOCATION_MAPPING_ERROR':
@@ -190,7 +220,9 @@ export function EnhancedRuleCreator() {
         break
         
       default:
+        // Fallback for any unmapped rule types
         conditions.time_threshold_hours = timeHours
+        console.warn(`Unmapped rule type: ${ruleType}, using default conditions`)
     }
     
     return {
@@ -276,11 +308,11 @@ export function EnhancedRuleCreator() {
   }
 
   const convertTemplateToRuleRequest = (template: any, configuration: any): CreateRuleRequest => {
-    // Map template categories to rule categories
+    // Map template categories to rule categories - CORRECTED alignment
     const categoryMap: Record<string, number> = {
-      'common': 1, // FLOW_TIME
-      'advanced': 2, // SPACE  
-      'industry': 3  // PRODUCT
+      'common': 1, // Most common templates go to FLOW_TIME for high priority
+      'advanced': 2, // Advanced templates typically deal with SPACE management
+      'industry': 3  // Industry-specific templates often involve PRODUCT compliance
     }
     
     // Merge template conditions with user configuration
