@@ -194,6 +194,42 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     });
   };
 
+  const addReceivingArea = () => {
+    const newArea = {
+      code: `RECV-${templateData.receiving_areas.length + 1}`,
+      type: 'RECEIVING',
+      capacity: 10,
+      zone: 'DOCK'
+    };
+    updateTemplateData({
+      receiving_areas: [...templateData.receiving_areas, newArea]
+    });
+  };
+
+  const addStagingArea = () => {
+    const newArea = {
+      code: `STAGE-${templateData.staging_areas.length + 1}`,
+      type: 'STAGING',
+      capacity: 5,
+      zone: 'STAGING'
+    };
+    updateTemplateData({
+      staging_areas: [...templateData.staging_areas, newArea]
+    });
+  };
+
+  const addDockArea = () => {
+    const newArea = {
+      code: `DOCK-${templateData.dock_areas.length + 1}`,
+      type: 'DOCK',
+      capacity: 2,
+      zone: 'DOCK'
+    };
+    updateTemplateData({
+      dock_areas: [...templateData.dock_areas, newArea]
+    });
+  };
+
   const applyStarterTemplate = (starter: typeof STARTER_TEMPLATES[0]) => {
     updateTemplateData({
       name: starter.name,
@@ -606,7 +642,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
                   </Button>
                 </div>
               ))}
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={addReceivingArea}>
                 Add Receiving Area
               </Button>
             </div>
@@ -619,8 +655,35 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
             <CardDescription>Temporary storage for order preparation</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-6 text-muted-foreground">
-              No staging areas defined
+            <div className="space-y-2">
+              {templateData.staging_areas.map((area, index) => (
+                <div key={index} className="flex items-center gap-2 p-3 border rounded">
+                  <div className="flex-1">
+                    <div className="font-medium">{area.code}</div>
+                    <div className="text-sm text-muted-foreground">
+                      Capacity: {area.capacity} | Zone: {area.zone}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const newAreas = templateData.staging_areas.filter((_, i) => i !== index);
+                      updateTemplateData({ staging_areas: newAreas });
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              {templateData.staging_areas.length === 0 && (
+                <div className="text-center py-4 text-muted-foreground">
+                  No staging areas defined
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={addStagingArea}>
+                Add Staging Area
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -631,8 +694,35 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
             <CardDescription>Loading and unloading zones</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-6 text-muted-foreground">
-              No dock areas defined
+            <div className="space-y-2">
+              {templateData.dock_areas.map((area, index) => (
+                <div key={index} className="flex items-center gap-2 p-3 border rounded">
+                  <div className="flex-1">
+                    <div className="font-medium">{area.code}</div>
+                    <div className="text-sm text-muted-foreground">
+                      Capacity: {area.capacity} | Zone: {area.zone}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const newAreas = templateData.dock_areas.filter((_, i) => i !== index);
+                      updateTemplateData({ dock_areas: newAreas });
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              {templateData.dock_areas.length === 0 && (
+                <div className="text-center py-4 text-muted-foreground">
+                  No dock areas defined
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={addDockArea}>
+                Add Dock Area
+              </Button>
             </div>
           </CardContent>
         </Card>

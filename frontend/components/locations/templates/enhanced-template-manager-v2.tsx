@@ -43,7 +43,7 @@ interface EnhancedTemplateManagerProps {
 }
 
 const TEMPLATE_CATEGORIES = [
-  { value: '', label: 'All Categories' },
+  { value: 'all', label: 'All Categories' },
   { value: 'MANUFACTURING', label: 'Manufacturing' },
   { value: 'RETAIL', label: 'Retail Distribution' },
   { value: 'FOOD_BEVERAGE', label: 'Food & Beverage' },
@@ -71,7 +71,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   
   // Filter State
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [templateScope, setTemplateScope] = useState<'all' | 'my' | 'public' | 'featured'>('all');
   const [showFeaturedOnly, setShowFeaturedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'rating' | 'name'>('recent');
@@ -89,7 +89,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     let filtered = [...templates];
     
     // Apply category filter (TODO: Add category field to WarehouseTemplate interface)
-    if (selectedCategory) {
+    if (selectedCategory && selectedCategory !== 'all') {
       filtered = filtered.filter(t => (t as any).category === selectedCategory);
     }
     
@@ -124,10 +124,35 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const handleApplyByCode = async () => {
     if (shareCode.trim()) {
       try {
-        await applyTemplateByCode(shareCode.trim(), warehouseId);
+        // Generate a unique warehouse ID to avoid conflicts
+        const uniqueWarehouseId = `QUICK_${shareCode.trim()}_${Date.now()}`;
+        
+        const result = await applyTemplateByCode(
+          shareCode.trim(), 
+          uniqueWarehouseId,
+          `Template ${shareCode.trim()} - Applied ${new Date().toLocaleDateString()}`
+        );
+        
+        // Show success message with details
+        alert(`Template "${shareCode.trim()}" applied successfully!\n\n` + 
+              `Warehouse ID: ${uniqueWarehouseId}\n` +
+              `Locations created: ${result?.locations_created || 'Unknown'}\n\n` +
+              `You can now view the locations in the Warehouse Locations section.`);
+        
         setShareCode('');
-      } catch (error) {
+        
+        // Refresh templates to show updated status
+        const scope = templateScope === 'featured' ? 'all' : templateScope;
+        fetchTemplates(scope, searchTerm);
+      } catch (error: any) {
         console.error('Failed to apply template:', error);
+        
+        // Show user-friendly error message
+        if (error?.response?.data?.error) {
+          alert(`Failed to apply template: ${error.response.data.error}`);
+        } else {
+          alert('Failed to apply template. Please try again.');
+        }
       }
     }
   };
@@ -147,19 +172,54 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     }
   };
 
-  const handleApplyTemplate = async (template: { template_code?: string }) => {
+  const handleApplyTemplate = async (template: { template_code?: string; name?: string }) => {
     if (!template.template_code) return;
     
     try {
-      await applyTemplateByCode(template.template_code, warehouseId);
-    } catch (error) {
+      // Generate a unique warehouse ID to avoid conflicts
+      const uniqueWarehouseId = `TMPL_${template.template_code}_${Date.now()}`;
+      const templateName = template.name || 'Applied Template';
+      
+      const result = await applyTemplateByCode(
+        template.template_code, 
+        uniqueWarehouseId, 
+        `${templateName} - Applied ${new Date().toLocaleDateString()}`
+      );
+      
+      // Show success message with details
+      alert(`Template "${templateName}" applied successfully!\n\n` + 
+            `Warehouse ID: ${uniqueWarehouseId}\n` +
+            `Locations created: ${result?.locations_created || 'Unknown'}\n\n` +
+            `You can now view the locations in the Warehouse Locations section.`);
+      
+      // Refresh templates to show updated status
+      const scope = templateScope === 'featured' ? 'all' : templateScope;
+      fetchTemplates(scope, searchTerm);
+    } catch (error: any) {
       console.error('Failed to apply template:', error);
+      
+      // Show user-friendly error message
+      if (error?.response?.data?.error) {
+        alert(`Failed to apply template: ${error.response.data.error}`);
+      } else {
+        alert('Failed to apply template. Please try again.');
+      }
     }
   };
 
-  const handleViewTemplate = (template: unknown) => {
-    // TODO: Open template details modal
-    console.log('View template:', template);
+  const handleViewTemplate = (template: any) => {
+    // Create a detailed alert/modal showing template information
+    const details = [
+      `Name: ${template.name}`,
+      `Description: ${template.description || 'No description'}`,
+      `Structure: ${template.num_aisles}A × ${template.racks_per_aisle}R × ${template.positions_per_rack}P × ${template.levels_per_position}L`,
+      `Capacity: ${template.num_aisles * template.racks_per_aisle * template.positions_per_rack * template.levels_per_position * (template.default_pallet_capacity || 1)} pallets`,
+      `Template Code: ${template.template_code}`,
+      `Created by: ${template.creator_username || 'Unknown'}`,
+      `Created: ${template.created_at ? new Date(template.created_at).toLocaleDateString() : 'Unknown'}`
+    ].join('\n');
+    
+    alert(`Template Details:\n\n${details}`);
   };
 
   const copyTemplateCode = (code: string) => {

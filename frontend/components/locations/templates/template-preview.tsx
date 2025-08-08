@@ -16,7 +16,8 @@ import {
   Copy,
   Lock,
   Globe,
-  Building
+  Building,
+  CheckCircle
 } from 'lucide-react';
 
 interface TemplateData {
@@ -40,6 +41,8 @@ interface TemplateData {
   review_count?: number;
   template_code?: string;
   created_at?: string;
+  is_applied?: boolean;
+  applied_warehouse_id?: string;
 }
 
 interface TemplatePreviewProps {
@@ -133,6 +136,12 @@ export function TemplatePreview({
           <div className="flex items-center gap-2">
             <h4 className="font-medium truncate">{template.name}</h4>
             {template.featured && <Crown className="h-3 w-3 text-yellow-500" />}
+            {template.is_applied && (
+              <div className="flex items-center gap-1 text-green-600" title="Template is currently applied">
+                <CheckCircle className="h-3 w-3" />
+                <span className="text-xs">Applied</span>
+              </div>
+            )}
             {template.visibility && (
               <div className="flex items-center gap-1">
                 {getVisibilityIcon(template.visibility)}
@@ -177,6 +186,12 @@ export function TemplatePreview({
               <div className="flex items-center gap-2">
                 <CardTitle className="text-lg">{template.name}</CardTitle>
                 {template.featured && <Crown className="h-4 w-4 text-yellow-500" />}
+                {template.is_applied && (
+                  <Badge variant="secondary" className="flex items-center gap-1 bg-green-100 text-green-700">
+                    <CheckCircle className="h-3 w-3" />
+                    Applied
+                  </Badge>
+                )}
               </div>
               {template.description && (
                 <CardDescription>{template.description}</CardDescription>
@@ -319,6 +334,12 @@ export function TemplatePreview({
               <div className="flex items-center gap-2">
                 <h4 className="font-medium truncate">{template.name}</h4>
                 {template.featured && <Crown className="h-3 w-3 text-yellow-500 flex-shrink-0" />}
+                {template.is_applied && (
+                  <div className="flex items-center gap-1 text-green-600" title="Template is currently applied">
+                    <CheckCircle className="h-3 w-3" />
+                    <span className="text-xs font-medium">Applied</span>
+                  </div>
+                )}
               </div>
               {template.description && (
                 <p className="text-sm text-muted-foreground line-clamp-2">

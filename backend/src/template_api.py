@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy import and_, or_
 from functools import wraps
 from database import db
-from models import WarehouseTemplate, WarehouseConfig
+from models import WarehouseTemplate, WarehouseConfig, Location
 from core_models import User
 
 # Create the template API blueprint
@@ -38,6 +38,142 @@ def token_required(f):
 
         return f(current_user_obj, *args, **kwargs)
     return decorated
+
+def generate_locations_from_template(template, warehouse_id, current_user):
+    """Generate warehouse locations from template configuration"""
+    created_locations = []
+    created_codes = set()  # Track codes to prevent duplicates
+    
+    try:
+        # Generate storage locations
+        for aisle in range(1, template.num_aisles + 1):
+            for rack in range(1, template.racks_per_aisle + 1):
+                # Simple position numbering for templates
+                for position in range(1, template.positions_per_rack + 1):
+                    for level_idx in range(template.levels_per_position):
+                        level = template.level_names[level_idx] if level_idx < len(template.level_names) else f'L{level_idx + 1}'
+                        
+                        # Generate unique code with warehouse prefix to avoid global conflicts
+                        code = f"{warehouse_id}_{position:03d}{level}"
+                        
+                        if code in created_codes:
+                            continue  # Skip duplicate codes
+                        
+                        # Check if this code already exists in the database
+                        existing_location = Location.query.filter_by(code=code).first()
+                        if existing_location:
+                            # Generate a more unique code with timestamp
+                            timestamp = int(datetime.utcnow().timestamp()) % 10000
+                            code = f"{warehouse_id}_{position:03d}{level}_{timestamp}"
+                        
+                        created_codes.add(code)
+                        
+                        # Create location directly instead of using create_from_structure to control the code
+                        full_address = f"Aisle {aisle}, Rack {rack}, Position {position:03d}{level}"
+                        location_hierarchy = {
+                            "aisle": aisle,
+                            "rack": rack, 
+                            "position": position,
+                            "level": level,
+                            "full_address": full_address
+                        }
+                        
+                        location = Location(
+                            code=code,
+                            warehouse_id=warehouse_id,
+                            aisle_number=aisle,
+                            rack_number=rack,
+                            position_number=position,
+                            level=level,
+                            pallet_capacity=template.default_pallet_capacity,
+                            zone='GENERAL',
+                            location_type='STORAGE',
+                            capacity=template.default_pallet_capacity,
+                            location_hierarchy=json.dumps(location_hierarchy),
+                            is_storage_location=True,
+                            is_active=True,
+                            created_by=current_user.id,
+                            created_at=datetime.utcnow()
+                        )
+                        
+                        db.session.add(location)
+                        created_locations.append(location)
+        
+        # Generate special areas from template
+        if template.receiving_areas_template:
+            try:
+                receiving_areas = json.loads(template.receiving_areas_template) if isinstance(template.receiving_areas_template, str) else template.receiving_areas_template
+                if receiving_areas:
+                    for idx, area in enumerate(receiving_areas):
+                        area_code = f"{warehouse_id}_{area.get('code', f'RECV_{idx+1}')}"
+                        location = Location(
+                            code=area_code,
+                            location_type='RECEIVING',
+                            capacity=area.get('capacity', 10),
+                            zone=area.get('zone', 'DOCK'),
+                            warehouse_id=warehouse_id,
+                            pallet_capacity=area.get('capacity', 10),
+                            created_by=current_user.id,
+                            is_storage_location=False,
+                            is_active=True,
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(location)
+                        created_locations.append(location)
+            except (json.JSONDecodeError, TypeError):
+                pass  # Skip if invalid JSON
+        
+        if template.staging_areas_template:
+            try:
+                staging_areas = json.loads(template.staging_areas_template) if isinstance(template.staging_areas_template, str) else template.staging_areas_template
+                if staging_areas:
+                    for idx, area in enumerate(staging_areas):
+                        area_code = f"{warehouse_id}_{area.get('code', f'STAGE_{idx+1}')}"
+                        location = Location(
+                            code=area_code,
+                            location_type='STAGING',
+                            capacity=area.get('capacity', 5),
+                            zone=area.get('zone', 'STAGING'),
+                            warehouse_id=warehouse_id,
+                            pallet_capacity=area.get('capacity', 5),
+                            created_by=current_user.id,
+                            is_storage_location=False,
+                            is_active=True,
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(location)
+                        created_locations.append(location)
+            except (json.JSONDecodeError, TypeError):
+                pass  # Skip if invalid JSON
+        
+        if template.dock_areas_template:
+            try:
+                dock_areas = json.loads(template.dock_areas_template) if isinstance(template.dock_areas_template, str) else template.dock_areas_template
+                if dock_areas:
+                    for idx, area in enumerate(dock_areas):
+                        area_code = f"{warehouse_id}_{area.get('code', f'DOCK_{idx+1}')}"
+                        location = Location(
+                            code=area_code,
+                            location_type='DOCK',
+                            capacity=area.get('capacity', 2),
+                            zone=area.get('zone', 'DOCK'),
+                            warehouse_id=warehouse_id,
+                            pallet_capacity=area.get('capacity', 2),
+                            created_by=current_user.id,
+                            is_storage_location=False,
+                            is_active=True,
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(location)
+                        created_locations.append(location)
+            except (json.JSONDecodeError, TypeError):
+                pass  # Skip if invalid JSON
+        
+        return created_locations
+        
+    except Exception as e:
+        current_app.logger.error(f"Error generating locations from template: {str(e)}")
+        return []
 
 @template_bp.route('', methods=['GET'])
 @token_required
@@ -427,8 +563,16 @@ def apply_template_by_code(current_user):
             return jsonify({'error': 'Access denied to private template'}), 403
         
         # Use the same logic as apply_template but with the found template
-        # Generate unique warehouse ID
-        warehouse_id = data.get('warehouse_id', f'WAREHOUSE_{current_user.id}_{int(datetime.utcnow().timestamp())}')
+        # Generate unique warehouse ID or check if provided one is available
+        warehouse_id = data.get('warehouse_id')
+        if not warehouse_id:
+            warehouse_id = f'WAREHOUSE_{current_user.id}_{int(datetime.utcnow().timestamp())}'
+        
+        # Check if warehouse_id already exists
+        existing_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+        if existing_config:
+            return jsonify({'error': f'Warehouse with ID {warehouse_id} already exists. Please choose a different warehouse or delete the existing one first.'}), 409
+            
         warehouse_name = data.get('warehouse_name', f'Warehouse from {template.name}')
         
         # Create warehouse configuration from template
@@ -449,6 +593,11 @@ def apply_template_by_code(current_user):
         )
         
         db.session.add(config)
+        db.session.flush()  # Ensure config is saved before generating locations
+        
+        # Generate warehouse locations from template
+        created_locations = generate_locations_from_template(template, warehouse_id, current_user)
+        
         db.session.commit()
         
         # Increment template usage count
@@ -458,7 +607,10 @@ def apply_template_by_code(current_user):
             'message': f'Template {template_code} applied successfully',
             'warehouse_id': warehouse_id,
             'configuration': config.to_dict(),
-            'template': template.to_dict()
+            'template': template.to_dict(),
+            'locations_created': len(created_locations),
+            'storage_locations': len([loc for loc in created_locations if loc.location_type == 'STORAGE']),
+            'special_areas': len([loc for loc in created_locations if loc.location_type != 'STORAGE'])
         }), 201
         
     except Exception as e:
