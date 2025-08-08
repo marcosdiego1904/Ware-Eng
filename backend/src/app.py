@@ -1305,7 +1305,7 @@ def fix_warehouse_schema():
                     ("aisle_number", "INTEGER"),
                     ("rack_number", "INTEGER"),
                     ("position_number", "INTEGER"),
-                    ("level", "VARCHAR(1)"),
+                    ("level", "VARCHAR(10)"),
                     ("pallet_capacity", "INTEGER DEFAULT 1"),
                     ("location_hierarchy", "TEXT"),
                     ("special_requirements", "TEXT"),
@@ -1413,6 +1413,61 @@ def fix_warehouse_schema():
         </ol>
         """
         return error_html, 500
+
+@app.route(f'/fix-level-column-size/{SECRET_INIT_KEY}')
+def fix_level_column_size():
+    """
+    Ruta para expandir el tamaño de la columna level de VARCHAR(1) a VARCHAR(10)
+    Esto permite niveles como 'L5', 'L10', etc.
+    """
+    try:
+        with app.app_context():
+            from sqlalchemy import text
+            
+            is_postgres = 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']
+            
+            if is_postgres:
+                # Check current column size
+                check_sql = """
+                SELECT character_maximum_length 
+                FROM information_schema.columns 
+                WHERE table_name = 'location' AND column_name = 'level'
+                """
+                result = db.session.execute(text(check_sql)).fetchone()
+                
+                current_size = result[0] if result else "unknown"
+                
+                if current_size == 1:
+                    # Expand the column
+                    alter_sql = "ALTER TABLE location ALTER COLUMN level TYPE VARCHAR(10)"
+                    db.session.execute(text(alter_sql))
+                    db.session.commit()
+                    
+                    return f"""
+                    <h1>✅ Columna 'level' Expandida Exitosamente!</h1>
+                    <p><strong>Cambio realizado:</strong> VARCHAR(1) → VARCHAR(10)</p>
+                    <p>Ahora puedes usar niveles como 'L5', 'L10', etc.</p>
+                    <p>El warehouse setup debería funcionar correctamente.</p>
+                    """
+                else:
+                    return f"""
+                    <h1>⚪ Columna 'level' Ya Está Configurada Correctamente</h1>
+                    <p><strong>Tamaño actual:</strong> VARCHAR({current_size})</p>
+                    <p>No se requieren cambios.</p>
+                    """
+            else:
+                return """
+                <h1>⚠️ SQLite Detectado</h1>
+                <p>Esta migración está diseñada para PostgreSQL.</p>
+                <p>En SQLite, el tamaño de columna es más flexible.</p>
+                """
+            
+    except Exception as e:
+        return f"""
+        <h1>❌ Error al expandir columna 'level':</h1>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <p>Puede que la columna ya esté expandida o haya otro problema.</p>
+        """, 500
 
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':

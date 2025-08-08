@@ -17,13 +17,22 @@ https://your-render-app.onrender.com/fix-warehouse-schema/25cf3e7ec8bdab0cc3114f
 
 **Replace `your-render-app` with your actual Render app name!**
 
-### 3. You're Done! ✅
+### 3. Fix Level Column Size (if needed)
+If you get an error about "value too long for type character varying(1)" for the level column, also visit:
+
+```
+https://your-render-app.onrender.com/fix-level-column-size/25cf3e7ec8bdab0cc3114fd8f73c2899
+```
+
+This expands the `level` column from VARCHAR(1) to VARCHAR(10) to support level names like 'L5', 'L10', etc.
+
+### 4. You're Done! ✅
 The page will show you:
 - ✅ Which columns were added 
 - ✅ If warehouse_config table was created
 - ✅ Success confirmation
 
-After visiting the URL, your warehouse setup should work perfectly!
+After visiting the URLs, your warehouse setup should work perfectly!
 
 ## What This Does
 - ✅ **Safe**: Only adds missing columns, doesn't touch existing data
