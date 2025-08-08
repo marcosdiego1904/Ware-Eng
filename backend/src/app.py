@@ -1283,6 +1283,134 @@ def migrate_database():
     except Exception as e:
         return f"<h1>Error al migrar la base de datos:</h1><p>{str(e)}</p>", 500
 
+@app.route(f'/fix-warehouse-schema/{SECRET_INIT_KEY}')
+def fix_warehouse_schema():
+    """
+    Ruta secreta para agregar las columnas faltantes del warehouse a la tabla location.
+    Esta migración es segura y no afecta datos existentes.
+    """
+    try:
+        with app.app_context():
+            from sqlalchemy import text
+            
+            messages = []
+            is_postgres = 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']
+            
+            if is_postgres:
+                messages.append("Detectado: PostgreSQL")
+                
+                # Check and add missing columns to location table
+                missing_columns = [
+                    ("warehouse_id", "VARCHAR(50) DEFAULT 'DEFAULT'"),
+                    ("aisle_number", "INTEGER"),
+                    ("rack_number", "INTEGER"),
+                    ("position_number", "INTEGER"),
+                    ("level", "VARCHAR(1)"),
+                    ("pallet_capacity", "INTEGER DEFAULT 1"),
+                    ("location_hierarchy", "TEXT"),
+                    ("special_requirements", "TEXT")
+                ]
+                
+                columns_added = 0
+                for column_name, column_def in missing_columns:
+                    try:
+                        # Check if column exists
+                        check_sql = """
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'location' AND column_name = :column_name
+                        """
+                        result = db.session.execute(text(check_sql), {'column_name': column_name}).fetchone()
+                        
+                        if not result:
+                            # Add the column
+                            alter_sql = f"ALTER TABLE location ADD COLUMN {column_name} {column_def}"
+                            db.session.execute(text(alter_sql))
+                            messages.append(f"✓ Agregada columna: {column_name}")
+                            columns_added += 1
+                        else:
+                            messages.append(f"⚪ Ya existe: {column_name}")
+                    except Exception as e:
+                        messages.append(f"❌ Error con {column_name}: {str(e)}")
+                
+                # Ensure warehouse_config table exists
+                try:
+                    check_table_sql = """
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_name = 'warehouse_config'
+                    """
+                    result = db.session.execute(text(check_table_sql)).fetchone()
+                    
+                    if not result:
+                        create_wc_sql = """
+                        CREATE TABLE warehouse_config (
+                            id SERIAL PRIMARY KEY,
+                            warehouse_id VARCHAR(50) NOT NULL UNIQUE,
+                            warehouse_name VARCHAR(120) NOT NULL,
+                            num_aisles INTEGER NOT NULL,
+                            racks_per_aisle INTEGER NOT NULL,
+                            positions_per_rack INTEGER NOT NULL,
+                            levels_per_position INTEGER DEFAULT 4,
+                            level_names VARCHAR(20) DEFAULT 'ABCD',
+                            default_pallet_capacity INTEGER DEFAULT 1,
+                            bidimensional_racks BOOLEAN DEFAULT FALSE,
+                            receiving_areas TEXT,
+                            staging_areas TEXT,
+                            dock_areas TEXT,
+                            default_zone VARCHAR(50) DEFAULT 'GENERAL',
+                            position_numbering_start INTEGER DEFAULT 1,
+                            position_numbering_split BOOLEAN DEFAULT TRUE,
+                            created_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            is_active BOOLEAN DEFAULT TRUE
+                        )
+                        """
+                        db.session.execute(text(create_wc_sql))
+                        messages.append("✓ Creada tabla: warehouse_config")
+                    else:
+                        messages.append("⚪ Ya existe tabla: warehouse_config")
+                
+                except Exception as e:
+                    messages.append(f"❌ Error creando warehouse_config: {str(e)}")
+                
+                db.session.commit()
+                
+                messages.append(f"<br><strong>Resumen: {columns_added} columnas agregadas exitosamente!</strong>")
+                
+            else:
+                # SQLite - use create_all which is safer
+                db.create_all()
+                messages.append("SQLite: Tablas actualizadas con create_all()")
+            
+            response_html = f"""
+            <h1>✅ Esquema de Warehouse Actualizado!</h1>
+            <h3>Detalles de la migración:</h3>
+            <ul>
+                {"".join([f"<li>{msg}</li>" for msg in messages])}
+            </ul>
+            <p><strong>El warehouse setup ahora debería funcionar sin errores de SQL.</strong></p>
+            <p><em>Puedes eliminar esta ruta después de verificar que todo funciona.</em></p>
+            """
+            
+            return response_html
+            
+    except Exception as e:
+        error_html = f"""
+        <h1>❌ Error al migrar esquema de warehouse:</h1>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <p><strong>Tipo:</strong> {type(e).__name__}</p>
+        <hr>
+        <h3>Qué hacer:</h3>
+        <ol>
+            <li>Verifica que la base de datos esté funcionando</li>
+            <li>Intenta de nuevo en unos minutos</li>
+            <li>Si persiste el error, reporta este mensaje completo</li>
+        </ol>
+        """
+        return error_html, 500
+
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
