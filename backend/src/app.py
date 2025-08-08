@@ -1308,7 +1308,10 @@ def fix_warehouse_schema():
                     ("level", "VARCHAR(1)"),
                     ("pallet_capacity", "INTEGER DEFAULT 1"),
                     ("location_hierarchy", "TEXT"),
-                    ("special_requirements", "TEXT")
+                    ("special_requirements", "TEXT"),
+                    ("is_active", "BOOLEAN DEFAULT TRUE"),
+                    ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                    ("created_by", "INTEGER")
                 ]
                 
                 columns_added = 0

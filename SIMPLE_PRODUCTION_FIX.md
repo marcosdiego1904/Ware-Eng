@@ -41,8 +41,16 @@ Detalles de la migración:
 • ✓ Agregada columna: warehouse_id  
 • ✓ Agregada columna: aisle_number
 • ✓ Agregada columna: rack_number
+• ✓ Agregada columna: position_number
+• ✓ Agregada columna: level
+• ✓ Agregada columna: pallet_capacity
+• ✓ Agregada columna: location_hierarchy
+• ✓ Agregada columna: special_requirements
+• ✓ Agregada columna: is_active
+• ✓ Agregada columna: created_at
+• ✓ Agregada columna: created_by
 • ✓ Creada tabla: warehouse_config
-• Resumen: 8 columnas agregadas exitosamente!
+• Resumen: 11 columnas agregadas exitosamente!
 
 El warehouse setup ahora debería funcionar sin errores de SQL.
 ```
