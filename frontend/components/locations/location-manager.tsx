@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { LocationList } from './location-list';
 import { LocationForm } from './location-form';
 import { WarehouseSetupWizard } from './setup-wizard/warehouse-wizard';
-import { TemplateManager } from './templates/template-manager';
+import { EnhancedTemplateManagerV2 } from './templates/enhanced-template-manager-v2';
 import useLocationStore, { Location } from '@/lib/location-store';
 import { 
   Plus, 
@@ -324,7 +324,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           </TabsContent>
 
           <TabsContent value="templates">
-            <TemplateManager warehouseId={warehouseId} />
+            <EnhancedTemplateManagerV2 warehouseId={warehouseId} />
           </TabsContent>
 
           <TabsContent value="settings">

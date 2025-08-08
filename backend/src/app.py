@@ -1225,6 +1225,14 @@ try:
 except ImportError as e:
     print(f"Template Management API not available: {e}")
 
+# Register Standalone Template Creation API
+try:
+    from standalone_template_api import standalone_template_bp
+    app.register_blueprint(standalone_template_bp)
+    print("Standalone Template Creation API registered successfully")
+except ImportError as e:
+    print(f"Standalone Template Creation API not available: {e}")
+
 # Load enhanced engine and register Rules API
 # Temporarily disabled to fix circular imports
 # load_enhanced_engine()
