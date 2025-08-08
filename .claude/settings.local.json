@@ -30,7 +30,8 @@
       "Bash(true)",
       "Bash(npm run lint)",
       "WebFetch(domain:react.dev)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(timeout 3 python run_server.py)"
     ],
     "deny": []
   }

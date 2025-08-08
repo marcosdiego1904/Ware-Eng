@@ -244,8 +244,25 @@ def setup_warehouse(current_user):
             # Clear existing locations if force recreate
             if data.get('force_recreate', False):
                 Location.query.filter_by(warehouse_id=warehouse_id).delete()
+                db.session.flush()  # Ensure deletions are applied before continuing
             
-            # Generate storage locations
+            # Check if warehouse already has structured locations
+            existing_structured_locations = Location.query.filter(
+                Location.warehouse_id == warehouse_id,
+                Location.aisle_number.isnot(None),
+                Location.rack_number.isnot(None),
+                Location.position_number.isnot(None),
+                Location.level.isnot(None)
+            ).count()
+            
+            if existing_structured_locations > 0 and not data.get('force_recreate', False):
+                return jsonify({
+                    'error': f'Warehouse {warehouse_id} already has {existing_structured_locations} structured locations. Use force_recreate=true to override.'
+                }), 409
+            
+            # Generate storage locations with simplified approach
+            created_codes = set()  # Track codes to prevent duplicates
+            
             for aisle in range(1, config.num_aisles + 1):
                 for rack in range(1, config.racks_per_aisle + 1):
                     # Calculate position range for this rack
@@ -264,6 +281,14 @@ def setup_warehouse(current_user):
                         for level_idx in range(config.levels_per_position):
                             level = config.level_names[level_idx] if level_idx < len(config.level_names) else f'L{level_idx + 1}'
                             
+                            # Generate code to check for duplicates
+                            code = f"{position:03d}{level}"
+                            
+                            if code in created_codes:
+                                continue  # Skip duplicate codes within this transaction
+                            
+                            created_codes.add(code)
+                            
                             location = Location.create_from_structure(
                                 warehouse_id=warehouse_id,
                                 aisle_num=aisle,
@@ -281,6 +306,11 @@ def setup_warehouse(current_user):
             
             # Create special areas
             for area in receiving_areas:
+                # Check if special area already exists
+                existing_area = Location.query.filter_by(warehouse_id=warehouse_id, code=area['code']).first()
+                if existing_area and not data.get('force_recreate', False):
+                    continue  # Skip existing special areas
+                
                 location = Location(
                     code=area['code'],
                     location_type=area['type'],
@@ -299,6 +329,11 @@ def setup_warehouse(current_user):
             
             # Create staging areas
             for area in config.get_staging_areas():
+                # Check if staging area already exists
+                existing_staging = Location.query.filter_by(warehouse_id=warehouse_id, code=area['code']).first()
+                if existing_staging and not data.get('force_recreate', False):
+                    continue  # Skip existing staging areas
+                
                 location = Location(
                     code=area['code'],
                     location_type=area['type'],
