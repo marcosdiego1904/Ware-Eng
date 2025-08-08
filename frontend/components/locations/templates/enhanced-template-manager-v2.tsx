@@ -80,21 +80,22 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const [shareCode, setShareCode] = useState('');
 
   useEffect(() => {
-    fetchTemplates(templateScope === 'all' ? 'all' : templateScope, searchTerm);
+    const scope = templateScope === 'featured' ? 'all' : templateScope;
+    fetchTemplates(scope, searchTerm);
   }, [templateScope, searchTerm, fetchTemplates]);
 
   // Filter and sort templates
   const filteredAndSortedTemplates = React.useMemo(() => {
     let filtered = [...templates];
     
-    // Apply category filter
+    // Apply category filter (TODO: Add category field to WarehouseTemplate interface)
     if (selectedCategory) {
-      filtered = filtered.filter(t => t.category === selectedCategory);
+      filtered = filtered.filter(t => (t as any).category === selectedCategory);
     }
     
-    // Apply featured filter
+    // Apply featured filter (TODO: Add featured field to WarehouseTemplate interface)
     if (showFeaturedOnly) {
-      filtered = filtered.filter(t => t.featured);
+      filtered = filtered.filter(t => (t as any).featured);
     }
     
     // Apply sorting
@@ -103,7 +104,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
         case 'popular':
           return (b.usage_count || 0) - (a.usage_count || 0);
         case 'rating':
-          return (b.rating || 0) - (a.rating || 0);
+          return ((b as any).rating || 0) - ((a as any).rating || 0);
         case 'name':
           return a.name.localeCompare(b.name);
         case 'recent':
@@ -116,7 +117,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   }, [templates, selectedCategory, showFeaturedOnly, sortBy]);
 
   const handleSearch = () => {
-    fetchTemplates(templateScope === 'all' ? 'all' : templateScope, searchTerm);
+    const scope = templateScope === 'featured' ? 'all' : templateScope;
+    fetchTemplates(scope, searchTerm);
   };
 
   const handleApplyByCode = async () => {
@@ -146,6 +148,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   };
 
   const handleApplyTemplate = async (template: { template_code?: string }) => {
+    if (!template.template_code) return;
+    
     try {
       await applyTemplateByCode(template.template_code, warehouseId);
     } catch (error) {
@@ -164,7 +168,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
 
   const handleTemplateCreated = (template: unknown) => {
     // Refresh templates list
-    fetchTemplates(templateScope === 'all' ? 'all' : templateScope, searchTerm);
+    const scope = templateScope === 'featured' ? 'all' : templateScope;
+    fetchTemplates(scope, searchTerm);
   };
 
   const getScopeDescription = () => {
@@ -186,7 +191,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
       total: templates.length,
       my: templates.filter(t => t.creator_username === 'currentuser').length, // TODO: Use actual user
       public: templates.filter(t => t.is_public).length,
-      featured: templates.filter(t => t.featured).length
+      featured: templates.filter(t => (t as any).featured).length
     };
   };
 
