@@ -238,19 +238,37 @@ class RulePerformance(db.Model):
 
 class Location(db.Model):
     """
-    Dynamic warehouse location definitions replacing Excel-based rules
+    Dynamic warehouse location definitions with hierarchical structure support
     """
     __tablename__ = 'location'
     
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(50), unique=True, nullable=False)
     pattern = db.Column(db.String(100))  # Regex pattern for matching location codes
-    location_type = db.Column(db.String(30), nullable=False)  # RECEIVING, FINAL, TRANSITIONAL
+    location_type = db.Column(db.String(30), nullable=False)  # RECEIVING, STORAGE, STAGING, DOCK
     capacity = db.Column(db.Integer, default=1)
     allowed_products = db.Column(db.Text)  # JSON array of allowed product patterns
     zone = db.Column(db.String(50))  # Warehouse zone identifier
+    
+    # Warehouse structure fields for hierarchical organization
+    warehouse_id = db.Column(db.String(50), default='DEFAULT')  # Multi-warehouse support
+    aisle_number = db.Column(db.Integer)  # Aisle number (1, 2, 3, 4, etc.)
+    rack_number = db.Column(db.Integer)   # Rack number within aisle (1, 2, etc.)
+    position_number = db.Column(db.Integer)  # Position number (001-100, etc.)
+    level = db.Column(db.String(1))       # Level within position (A, B, C, D)
+    pallet_capacity = db.Column(db.Integer, default=1)  # Pallets per level (1 or 2)
+    
+    # Additional metadata
+    location_hierarchy = db.Column(db.Text)  # JSON for flexible hierarchy data
+    special_requirements = db.Column(db.Text)  # JSON for temperature, hazmat, etc.
+    
+    # System fields
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    
+    # Relationships
+    creator = db.relationship('User', foreign_keys=[created_by])
     
     def get_allowed_products(self):
         """Parse allowed products JSON string into list"""
@@ -263,6 +281,81 @@ class Location(db.Model):
         """Set allowed products from list to JSON string"""
         self.allowed_products = json.dumps(products_list)
     
+    def get_location_hierarchy(self):
+        """Parse location hierarchy JSON string into dict"""
+        try:
+            return json.loads(self.location_hierarchy) if self.location_hierarchy else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_location_hierarchy(self, hierarchy_dict):
+        """Set location hierarchy from dict to JSON string"""
+        self.location_hierarchy = json.dumps(hierarchy_dict)
+    
+    def get_special_requirements(self):
+        """Parse special requirements JSON string into dict"""
+        try:
+            return json.loads(self.special_requirements) if self.special_requirements else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_special_requirements(self, requirements_dict):
+        """Set special requirements from dict to JSON string"""
+        self.special_requirements = json.dumps(requirements_dict)
+    
+    def is_storage_location(self):
+        """Check if this is a storage location with hierarchical structure"""
+        return (self.aisle_number is not None and 
+                self.rack_number is not None and 
+                self.position_number is not None and 
+                self.level is not None)
+    
+    def get_full_address(self):
+        """Get human-readable full address"""
+        if self.is_storage_location():
+            return f"Aisle {self.aisle_number}, Rack {self.rack_number}, Position {self.position_number:03d}{self.level}"
+        else:
+            return self.code
+    
+    def generate_code_from_structure(self):
+        """Generate location code from hierarchical structure"""
+        if self.is_storage_location():
+            # Format: 001A, 050B, etc.
+            return f"{self.position_number:03d}{self.level}"
+        else:
+            return self.code
+    
+    @classmethod
+    def create_from_structure(cls, warehouse_id, aisle_num, rack_num, position_num, level, 
+                            pallet_capacity=1, zone='GENERAL', location_type='STORAGE', **kwargs):
+        """Create location from warehouse structure parameters"""
+        code = f"{position_num:03d}{level}"
+        
+        location = cls(
+            code=code,
+            warehouse_id=warehouse_id,
+            aisle_number=aisle_num,
+            rack_number=rack_num,
+            position_number=position_num,
+            level=level,
+            pallet_capacity=pallet_capacity,
+            capacity=pallet_capacity,  # Keep backward compatibility
+            zone=zone,
+            location_type=location_type,
+            **kwargs
+        )
+        
+        # Set hierarchy data for queries and analytics
+        location.set_location_hierarchy({
+            'aisle': aisle_num,
+            'rack': rack_num,
+            'position': position_num,
+            'level': level,
+            'full_address': location.get_full_address()
+        })
+        
+        return location
+    
     def to_dict(self):
         return {
             'id': self.id,
@@ -272,8 +365,255 @@ class Location(db.Model):
             'capacity': self.capacity,
             'allowed_products': self.get_allowed_products(),
             'zone': self.zone,
+            'warehouse_id': self.warehouse_id,
+            'aisle_number': self.aisle_number,
+            'rack_number': self.rack_number,
+            'position_number': self.position_number,
+            'level': self.level,
+            'pallet_capacity': self.pallet_capacity,
+            'location_hierarchy': self.get_location_hierarchy(),
+            'special_requirements': self.get_special_requirements(),
+            'is_storage_location': self.is_storage_location(),
+            'full_address': self.get_full_address(),
             'is_active': self.is_active,
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None
+        }
+
+class WarehouseConfig(db.Model):
+    """
+    Warehouse configuration settings for setup wizard and templates
+    """
+    __tablename__ = 'warehouse_config'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    warehouse_id = db.Column(db.String(50), nullable=False, unique=True)
+    warehouse_name = db.Column(db.String(120), nullable=False)
+    
+    # Structure configuration from wizard
+    num_aisles = db.Column(db.Integer, nullable=False)
+    racks_per_aisle = db.Column(db.Integer, nullable=False)
+    positions_per_rack = db.Column(db.Integer, nullable=False)
+    levels_per_position = db.Column(db.Integer, default=4)
+    level_names = db.Column(db.String(20), default='ABCD')  # A,B,C,D or custom
+    default_pallet_capacity = db.Column(db.Integer, default=1)
+    bidimensional_racks = db.Column(db.Boolean, default=False)  # 1 or 2 pallets per level
+    
+    # Special areas configuration
+    receiving_areas = db.Column(db.Text)  # JSON array of receiving area configs
+    staging_areas = db.Column(db.Text)   # JSON array of staging area configs
+    dock_areas = db.Column(db.Text)      # JSON array of dock area configs
+    
+    # Default settings
+    default_zone = db.Column(db.String(50), default='GENERAL')
+    position_numbering_start = db.Column(db.Integer, default=1)
+    position_numbering_split = db.Column(db.Boolean, default=True)  # Split per rack (0-49, 50-99)
+    
+    # Metadata
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    # Relationships
+    creator = db.relationship('User', foreign_keys=[created_by])
+    templates = db.relationship('WarehouseTemplate', backref='source_config', lazy=True)
+    
+    def get_receiving_areas(self):
+        """Parse receiving areas JSON string into list"""
+        try:
+            return json.loads(self.receiving_areas) if self.receiving_areas else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_receiving_areas(self, areas_list):
+        """Set receiving areas from list to JSON string"""
+        self.receiving_areas = json.dumps(areas_list)
+    
+    def get_staging_areas(self):
+        """Parse staging areas JSON string into list"""
+        try:
+            return json.loads(self.staging_areas) if self.staging_areas else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_staging_areas(self, areas_list):
+        """Set staging areas from list to JSON string"""
+        self.staging_areas = json.dumps(areas_list)
+    
+    def get_dock_areas(self):
+        """Parse dock areas JSON string into list"""
+        try:
+            return json.loads(self.dock_areas) if self.dock_areas else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_dock_areas(self, areas_list):
+        """Set dock areas from list to JSON string"""
+        self.dock_areas = json.dumps(areas_list)
+    
+    def calculate_total_storage_locations(self):
+        """Calculate total number of storage locations"""
+        return (self.num_aisles * self.racks_per_aisle * 
+                self.positions_per_rack * self.levels_per_position)
+    
+    def calculate_total_capacity(self):
+        """Calculate total pallet capacity"""
+        storage_capacity = self.calculate_total_storage_locations() * self.default_pallet_capacity
+        
+        # Add special areas capacity
+        receiving_capacity = sum(area.get('capacity', 0) for area in self.get_receiving_areas())
+        staging_capacity = sum(area.get('capacity', 0) for area in self.get_staging_areas())
+        dock_capacity = sum(area.get('capacity', 0) for area in self.get_dock_areas())
+        
+        return storage_capacity + receiving_capacity + staging_capacity + dock_capacity
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'warehouse_id': self.warehouse_id,
+            'warehouse_name': self.warehouse_name,
+            'num_aisles': self.num_aisles,
+            'racks_per_aisle': self.racks_per_aisle,
+            'positions_per_rack': self.positions_per_rack,
+            'levels_per_position': self.levels_per_position,
+            'level_names': self.level_names,
+            'default_pallet_capacity': self.default_pallet_capacity,
+            'bidimensional_racks': self.bidimensional_racks,
+            'receiving_areas': self.get_receiving_areas(),
+            'staging_areas': self.get_staging_areas(),
+            'dock_areas': self.get_dock_areas(),
+            'default_zone': self.default_zone,
+            'position_numbering_start': self.position_numbering_start,
+            'position_numbering_split': self.position_numbering_split,
+            'total_storage_locations': self.calculate_total_storage_locations(),
+            'total_capacity': self.calculate_total_capacity(),
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'is_active': self.is_active
+        }
+
+class WarehouseTemplate(db.Model):
+    """
+    Shareable warehouse templates for quick setup across multiple facilities
+    """
+    __tablename__ = 'warehouse_template'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text)
+    template_code = db.Column(db.String(20), unique=True)  # Shareable code like #WAR-4A2R
+    
+    # Template configuration (same as WarehouseConfig)
+    num_aisles = db.Column(db.Integer, nullable=False)
+    racks_per_aisle = db.Column(db.Integer, nullable=False)
+    positions_per_rack = db.Column(db.Integer, nullable=False)
+    levels_per_position = db.Column(db.Integer, default=4)
+    level_names = db.Column(db.String(20), default='ABCD')
+    default_pallet_capacity = db.Column(db.Integer, default=1)
+    bidimensional_racks = db.Column(db.Boolean, default=False)
+    
+    # Special areas template
+    receiving_areas_template = db.Column(db.Text)
+    staging_areas_template = db.Column(db.Text)
+    dock_areas_template = db.Column(db.Text)
+    
+    # Template metadata
+    based_on_config_id = db.Column(db.Integer, db.ForeignKey('warehouse_config.id'))
+    is_public = db.Column(db.Boolean, default=False)  # Public templates available to all
+    usage_count = db.Column(db.Integer, default=0)
+    
+    # System fields
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    # Relationships
+    creator = db.relationship('User', foreign_keys=[created_by])
+    
+    def get_receiving_areas_template(self):
+        """Parse receiving areas template JSON string into list"""
+        try:
+            return json.loads(self.receiving_areas_template) if self.receiving_areas_template else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_receiving_areas_template(self, areas_list):
+        """Set receiving areas template from list to JSON string"""
+        self.receiving_areas_template = json.dumps(areas_list)
+    
+    def generate_template_code(self):
+        """Generate unique shareable template code"""
+        import random
+        import string
+        
+        # Format: #WAR-{aisles}A{racks}R-{random}
+        random_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+        code = f"WAR-{self.num_aisles}A{self.racks_per_aisle}R-{random_suffix}"
+        
+        # Ensure uniqueness
+        while WarehouseTemplate.query.filter_by(template_code=code).first():
+            random_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+            code = f"WAR-{self.num_aisles}A{self.racks_per_aisle}R-{random_suffix}"
+        
+        self.template_code = code
+        return code
+    
+    def increment_usage(self):
+        """Increment usage counter when template is applied"""
+        self.usage_count = (self.usage_count or 0) + 1
+        db.session.commit()
+    
+    @classmethod
+    def create_from_config(cls, config, name, description=None, is_public=False):
+        """Create template from existing warehouse config"""
+        template = cls(
+            name=name,
+            description=description or f"Template based on {config.warehouse_name}",
+            num_aisles=config.num_aisles,
+            racks_per_aisle=config.racks_per_aisle,
+            positions_per_rack=config.positions_per_rack,
+            levels_per_position=config.levels_per_position,
+            level_names=config.level_names,
+            default_pallet_capacity=config.default_pallet_capacity,
+            bidimensional_racks=config.bidimensional_racks,
+            receiving_areas_template=config.receiving_areas,
+            staging_areas_template=config.staging_areas,
+            dock_areas_template=config.dock_areas,
+            based_on_config_id=config.id,
+            is_public=is_public,
+            created_by=config.created_by
+        )
+        
+        template.generate_template_code()
+        return template
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'template_code': self.template_code,
+            'num_aisles': self.num_aisles,
+            'racks_per_aisle': self.racks_per_aisle,
+            'positions_per_rack': self.positions_per_rack,
+            'levels_per_position': self.levels_per_position,
+            'level_names': self.level_names,
+            'default_pallet_capacity': self.default_pallet_capacity,
+            'bidimensional_racks': self.bidimensional_racks,
+            'receiving_areas_template': self.get_receiving_areas_template(),
+            'based_on_config_id': self.based_on_config_id,
+            'is_public': self.is_public,
+            'usage_count': self.usage_count,
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'is_active': self.is_active
         }
 
 # ==== ENHANCED EXISTING MODELS ====

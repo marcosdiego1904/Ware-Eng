@@ -1,121 +1,181 @@
-
 import pandas as pd
 from datetime import datetime, timedelta
 
-def generate_test_data():
+def create_comprehensive_test_file():
     """
-    Generates a pandas DataFrame with inventory data designed to trigger specific warehouse rules.
+    Generates a comprehensive Excel file for testing all 10 AI-generated rule scenarios.
+    The file contains two sheets: 'inventory_data' and 'location_master'.
     """
     now = datetime.now()
 
-    data = []
+    # --- Location Master Data ---
+    # Defines all valid locations, their types, zones, capacities, and product restrictions.
+    location_master_data = {
+        'code': [
+            'DOCK-A1', 'DOCK-A2', 'STAGE-B2', 'AISLE-G5', 'AISLE-C4', 
+            'STOR-A1', 'STOR-A2', 'STOR-A3', 'STOR-A4', 'STOR-A5', 
+            'STOR-B1', 'STOR-B2', 'STOR-B3', 'STOR-B4', 'FREEZER-A1',
+            'HAZMAT-A1', 'CHEM-STORE-A1', 'AISLE-A1', 'RECEIVING-01', 'STAGING-01'
+        ],
+        'type': [
+            'RECEIVING', 'RECEIVING', 'STAGING', 'AISLE', 'AISLE',
+            'FINAL', 'FINAL', 'FINAL', 'FINAL', 'FINAL',
+            'FINAL', 'FINAL', 'FINAL', 'FINAL', 'FINAL',
+            'HAZMAT', 'CHEMICAL', 'AISLE', 'RECEIVING', 'STAGING'
+        ],
+        'zone': [
+            'DOCK', 'DOCK', 'STAGING', 'AMBIENT', 'AMBIENT',
+            'STORAGE', 'STORAGE', 'STORAGE', 'STORAGE', 'STORAGE',
+            'STORAGE', 'STORAGE', 'STORAGE', 'STORAGE', 'FREEZER',
+            'HAZMAT', 'CHEMICAL', 'AMBIENT', 'DOCK', 'STAGING'
+        ],
+        'capacity': [10, 10, 5, 20, 20, 1, 1, 1, 1, 1, 1, 1, 1, 1, 50, 2, 10, 20, 10, 5],
+        'allowed_products': [
+            '*', '* ', '*', '*', '*', '* ', '*', '*', '*', '*',
+            '*', '*', '*', '*', '*FROZEN*', '*HAZMAT*', '*FLAMMABLE*',
+            '*', '* ', '*'
+        ]
+    }
+    location_master_df = pd.DataFrame(location_master_data)
 
-    # --- Rule 1: Forgotten Pallets (Stagnant in Receiving) ---
-    # 3 pallets in DOCK-01 for over 2 hours
-    for i in range(1, 4):
-        data.append({
-            'pallet_id': f'STAGNANT-{i:03d}',
-            'location': 'DOCK-01',
-            'creation_date': now - timedelta(hours=3),
-            'receipt_number': 'LOT-A',
-            'description': 'Electronics - Awaiting Storage'
-        })
+    # --- Inventory Data ---
+    # Contains pallet information designed to trigger specific rules.
+    inventory_data = {
+        'pallet_id': [
+            # Rule 1: Stagnant in Receiving (>8 hours)
+            'R001', 'R002_NORMAL',
+            # Rule 2: High-Value Stagnant (>2 hours)
+            'HV001', 'HV002_NORMAL',
+            # Rule 3: Temp Mismatch
+            'FROZ01', 'FROZ02_NORMAL',
+            # Rule 4: Aisle Blocker (>1 hour)
+            'AISLE-BLOCKER', 'AISLE-NORMAL',
+            # Rule 5: Uncoordinated Lots
+            'STRAGGLER-01', 'LOT2-A', 'LOT2-B', 'LOT2-C', 'LOT2-D', 'LOT2-E',
+            'LOT2-F', 'LOT2-G', 'LOT2-H', 'LOT2-I',
+            # Rule 6: Invalid Location
+            'BAD-LOC-01',
+            # Rule 7: Overcapacity
+            'HAZ01', 'HAZ02', 'HAZ03',
+            # Rule 8: Data Integrity
+            'DUP-SCAN-01', 'DUP-SCAN-01', 'IMPOSSIBLE-LOC',
+            # Rule 9: Missing Location
+            'LOST-01',
+            # Rule 10: Product Incompatibility
+            'CHEM-OXIDIZER', 'CHEM-FLAMMABLE_NORMAL',
+            # Normal Data
+            'NORMAL-PALLET-01', 'NORMAL-PALLET-02'
+        ],
+        'description': [
+            # Rule 1
+            'General Goods', 'General Goods',
+            # Rule 2
+            'Electronics - Laptops', 'Electronics - Keyboards',
+            # Rule 3
+            'FROZEN Peas', 'FROZEN Corn',
+            # Rule 4
+            'Canned Goods', 'Canned Goods',
+            # Rule 5
+            'Acme Corp Widgets', 'Acme Corp Widgets', 'Acme Corp Widgets', 'Acme Corp Widgets', 'Acme Corp Widgets',
+            'Acme Corp Widgets', 'Acme Corp Widgets', 'Acme Corp Widgets', 'Acme Corp Widgets', 'Acme Corp Widgets',
+            # Rule 6
+            'Sporting Goods',
+            # Rule 7
+            'HAZMAT-A', 'HAZMAT-B', 'HAZMAT-C',
+            # Rule 8
+            'Duplicate Scan Pallet', 'Duplicate Scan Pallet', 'Impossible Location Pallet',
+            # Rule 9
+            'Lost Pallet',
+            # Rule 10
+            'Oxidizing Agent', 'Flammable Liquid',
+            # Normal
+            'Dry Goods', 'Beverages'
+        ],
+        'location': [
+            # Rule 1
+            'RECEIVING-01', 'RECEIVING-01',
+            # Rule 2
+            'STAGING-01', 'STAGING-01',
+            # Rule 3
+            'AISLE-G5', 'FREEZER-A1',
+            # Rule 4
+            'AISLE-C4', 'AISLE-A1',
+            # Rule 5
+            'RECEIVING-01', 'STOR-A1', 'STOR-A2', 'STOR-A3', 'STOR-A4', 'STOR-A5',
+            'STOR-B1', 'STOR-B2', 'STOR-B3', 'STOR-B4',
+            # Rule 6
+            'AISLE-Z99',
+            # Rule 7
+            'HAZMAT-A1', 'HAZMAT-A1', 'HAZMAT-A1',
+            # Rule 8
+            'DOCK-A2', 'DOCK-A2', 'THIS-IS-WAY-TOO-LONG-FOR-A-LOCATION-CODE',
+            # Rule 9
+            None,
+            # Rule 10
+            'CHEM-STORE-A1', 'CHEM-STORE-A1',
+            # Normal
+            'STOR-A1', 'AISLE-A1'
+        ],
+        'creation_date': [
+            # Rule 1
+            now - timedelta(hours=9), now - timedelta(hours=1),
+            # Rule 2
+            now - timedelta(hours=3), now - timedelta(hours=1),
+            # Rule 3
+            now - timedelta(minutes=30), now - timedelta(minutes=30),
+            # Rule 4
+            now - timedelta(hours=2), now - timedelta(minutes=30),
+            # Rule 5
+            now - timedelta(days=1), now - timedelta(days=1), now - timedelta(days=1), now - timedelta(days=1), now - timedelta(days=1),
+            now - timedelta(days=1), now - timedelta(days=1), now - timedelta(days=1), now - timedelta(days=1), now - timedelta(days=1),
+            # Rule 6
+            now - timedelta(hours=5),
+            # Rule 7
+            now - timedelta(hours=1), now - timedelta(hours=1), now - timedelta(hours=1),
+            # Rule 8
+            now - timedelta(minutes=10), now - timedelta(minutes=10), now - timedelta(minutes=5),
+            # Rule 9
+            now - timedelta(hours=6),
+            # Rule 10
+            now - timedelta(hours=2), now - timedelta(hours=2),
+            # Normal
+            now - timedelta(days=2), now - timedelta(hours=4)
+        ],
+        'receipt_number': [
+            'LOT-A', 'LOT-A', 'LOT-B', 'LOT-B', 'LOT-C', 'LOT-C', 'LOT-D', 'LOT-D',
+            'LOT-ACME-123', 'LOT-ACME-123', 'LOT-ACME-123', 'LOT-ACME-123', 'LOT-ACME-123', 'LOT-ACME-123',
+            'LOT-ACME-123', 'LOT-ACME-123', 'LOT-ACME-123', 'LOT-ACME-123',
+            'LOT-E',
+            'LOT-F', 'LOT-F', 'LOT-F',
+            'LOT-G',
+            'LOT-H',
+            'LOT-I', 'LOT-J',
+            'LOT-K', 'LOT-L', 'LOT-M', 'LOT-N'
+        ],
+        'customer_id': [
+            'CUST-001', 'CUST-001',
+            'CUST-002', 'CUST-002',
+            'CUST-003', 'CUST-003',
+            'CUST-004', 'CUST-004',
+            'ACME-CORP', 'ACME-CORP', 'ACME-CORP', 'ACME-CORP', 'ACME-CORP', 'ACME-CORP',
+            'ACME-CORP', 'ACME-CORP', 'ACME-CORP', 'ACME-CORP',
+            'CUST-005',
+            'CUST-006', 'CUST-006', 'CUST-006',
+            'CUST-007',
+            'CUST-008',
+            'CUST-009', 'CUST-010',
+            'CUST-011', 'CUST-012', 'CUST-013', 'CUST-014'
+        ]
+    }
+    inventory_df = pd.DataFrame(inventory_data)
 
-    # --- Rule 2: Incomplete Lots (Stragglers) ---
-    # LOT-B has 10 pallets total. 8 are stored, 2 are stragglers. (80% completion > 75% threshold)
-    # 8 stored pallets (should NOT be flagged)
-    for i in range(1, 9):
-        data.append({
-            'pallet_id': f'LOT-B-STORED-{i:03d}',
-            'location': f'STORE-A{i}',
-            'creation_date': now - timedelta(days=1),
-            'receipt_number': 'LOT-B',
-            'description': 'Apparel - Stored'
-        })
-    # 2 straggler pallets (SHOULD be flagged)
-    for i in range(1, 3):
-        data.append({
-            'pallet_id': f'LOT-B-STRAGGLER-{i:03d}',
-            'location': 'DOCK-02',
-            'creation_date': now - timedelta(days=2),
-            'receipt_number': 'LOT-B',
-            'description': 'Apparel - Straggler'
-        })
+    # --- Write to Excel ---
+    file_path = 'C:/Users/juanb/Documents/Diego/Projects/ware2/backend/data/comprehensive_inventory_test.xlsx'
+    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+        inventory_df.to_excel(writer, sheet_name='inventory_data', index=False)
+        location_master_df.to_excel(writer, sheet_name='location_master', index=False)
 
-    # --- Rule 3: Overcapacity ---
-    # DOCK-03 has a capacity of 5. We will place 6 pallets here.
-    # All 6 pallets SHOULD be flagged.
-    for i in range(1, 7):
-        data.append({
-            'pallet_id': f'OVERCAP-{i:03d}',
-            'location': 'DOCK-03',
-            'creation_date': now - timedelta(minutes=30),
-            'receipt_number': 'LOT-C',
-            'description': 'General Goods - Overcapacity'
-        })
+    print(f"Successfully created test file at {file_path}")
 
-    # --- Rule 4: Clear Blocked Aisles ---
-    # 2 pallets in AISLETEST for over 2 hours.
-    # Both SHOULD be flagged.
-    for i in range(1, 3):
-        data.append({
-            'pallet_id': f'AISLE-BLOCKER-{i:03d}',
-            'location': 'AISLETEST',
-            'creation_date': now - timedelta(hours=4),
-            'receipt_number': 'LOT-D',
-            'description': 'Empty Pallets - Blocking Aisle'
-        })
-
-    # --- "Normal" Data (Should NOT trigger any rules) ---
-    # 50 pallets that are fresh and in valid, non-congested locations.
-    for i in range(1, 51):
-        data.append({
-            'pallet_id': f'NORMAL-{i:03d}',
-            'location': f'STORE-B{i}',
-            'creation_date': now - timedelta(minutes=i),
-            'receipt_number': 'LOT-E',
-            'description': 'Standard Inventory'
-        })
-    
-    # --- Another normal lot, not yet complete ---
-    # 5 pallets in receiving, 2 stored. (28% completion < 75% threshold)
-    for i in range(1, 6):
-        data.append({
-            'pallet_id': f'LOT-F-RECEIVING-{i:03d}',
-            'location': 'DOCK-04',
-            'creation_date': now - timedelta(minutes=10),
-            'receipt_number': 'LOT-F',
-            'description': 'New Arrival - Processing'
-        })
-    for i in range(1, 3):
-        data.append({
-            'pallet_id': f'LOT-F-STORED-{i:03d}',
-            'location': f'STORE-C{i}',
-            'creation_date': now - timedelta(minutes=5),
-            'receipt_number': 'LOT-F',
-            'description': 'New Arrival - Stored'
-        })
-
-
-    df = pd.DataFrame(data)
-    
-    # Ensure correct datetime format for Excel
-    df['creation_date'] = df['creation_date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    
-    return df
-
-if __name__ == "__main__":
-    inventory_df = generate_test_data()
-    
-    # Save to CSV first, then convert
-    csv_path = 'C:/Users/juanb/Documents/Diego/Projects/ware2/backend/data/inventory_report_for_testing.csv'
-    excel_path = 'C:/Users/juanb/Documents/Diego/Projects/ware2/backend/data/inventory_report_for_testing.xlsx'
-    
-    inventory_df.to_csv(csv_path, index=False)
-    
-    # Convert CSV to Excel
-    inventory_df.to_excel(excel_path, index=False, engine='openpyxl')
-    
-    print(f"Successfully generated test data at {excel_path}")
-    print(f"Total records: {len(inventory_df)}")
-
+if __name__ == '__main__':
+    create_comprehensive_test_file()

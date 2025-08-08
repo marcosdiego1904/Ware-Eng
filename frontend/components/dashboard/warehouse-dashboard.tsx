@@ -7,6 +7,7 @@ import { OverviewView } from './views/overview'
 import { NewAnalysisView } from './views/new-analysis'
 import { ReportsView } from './views/reports'
 import { RulesView } from './views/rules'
+import { WarehouseSettingsView } from './views/warehouse-settings'
 
 export function WarehouseDashboard() {
   const { currentView } = useDashboardStore()
@@ -21,6 +22,8 @@ export function WarehouseDashboard() {
         return <ReportsView />
       case 'rules':
         return <RulesView />
+      case 'warehouse-settings':
+        return <WarehouseSettingsView />
       default:
         return <OverviewView />
     }

@@ -25,24 +25,17 @@ export function VisualBuilderDebug() {
   ])
 
   const addCondition = () => {
-    console.log('Add condition clicked - current conditions:', conditions.length)
     const newCondition: RuleCondition = {
       id: `condition-${Date.now()}`,
       field: 'time_threshold_hours',
       operator: 'greater_than',
       value: 8,
-      connector: 'AND'
-    }
-    console.log('Adding new condition:', newCondition)
-    setConditions(prev => {
-      const updated = [...prev, newCondition]
-      console.log('Updated conditions:', updated)
-      return updated
-    })
+      connector: 'AND',
+    };
+    setConditions(prevConditions => [...prevConditions, newCondition]);
   }
 
   const removeCondition = (id: string) => {
-    console.log('Remove condition clicked:', id)
     setConditions(prev => prev.filter(c => c.id !== id))
   }
 

@@ -1201,6 +1201,30 @@ def change_api_anomaly_status(current_user, anomaly_id):
 # Register the Blueprint with the main application
 app.register_blueprint(api_bp)
 
+# Register Location Management API
+try:
+    from location_api import location_bp
+    app.register_blueprint(location_bp)
+    print("Location Management API registered successfully")
+except ImportError as e:
+    print(f"Location Management API not available: {e}")
+
+# Register Warehouse Configuration API
+try:
+    from warehouse_api import warehouse_bp
+    app.register_blueprint(warehouse_bp)
+    print("Warehouse Configuration API registered successfully")
+except ImportError as e:
+    print(f"Warehouse Configuration API not available: {e}")
+
+# Register Template Management API
+try:
+    from template_api import template_bp
+    app.register_blueprint(template_bp)
+    print("Template Management API registered successfully")
+except ImportError as e:
+    print(f"Template Management API not available: {e}")
+
 # Load enhanced engine and register Rules API
 # Temporarily disabled to fix circular imports
 # load_enhanced_engine()

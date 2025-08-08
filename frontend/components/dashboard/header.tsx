@@ -11,6 +11,7 @@ const viewTitles = {
   'new-analysis': 'New Analysis',
   'reports': 'Reports Management',
   'rules': 'Warehouse Rules',
+  'warehouse-settings': 'Warehouse Settings',
   'profile': 'Profile Settings'
 }
 
@@ -19,6 +20,7 @@ const viewDescriptions = {
   'new-analysis': 'Upload inventory files and start anomaly detection',
   'reports': 'View, manage and track analysis reports',
   'rules': 'Configure warehouse rules and settings',
+  'warehouse-settings': 'Manage warehouse configurations and locations',
   'profile': 'Manage your account settings'
 }
 

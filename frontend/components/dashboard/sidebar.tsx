@@ -11,7 +11,8 @@ import {
   Settings, 
   User, 
   LogOut,
-  Package
+  Package,
+  Building2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -39,6 +40,12 @@ const navigationItems = [
     label: 'Rules',
     icon: Settings,
     description: 'Warehouse rules configuration'
+  },
+  {
+    id: 'warehouse-settings' as const,
+    label: 'Warehouse Settings',
+    icon: Building2,
+    description: 'Location management & setup'
   },
 ]
 
