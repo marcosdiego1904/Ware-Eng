@@ -21,30 +21,30 @@ from models import (
 def migrate_location_system():
     """Create all new tables and set up default data"""
     
-    print("🚀 Starting Location Management System Migration")
+    print("Starting Location Management System Migration")
     print("=" * 60)
     
     with app.app_context():
         try:
             # Create all tables
-            print("📊 Creating database tables...")
+            print("Creating database tables...")
             db.create_all()
-            print("✅ All tables created successfully")
+            print("All tables created successfully")
             
             # Create default rule categories
-            print("\n🏗️ Setting up default rule categories...")
+            print("\nSetting up default rule categories...")
             created_categories = create_default_categories()
             if created_categories:
-                print(f"✅ Created {len(created_categories)} rule categories")
+                print(f"Created {len(created_categories)} rule categories")
             else:
-                print("ℹ️ Rule categories already exist")
+                print("Rule categories already exist")
             
             # Create default locations for testing (if none exist)
-            print("\n📍 Checking for existing locations...")
+            print("\nChecking for existing locations...")
             existing_locations = Location.query.count()
             
             if existing_locations == 0:
-                print("🏭 Creating sample warehouse locations...")
+                print("Creating sample warehouse locations...")
                 
                 # Create basic receiving area
                 receiving = Location(
@@ -77,16 +77,16 @@ def migrate_location_system():
                         db.session.add(location)
                 
                 db.session.commit()
-                print(f"✅ Created {len(sample_locations) + 1} sample locations")
+                print(f"Created {len(sample_locations) + 1} sample locations")
             else:
-                print(f"ℹ️ Found {existing_locations} existing locations")
+                print(f"Found {existing_locations} existing locations")
             
             # Create sample warehouse config (if none exists)
-            print("\n⚙️ Checking for warehouse configuration...")
+            print("\nChecking for warehouse configuration...")
             existing_config = WarehouseConfig.query.filter_by(warehouse_id='DEFAULT').first()
             
             if not existing_config:
-                print("🏗️ Creating default warehouse configuration...")
+                print("Creating default warehouse configuration...")
                 config = WarehouseConfig(
                     warehouse_id='DEFAULT',
                     warehouse_name='Default Warehouse',
@@ -110,21 +110,21 @@ def migrate_location_system():
                 
                 db.session.add(config)
                 db.session.commit()
-                print("✅ Created default warehouse configuration")
+                print("Created default warehouse configuration")
             else:
-                print("ℹ️ Warehouse configuration already exists")
+                print("Warehouse configuration already exists")
             
             print("\n" + "=" * 60)
-            print("🎉 Location Management System Migration Complete!")
+            print("Location Management System Migration Complete!")
             print("=" * 60)
-            print("\n📋 Summary:")
+            print("\nSummary:")
             print(f"   • Rule Categories: {RuleCategory.query.count()}")
             print(f"   • Rules: {Rule.query.count()}")  
             print(f"   • Locations: {Location.query.count()}")
             print(f"   • Warehouse Configs: {WarehouseConfig.query.count()}")
             print(f"   • Templates: {WarehouseTemplate.query.count()}")
             
-            print("\n🚀 Next Steps:")
+            print("\nNext Steps:")
             print("   1. Start the backend server: python run_server.py")
             print("   2. Start the frontend server: npm run dev")
             print("   3. Navigate to Warehouse Settings in the dashboard")
@@ -133,14 +133,14 @@ def migrate_location_system():
             return True
             
         except Exception as e:
-            print(f"\n❌ Migration failed: {str(e)}")
-            print("🔧 Please check your database connection and try again")
+            print(f"\nMigration failed: {str(e)}")
+            print("Please check your database connection and try again")
             return False
 
 def check_migration_status():
     """Check if migration has already been run"""
     
-    print("🔍 Checking migration status...")
+    print("Checking migration status...")
     
     with app.app_context():
         try:
@@ -152,18 +152,18 @@ def check_migration_status():
             print(f"   • Templates: {templates}")
             
             if warehouse_configs > 0 or templates > 0:
-                print("✅ Location system appears to be set up")
+                print("Location system appears to be set up")
                 return True
             else:
-                print("⚠️ Location system needs migration")
+                print("Location system needs migration")
                 return False
                 
         except Exception as e:
-            print(f"❌ Cannot check migration status: {str(e)}")
+            print(f"Cannot check migration status: {str(e)}")
             return False
 
 if __name__ == "__main__":
-    print("🏭 Location Management System Migration")
+    print("Location Management System Migration")
     print("=====================================\n")
     
     if len(sys.argv) > 1 and sys.argv[1] == "--check":

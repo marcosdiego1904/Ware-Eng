@@ -9,7 +9,8 @@ from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy import and_, or_
 from functools import wraps
 from database import db
-from models import WarehouseConfig, WarehouseTemplate, Location, User
+from models import WarehouseConfig, WarehouseTemplate, Location
+from core_models import User
 
 # Create the warehouse configuration API blueprint
 warehouse_bp = Blueprint('warehouse_api', __name__, url_prefix='/api/v1/warehouse')

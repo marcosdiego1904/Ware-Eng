@@ -9,7 +9,8 @@ from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy import and_, or_
 from functools import wraps
 from database import db
-from models import WarehouseTemplate, WarehouseConfig, User
+from models import WarehouseTemplate, WarehouseConfig
+from core_models import User
 
 # Create the template API blueprint
 template_bp = Blueprint('template_api', __name__, url_prefix='/api/v1/templates')

@@ -9,7 +9,8 @@ from flask_login import current_user, login_required
 from sqlalchemy import and_, or_
 from functools import wraps
 from database import db
-from models import Location, WarehouseConfig, User
+from models import Location, WarehouseConfig
+from core_models import User
 
 # Create the location API blueprint
 location_bp = Blueprint('location_api', __name__, url_prefix='/api/v1/locations')
