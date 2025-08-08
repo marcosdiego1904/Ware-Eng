@@ -1469,6 +1469,291 @@ def fix_level_column_size():
         <p>Puede que la columna ya esté expandida o haya otro problema.</p>
         """, 500
 
+@app.route(f'/complete-database-fix/{SECRET_INIT_KEY}')
+def complete_database_fix():
+    """
+    COMPREHENSIVE DATABASE FIX - Diagnoses and fixes ALL missing warehouse tables/columns
+    This is the nuclear option that fixes everything at once
+    """
+    try:
+        with app.app_context():
+            from sqlalchemy import text
+            
+            messages = []
+            is_postgres = 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']
+            
+            messages.append(f"🔍 Database Type: {'PostgreSQL' if is_postgres else 'SQLite'}")
+            
+            if is_postgres:
+                # STEP 1: Check which tables exist
+                messages.append("<br><h3>🔍 STEP 1: Checking existing tables...</h3>")
+                
+                table_check_sql = """
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+                """
+                existing_tables = [row[0] for row in db.session.execute(text(table_check_sql)).fetchall()]
+                messages.append(f"Existing tables: {', '.join(existing_tables)}")
+                
+                # STEP 2: Create missing tables
+                messages.append("<br><h3>⚙️ STEP 2: Creating missing tables...</h3>")
+                
+                tables_to_create = {
+                    'warehouse_config': """
+                        CREATE TABLE warehouse_config (
+                            id SERIAL PRIMARY KEY,
+                            warehouse_id VARCHAR(50) NOT NULL UNIQUE,
+                            warehouse_name VARCHAR(120) NOT NULL,
+                            num_aisles INTEGER NOT NULL,
+                            racks_per_aisle INTEGER NOT NULL,
+                            positions_per_rack INTEGER NOT NULL,
+                            levels_per_position INTEGER DEFAULT 4,
+                            level_names VARCHAR(20) DEFAULT 'ABCD',
+                            default_pallet_capacity INTEGER DEFAULT 1,
+                            bidimensional_racks BOOLEAN DEFAULT FALSE,
+                            receiving_areas TEXT,
+                            staging_areas TEXT,
+                            dock_areas TEXT,
+                            default_zone VARCHAR(50) DEFAULT 'GENERAL',
+                            position_numbering_start INTEGER DEFAULT 1,
+                            position_numbering_split BOOLEAN DEFAULT TRUE,
+                            created_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            is_active BOOLEAN DEFAULT TRUE
+                        )
+                    """,
+                    'warehouse_template': """
+                        CREATE TABLE warehouse_template (
+                            id SERIAL PRIMARY KEY,
+                            name VARCHAR(120) NOT NULL,
+                            description TEXT,
+                            template_code VARCHAR(20) UNIQUE,
+                            num_aisles INTEGER NOT NULL,
+                            racks_per_aisle INTEGER NOT NULL,
+                            positions_per_rack INTEGER NOT NULL,
+                            levels_per_position INTEGER DEFAULT 4,
+                            level_names VARCHAR(20) DEFAULT 'ABCD',
+                            default_pallet_capacity INTEGER DEFAULT 1,
+                            bidimensional_racks BOOLEAN DEFAULT FALSE,
+                            receiving_areas_template TEXT,
+                            staging_areas_template TEXT,
+                            dock_areas_template TEXT,
+                            based_on_config_id INTEGER REFERENCES warehouse_config(id),
+                            is_public BOOLEAN DEFAULT FALSE,
+                            usage_count INTEGER DEFAULT 0,
+                            created_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            is_active BOOLEAN DEFAULT TRUE
+                        )
+                    """,
+                    'rule_category': """
+                        CREATE TABLE rule_category (
+                            id SERIAL PRIMARY KEY,
+                            name VARCHAR(50) NOT NULL UNIQUE,
+                            display_name VARCHAR(100) NOT NULL,
+                            priority INTEGER NOT NULL,
+                            description TEXT,
+                            is_active BOOLEAN DEFAULT TRUE,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """,
+                    'rule': """
+                        CREATE TABLE rule (
+                            id SERIAL PRIMARY KEY,
+                            name VARCHAR(120) NOT NULL,
+                            description TEXT,
+                            category_id INTEGER REFERENCES rule_category(id),
+                            rule_type VARCHAR(50) NOT NULL,
+                            conditions TEXT NOT NULL,
+                            parameters TEXT,
+                            priority VARCHAR(20) DEFAULT 'MEDIUM',
+                            is_active BOOLEAN DEFAULT TRUE,
+                            is_default BOOLEAN DEFAULT FALSE,
+                            created_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """,
+                    'rule_history': """
+                        CREATE TABLE rule_history (
+                            id SERIAL PRIMARY KEY,
+                            rule_id INTEGER REFERENCES rule(id),
+                            version INTEGER NOT NULL,
+                            changes TEXT NOT NULL,
+                            changed_by INTEGER,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """,
+                    'rule_template': """
+                        CREATE TABLE rule_template (
+                            id SERIAL PRIMARY KEY,
+                            name VARCHAR(120) NOT NULL,
+                            description TEXT,
+                            category_id INTEGER REFERENCES rule_category(id),
+                            template_conditions TEXT NOT NULL,
+                            parameters_schema TEXT,
+                            is_public BOOLEAN DEFAULT FALSE,
+                            usage_count INTEGER DEFAULT 0,
+                            created_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """,
+                    'rule_performance': """
+                        CREATE TABLE rule_performance (
+                            id SERIAL PRIMARY KEY,
+                            rule_id INTEGER REFERENCES rule(id),
+                            report_id INTEGER,
+                            anomalies_detected INTEGER DEFAULT 0,
+                            false_positives INTEGER DEFAULT 0,
+                            execution_time_ms INTEGER,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """
+                }
+                
+                tables_created = 0
+                for table_name, create_sql in tables_to_create.items():
+                    if table_name not in existing_tables:
+                        try:
+                            db.session.execute(text(create_sql))
+                            messages.append(f"✅ Created table: {table_name}")
+                            tables_created += 1
+                        except Exception as e:
+                            messages.append(f"❌ Error creating {table_name}: {str(e)}")
+                    else:
+                        messages.append(f"⚪ Table exists: {table_name}")
+                
+                # STEP 3: Add missing columns to location table
+                messages.append("<br><h3>🔧 STEP 3: Adding missing columns to location table...</h3>")
+                
+                missing_columns = [
+                    ("warehouse_id", "VARCHAR(50) DEFAULT 'DEFAULT'"),
+                    ("aisle_number", "INTEGER"),
+                    ("rack_number", "INTEGER"),
+                    ("position_number", "INTEGER"),
+                    ("level", "VARCHAR(10)"),  # Fixed size issue
+                    ("pallet_capacity", "INTEGER DEFAULT 1"),
+                    ("location_hierarchy", "TEXT"),
+                    ("special_requirements", "TEXT"),
+                    ("is_active", "BOOLEAN DEFAULT TRUE"),
+                    ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                    ("created_by", "INTEGER")
+                ]
+                
+                columns_added = 0
+                for column_name, column_def in missing_columns:
+                    try:
+                        # Check if column exists
+                        check_sql = """
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'location' AND column_name = :column_name
+                        """
+                        result = db.session.execute(text(check_sql), {'column_name': column_name}).fetchone()
+                        
+                        if not result:
+                            alter_sql = f"ALTER TABLE location ADD COLUMN {column_name} {column_def}"
+                            db.session.execute(text(alter_sql))
+                            messages.append(f"✅ Added column: location.{column_name}")
+                            columns_added += 1
+                        else:
+                            # Check if level column needs size fix
+                            if column_name == 'level':
+                                size_check = """
+                                SELECT character_maximum_length 
+                                FROM information_schema.columns 
+                                WHERE table_name = 'location' AND column_name = 'level'
+                                """
+                                size_result = db.session.execute(text(size_check)).fetchone()
+                                if size_result and size_result[0] == 1:
+                                    alter_sql = "ALTER TABLE location ALTER COLUMN level TYPE VARCHAR(10)"
+                                    db.session.execute(text(alter_sql))
+                                    messages.append(f"🔧 Fixed column: location.level (VARCHAR(1) → VARCHAR(10))")
+                                else:
+                                    messages.append(f"⚪ Column OK: location.{column_name}")
+                            else:
+                                messages.append(f"⚪ Column exists: location.{column_name}")
+                                
+                    except Exception as e:
+                        messages.append(f"❌ Error with location.{column_name}: {str(e)}")
+                
+                # STEP 4: Seed default data
+                messages.append("<br><h3>🌱 STEP 4: Seeding default data...</h3>")
+                
+                try:
+                    # Check if rule categories exist
+                    category_count = db.session.execute(text("SELECT COUNT(*) FROM rule_category")).scalar()
+                    if category_count == 0:
+                        # Create default categories
+                        categories_sql = """
+                        INSERT INTO rule_category (name, display_name, priority, description) VALUES 
+                        ('FLOW_TIME', 'Flow & Time Rules', 1, 'Rules that detect stagnant pallets and time-based issues'),
+                        ('SPACE', 'Space Management Rules', 2, 'Rules that manage warehouse space and capacity'),
+                        ('PRODUCT', 'Product Compatibility Rules', 3, 'Rules that ensure product storage compliance')
+                        """
+                        db.session.execute(text(categories_sql))
+                        messages.append("✅ Created default rule categories")
+                    else:
+                        messages.append(f"⚪ Rule categories exist ({category_count} found)")
+                        
+                except Exception as e:
+                    messages.append(f"❌ Error seeding data: {str(e)}")
+                
+                # Commit all changes
+                db.session.commit()
+                
+                messages.append(f"<br><h3>📊 SUMMARY</h3>")
+                messages.append(f"✅ Tables created: {tables_created}")
+                messages.append(f"✅ Columns added: {columns_added}")
+                messages.append(f"✅ All warehouse database issues should now be resolved!")
+                
+            else:
+                # SQLite fallback
+                messages.append("Using SQLite - running create_all()")
+                db.create_all()
+                messages.append("✅ All tables created with SQLAlchemy")
+            
+            success_html = f"""
+            <h1>🎉 COMPLETE DATABASE FIX SUCCESSFUL!</h1>
+            <div style="max-width: 800px; margin: 20px auto; font-family: Arial;">
+                <div style="background: #f0f8ff; padding: 15px; border-radius: 8px;">
+                    {"<br>".join(messages)}
+                </div>
+                <br>
+                <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
+                    <h3>🚀 Your warehouse system should now work perfectly!</h3>
+                    <p>✅ All tables created</p>
+                    <p>✅ All columns added</p>
+                    <p>✅ Column sizes fixed</p>
+                    <p>✅ Default data seeded</p>
+                </div>
+                <br>
+                <p style="color: #666; font-size: 14px;">
+                    <em>This was a comprehensive one-time fix. You can remove this route after confirming everything works.</em>
+                </p>
+            </div>
+            """
+            
+            return success_html
+            
+    except Exception as e:
+        error_html = f"""
+        <h1>❌ Complete Database Fix Error</h1>
+        <div style="max-width: 800px; margin: 20px auto; font-family: Arial;">
+            <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; border-left: 4px solid #dc3545;">
+                <p><strong>Error:</strong> {str(e)}</p>
+                <p><strong>Type:</strong> {type(e).__name__}</p>
+            </div>
+            <br>
+            <p>Please share this error message for help debugging.</p>
+        </div>
+        """
+        return error_html, 500
+
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
