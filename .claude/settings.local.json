@@ -31,7 +31,9 @@
       "Bash(npm run lint)",
       "WebFetch(domain:react.dev)",
       "Bash(npm run lint:*)",
-      "Bash(timeout 3 python run_server.py)"
+      "Bash(timeout 3 python run_server.py)",
+      "Bash(grep:*)",
+      "Bash(timeout 10 python:*)"
     ],
     "deny": []
   }
