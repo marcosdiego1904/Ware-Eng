@@ -313,7 +313,10 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
               locations={locations}
               loading={locationsLoading}
               pagination={pagination}
-              onEdit={setEditingLocation}
+              onEdit={(location) => {
+                setEditingLocation(location);
+                setShowLocationForm(true);
+              }}
               onPageChange={(page) => {
                 fetchLocations({ ...filters, warehouse_id: warehouseId }, page);
               }}
