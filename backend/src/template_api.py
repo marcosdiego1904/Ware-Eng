@@ -42,177 +42,66 @@ def token_required(f):
 def generate_locations_from_template(template, warehouse_id, current_user):
     """Generate warehouse locations from template configuration"""
     created_locations = []
-    created_codes = set()  # Track codes to prevent duplicates
     
     try:
-        # Generate storage locations
+        # Generate storage locations using the model's class method
         for aisle in range(1, template.num_aisles + 1):
             for rack in range(1, template.racks_per_aisle + 1):
-                # Simple position numbering for templates
                 for position in range(1, template.positions_per_rack + 1):
                     for level_idx in range(template.levels_per_position):
                         level = template.level_names[level_idx] if level_idx < len(template.level_names) else f'L{level_idx + 1}'
                         
-                        # Generate unique code that includes aisle and rack for uniqueness
-                        base_code = f"{aisle:02d}-{rack:02d}-{position:03d}{level}"
-                        code = f"{warehouse_id}_{base_code}"
-                        
-                        # Ensure uniqueness with timestamp suffix if needed
-                        attempt = 0
-                        original_code = code
-                        while code in created_codes:
-                            attempt += 1
-                            code = f"{original_code}_{attempt}"
-                        
-                        # Double-check database for conflicts (though they should be deleted)
-                        while Location.query.filter_by(code=code).first():
-                            attempt += 1
-                            code = f"{original_code}_{attempt}"
-                        
-                        created_codes.add(code)
-                        
-                        # Create location directly instead of using create_from_structure to control the code
-                        full_address = f"Aisle {aisle}, Rack {rack}, Position {position:03d}{level}"
-                        location_hierarchy = {
-                            "aisle": aisle,
-                            "rack": rack, 
-                            "position": position,
-                            "level": level,
-                            "full_address": full_address
-                        }
-                        
-                        location = Location(
-                            code=code,
+                        location = Location.create_from_structure(
                             warehouse_id=warehouse_id,
-                            aisle_number=aisle,
-                            rack_number=rack,
-                            position_number=position,
+                            aisle_num=aisle,
+                            rack_num=rack,
+                            position_num=position,
                             level=level,
-                            full_address=full_address,
                             pallet_capacity=template.default_pallet_capacity,
                             zone='GENERAL',
                             location_type='STORAGE',
-                            capacity=template.default_pallet_capacity,
-                            location_hierarchy=json.dumps(location_hierarchy),
-                            is_storage_location=True,
-                            is_active=True,
-                            created_by=current_user.id,
-                            created_at=datetime.utcnow()
+                            created_by=current_user.id
                         )
                         
                         db.session.add(location)
                         created_locations.append(location)
-        
+
         # Generate special areas from template
-        if template.receiving_areas_template:
+        special_area_configs = [
+            (template.receiving_areas_template, 'RECEIVING', 'DOCK', 10),
+            (template.staging_areas_template, 'STAGING', 'STAGING', 5),
+            (template.dock_areas_template, 'DOCK', 'DOCK', 2)
+        ]
+
+        for areas_template, loc_type, zone, default_cap in special_area_configs:
+            if not areas_template: continue
             try:
-                receiving_areas = json.loads(template.receiving_areas_template) if isinstance(template.receiving_areas_template, str) else template.receiving_areas_template
-                if receiving_areas:
-                    for idx, area in enumerate(receiving_areas):
-                        base_area_code = area.get('code', f'RECV_{idx+1}')
-                        area_code = f"{warehouse_id}_{base_area_code}"
-                        
-                        # Ensure uniqueness for special areas
-                        attempt = 0
-                        original_area_code = area_code
-                        while area_code in created_codes or Location.query.filter_by(code=area_code).first():
-                            attempt += 1
-                            area_code = f"{original_area_code}_{attempt}"
-                        
-                        created_codes.add(area_code)
-                        area_full_address = f"Receiving Area: {area.get('code', f'RECV_{idx+1}')}"
-                        location = Location(
-                            code=area_code,
-                            location_type='RECEIVING',
-                            capacity=area.get('capacity', 10),
-                            zone=area.get('zone', 'DOCK'),
-                            warehouse_id=warehouse_id,
-                            pallet_capacity=area.get('capacity', 10),
-                            full_address=area_full_address,
-                            created_by=current_user.id,
-                            is_storage_location=False,
-                            is_active=True,
-                            created_at=datetime.utcnow()
-                        )
-                        db.session.add(location)
-                        created_locations.append(location)
-            except (json.JSONDecodeError, TypeError):
-                pass  # Skip if invalid JSON
-        
-        if template.staging_areas_template:
-            try:
-                staging_areas = json.loads(template.staging_areas_template) if isinstance(template.staging_areas_template, str) else template.staging_areas_template
-                if staging_areas:
-                    for idx, area in enumerate(staging_areas):
-                        base_area_code = area.get('code', f'STAGE_{idx+1}')
-                        area_code = f"{warehouse_id}_{base_area_code}"
-                        
-                        # Ensure uniqueness for special areas
-                        attempt = 0
-                        original_area_code = area_code
-                        while area_code in created_codes or Location.query.filter_by(code=area_code).first():
-                            attempt += 1
-                            area_code = f"{original_area_code}_{attempt}"
-                        
-                        created_codes.add(area_code)
-                        area_full_address = f"Staging Area: {area.get('code', f'STAGE_{idx+1}')}"
-                        location = Location(
-                            code=area_code,
-                            location_type='STAGING',
-                            capacity=area.get('capacity', 5),
-                            zone=area.get('zone', 'STAGING'),
-                            warehouse_id=warehouse_id,
-                            pallet_capacity=area.get('capacity', 5),
-                            full_address=area_full_address,
-                            created_by=current_user.id,
-                            is_storage_location=False,
-                            is_active=True,
-                            created_at=datetime.utcnow()
-                        )
-                        db.session.add(location)
-                        created_locations.append(location)
-            except (json.JSONDecodeError, TypeError):
-                pass  # Skip if invalid JSON
-        
-        if template.dock_areas_template:
-            try:
-                dock_areas = json.loads(template.dock_areas_template) if isinstance(template.dock_areas_template, str) else template.dock_areas_template
-                if dock_areas:
-                    for idx, area in enumerate(dock_areas):
-                        base_area_code = area.get('code', f'DOCK_{idx+1}')
-                        area_code = f"{warehouse_id}_{base_area_code}"
-                        
-                        # Ensure uniqueness for special areas
-                        attempt = 0
-                        original_area_code = area_code
-                        while area_code in created_codes or Location.query.filter_by(code=area_code).first():
-                            attempt += 1
-                            area_code = f"{original_area_code}_{attempt}"
-                        
-                        created_codes.add(area_code)
-                        area_full_address = f"Dock Area: {area.get('code', f'DOCK_{idx+1}')}"
-                        location = Location(
-                            code=area_code,
-                            location_type='DOCK',
-                            capacity=area.get('capacity', 2),
-                            zone=area.get('zone', 'DOCK'),
-                            warehouse_id=warehouse_id,
-                            pallet_capacity=area.get('capacity', 2),
-                            full_address=area_full_address,
-                            created_by=current_user.id,
-                            is_storage_location=False,
-                            is_active=True,
-                            created_at=datetime.utcnow()
-                        )
-                        db.session.add(location)
-                        created_locations.append(location)
-            except (json.JSONDecodeError, TypeError):
-                pass  # Skip if invalid JSON
-        
+                areas = json.loads(areas_template) if isinstance(areas_template, str) else areas_template
+                for idx, area_data in enumerate(areas):
+                    base_code = area_data.get('code', f'{loc_type}_{idx+1}')
+                    code = f"{warehouse_id}_{base_code}"
+
+                    location = Location(
+                        code=code,
+                        location_type=loc_type,
+                        capacity=area_data.get('capacity', default_cap),
+                        pallet_capacity=area_data.get('capacity', default_cap),
+                        zone=area_data.get('zone', zone),
+                        warehouse_id=warehouse_id,
+                        created_by=current_user.id
+                    )
+                    db.session.add(location)
+                    created_locations.append(location)
+            except (json.JSONDecodeError, TypeError) as e:
+                current_app.logger.warning(f"Skipping invalid special area JSON for {loc_type}: {e}")
+                pass
+
         return created_locations
         
     except Exception as e:
         current_app.logger.error(f"Error generating locations from template: {str(e)}")
+        # Rollback in case of partial creation
+        db.session.rollback()
         return []
 
 @template_bp.route('', methods=['GET'])
