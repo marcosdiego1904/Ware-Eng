@@ -73,16 +73,22 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   // Load initial data
   useEffect(() => {
     fetchWarehouseConfig(warehouseId);
-    fetchLocations({ warehouse_id: warehouseId });
     fetchTemplates('all'); // Load templates to identify active one
   }, [warehouseId]);
 
-  // Refresh locations when warehouse config changes
+  // Refresh locations when warehouse config changes or initially loads
   useEffect(() => {
-    if (currentWarehouseConfig) {
-      fetchLocations({ warehouse_id: warehouseId });
+    if (currentWarehouseConfig?.id) {
+      // Clear any existing filters that might hide new locations
+      const freshFilters = { warehouse_id: warehouseId };
+      setFilters(freshFilters);
+      // Fetch with increased pagination to show all locations
+      fetchLocations(freshFilters, 1, 500); // Increased from default 50 to 500
+    } else if (!configLoading && warehouseId) {
+      // Initial load when no config exists yet
+      fetchLocations({ warehouse_id: warehouseId }, 1, 500);
     }
-  }, [currentWarehouseConfig?.id, currentWarehouseConfig?.updated_at]);
+  }, [currentWarehouseConfig?.id, currentWarehouseConfig?.updated_at, warehouseId, configLoading]);
 
   // Populate settings form when config loads
   useEffect(() => {
@@ -108,7 +114,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
       search: searchTerm
     };
     setFilters(newFilters);
-    fetchLocations(newFilters);
+    fetchLocations(newFilters, 1, 500); // Use increased pagination for search results
   };
 
   // Handle filter changes
@@ -119,7 +125,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
       [filterKey]: value
     };
     setFilters(newFilters);
-    fetchLocations(newFilters);
+    fetchLocations(newFilters, 1, 500); // Use increased pagination for filtered results
   };
 
   // Helper function to find the active template based on current warehouse config
@@ -456,6 +462,18 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                       <Upload className="h-4 w-4 mr-2" />
                       Import
                     </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setSearchTerm('');
+                        const freshFilters = { warehouse_id: warehouseId };
+                        setFilters(freshFilters);
+                        fetchLocations(freshFilters, 1, 500);
+                      }}
+                    >
+                      Show All Locations
+                    </Button>
                   </div>
                   
                   {pagination && (
@@ -477,7 +495,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                 setShowLocationForm(true);
               }}
               onPageChange={(page) => {
-                fetchLocations({ ...filters, warehouse_id: warehouseId }, page);
+                fetchLocations({ ...filters, warehouse_id: warehouseId }, page, 500);
               }}
             />
           </TabsContent>

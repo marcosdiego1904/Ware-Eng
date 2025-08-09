@@ -88,6 +88,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             rack_number=rack,
                             position_number=position,
                             level=level,
+                            full_address=full_address,
                             pallet_capacity=template.default_pallet_capacity,
                             zone='GENERAL',
                             location_type='STORAGE',
@@ -119,6 +120,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             area_code = f"{original_area_code}_{attempt}"
                         
                         created_codes.add(area_code)
+                        area_full_address = f"Receiving Area: {area.get('code', f'RECV_{idx+1}')}"
                         location = Location(
                             code=area_code,
                             location_type='RECEIVING',
@@ -126,6 +128,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             zone=area.get('zone', 'DOCK'),
                             warehouse_id=warehouse_id,
                             pallet_capacity=area.get('capacity', 10),
+                            full_address=area_full_address,
                             created_by=current_user.id,
                             is_storage_location=False,
                             is_active=True,
@@ -152,6 +155,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             area_code = f"{original_area_code}_{attempt}"
                         
                         created_codes.add(area_code)
+                        area_full_address = f"Staging Area: {area.get('code', f'STAGE_{idx+1}')}"
                         location = Location(
                             code=area_code,
                             location_type='STAGING',
@@ -159,6 +163,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             zone=area.get('zone', 'STAGING'),
                             warehouse_id=warehouse_id,
                             pallet_capacity=area.get('capacity', 5),
+                            full_address=area_full_address,
                             created_by=current_user.id,
                             is_storage_location=False,
                             is_active=True,
@@ -185,6 +190,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             area_code = f"{original_area_code}_{attempt}"
                         
                         created_codes.add(area_code)
+                        area_full_address = f"Dock Area: {area.get('code', f'DOCK_{idx+1}')}"
                         location = Location(
                             code=area_code,
                             location_type='DOCK',
@@ -192,6 +198,7 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             zone=area.get('zone', 'DOCK'),
                             warehouse_id=warehouse_id,
                             pallet_capacity=area.get('capacity', 2),
+                            full_address=area_full_address,
                             created_by=current_user.id,
                             is_storage_location=False,
                             is_active=True,

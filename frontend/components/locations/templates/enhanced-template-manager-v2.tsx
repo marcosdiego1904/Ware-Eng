@@ -232,11 +232,14 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
       
       // Refresh warehouse config and locations to reflect changes
       await fetchWarehouseConfig(targetWarehouseId);
-      await fetchLocations({ warehouse_id: targetWarehouseId });
+      // Wait a moment for the config update to propagate
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Refresh templates to show updated status
       const scope = templateScope === 'featured' ? 'all' : templateScope;
-      fetchTemplates(scope, searchTerm);
+      await fetchTemplates(scope, searchTerm);
+      
+      // Note: Location refresh is handled by LocationManager's useEffect
     } catch (error: any) {
       console.error('Failed to apply template:', error);
       
