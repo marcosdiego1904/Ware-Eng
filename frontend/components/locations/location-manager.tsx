@@ -6,6 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { LocationList } from './location-list';
 import { LocationForm } from './location-form';
@@ -21,7 +23,10 @@ import {
   Building2, 
   Package,
   AlertCircle,
-  Loader2
+  Loader2,
+  Edit,
+  Save,
+  X
 } from 'lucide-react';
 
 interface LocationManagerProps {
@@ -41,6 +46,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     fetchLocations,
     fetchWarehouseConfig,
     fetchTemplates,
+    updateWarehouseConfig,
     setFilters,
     clearError
   } = useLocationStore();
@@ -50,6 +56,19 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   const [showLocationForm, setShowLocationForm] = useState(false);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  
+  // Settings form state
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [settingsFormData, setSettingsFormData] = useState({
+    warehouse_name: '',
+    num_aisles: 0,
+    racks_per_aisle: 0,
+    positions_per_rack: 0,
+    levels_per_position: 0,
+    level_names: '',
+    default_pallet_capacity: 0,
+    bidimensional_racks: false
+  });
 
   // Load initial data
   useEffect(() => {
@@ -64,6 +83,22 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
       fetchLocations({ warehouse_id: warehouseId });
     }
   }, [currentWarehouseConfig?.id, currentWarehouseConfig?.updated_at]);
+
+  // Populate settings form when config loads
+  useEffect(() => {
+    if (currentWarehouseConfig) {
+      setSettingsFormData({
+        warehouse_name: currentWarehouseConfig.warehouse_name || '',
+        num_aisles: currentWarehouseConfig.num_aisles || 0,
+        racks_per_aisle: currentWarehouseConfig.racks_per_aisle || 0,
+        positions_per_rack: currentWarehouseConfig.positions_per_rack || 0,
+        levels_per_position: currentWarehouseConfig.levels_per_position || 0,
+        level_names: currentWarehouseConfig.level_names || '',
+        default_pallet_capacity: currentWarehouseConfig.default_pallet_capacity || 0,
+        bidimensional_racks: currentWarehouseConfig.bidimensional_racks || false
+      });
+    }
+  }, [currentWarehouseConfig]);
 
   // Handle search
   const handleSearch = () => {
@@ -101,6 +136,58 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
       template.default_pallet_capacity === currentWarehouseConfig.default_pallet_capacity &&
       template.bidimensional_racks === currentWarehouseConfig.bidimensional_racks
     ) || null;
+  };
+
+  // Settings form handlers
+  const handleEditSettings = () => {
+    setIsEditingSettings(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingSettings(false);
+    // Reset form data to current config values
+    if (currentWarehouseConfig) {
+      setSettingsFormData({
+        warehouse_name: currentWarehouseConfig.warehouse_name || '',
+        num_aisles: currentWarehouseConfig.num_aisles || 0,
+        racks_per_aisle: currentWarehouseConfig.racks_per_aisle || 0,
+        positions_per_rack: currentWarehouseConfig.positions_per_rack || 0,
+        levels_per_position: currentWarehouseConfig.levels_per_position || 0,
+        level_names: currentWarehouseConfig.level_names || '',
+        default_pallet_capacity: currentWarehouseConfig.default_pallet_capacity || 0,
+        bidimensional_racks: currentWarehouseConfig.bidimensional_racks || false
+      });
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!currentWarehouseConfig) return;
+
+    try {
+      // Update the warehouse configuration
+      await updateWarehouseConfig(currentWarehouseConfig.id, settingsFormData);
+      
+      // Show success message
+      alert('Warehouse configuration updated successfully! Locations will be regenerated to match the new structure.');
+      
+      setIsEditingSettings(false);
+      
+      // Refresh all data to reflect changes
+      await fetchWarehouseConfig(warehouseId);
+      await fetchLocations({ warehouse_id: warehouseId });
+      await fetchTemplates('all');
+      
+    } catch (error) {
+      console.error('Failed to update warehouse config:', error);
+      alert('Failed to update warehouse configuration. Please try again.');
+    }
+  };
+
+  const handleFormChange = (field: string, value: string | number | boolean) => {
+    setSettingsFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   // Check if warehouse needs setup
@@ -402,59 +489,198 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           <TabsContent value="settings">
             <Card>
               <CardHeader>
-                <CardTitle>Warehouse Configuration</CardTitle>
-                <CardDescription>
-                  View and modify your warehouse settings
-                </CardDescription>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      Warehouse Configuration
+                      {(() => {
+                        const activeTemplate = findActiveTemplate();
+                        return activeTemplate ? (
+                          <Badge variant="secondary" className="bg-green-100 text-green-700">
+                            {activeTemplate.name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="bg-gray-100 text-gray-700">
+                            Custom
+                          </Badge>
+                        );
+                      })()}
+                    </CardTitle>
+                    <CardDescription>
+                      {isEditingSettings 
+                        ? 'Edit your warehouse configuration - changes will regenerate all locations'
+                        : 'Configure your active warehouse template settings'
+                      }
+                    </CardDescription>
+                  </div>
+                  {!isEditingSettings && (
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={handleEditSettings}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit Configuration
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setShowSetupWizard(true)}
+                      >
+                        <Settings className="h-4 w-4 mr-2" />
+                        Setup Wizard
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {currentWarehouseConfig && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium">Warehouse Name</label>
-                      <p className="text-sm text-muted-foreground">
-                        {currentWarehouseConfig.warehouse_name}
-                      </p>
+                  isEditingSettings ? (
+                    // Edit Form
+                    <form className="space-y-6">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="warehouse_name">Warehouse Name</Label>
+                          <Input
+                            id="warehouse_name"
+                            value={settingsFormData.warehouse_name}
+                            onChange={(e) => handleFormChange('warehouse_name', e.target.value)}
+                            placeholder="Enter warehouse name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="num_aisles">Number of Aisles</Label>
+                          <Input
+                            id="num_aisles"
+                            type="number"
+                            min="1"
+                            value={settingsFormData.num_aisles}
+                            onChange={(e) => handleFormChange('num_aisles', parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="racks_per_aisle">Racks per Aisle</Label>
+                          <Input
+                            id="racks_per_aisle"
+                            type="number"
+                            min="1"
+                            value={settingsFormData.racks_per_aisle}
+                            onChange={(e) => handleFormChange('racks_per_aisle', parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="positions_per_rack">Positions per Rack</Label>
+                          <Input
+                            id="positions_per_rack"
+                            type="number"
+                            min="1"
+                            value={settingsFormData.positions_per_rack}
+                            onChange={(e) => handleFormChange('positions_per_rack', parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="levels_per_position">Levels per Position</Label>
+                          <Input
+                            id="levels_per_position"
+                            type="number"
+                            min="1"
+                            value={settingsFormData.levels_per_position}
+                            onChange={(e) => handleFormChange('levels_per_position', parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="level_names">Level Names</Label>
+                          <Input
+                            id="level_names"
+                            value={settingsFormData.level_names}
+                            onChange={(e) => handleFormChange('level_names', e.target.value)}
+                            placeholder="e.g., ABCD"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="default_pallet_capacity">Default Pallet Capacity</Label>
+                          <Input
+                            id="default_pallet_capacity"
+                            type="number"
+                            min="1"
+                            value={settingsFormData.default_pallet_capacity}
+                            onChange={(e) => handleFormChange('default_pallet_capacity', parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-2 flex items-center gap-2">
+                          <Switch
+                            id="bidimensional_racks"
+                            checked={settingsFormData.bidimensional_racks}
+                            onCheckedChange={(checked) => handleFormChange('bidimensional_racks', checked)}
+                          />
+                          <Label htmlFor="bidimensional_racks" className="cursor-pointer">
+                            Bidimensional Racks (2 pallets per level)
+                          </Label>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-4 border-t">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={handleCancelEdit}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancel
+                        </Button>
+                        <Button 
+                          type="button" 
+                          onClick={handleSaveSettings}
+                        >
+                          <Save className="h-4 w-4 mr-2" />
+                          Save Changes
+                        </Button>
+                      </div>
+                    </form>
+                  ) : (
+                    // View Mode
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium">Warehouse Name</label>
+                        <p className="text-sm text-muted-foreground">
+                          {currentWarehouseConfig.warehouse_name}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Warehouse ID</label>
+                        <p className="text-sm text-muted-foreground">
+                          {currentWarehouseConfig.warehouse_id}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Structure</label>
+                        <p className="text-sm text-muted-foreground">
+                          {currentWarehouseConfig.num_aisles} aisles × {currentWarehouseConfig.racks_per_aisle} racks × {currentWarehouseConfig.positions_per_rack} positions × {currentWarehouseConfig.levels_per_position} levels
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Level Names</label>
+                        <p className="text-sm text-muted-foreground">
+                          {currentWarehouseConfig.level_names}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Default Capacity</label>
+                        <p className="text-sm text-muted-foreground">
+                          {currentWarehouseConfig.default_pallet_capacity} pallet{currentWarehouseConfig.default_pallet_capacity > 1 ? 's' : ''} per level
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Rack Type</label>
+                        <p className="text-sm text-muted-foreground">
+                          {currentWarehouseConfig.bidimensional_racks ? 'Bidimensional (2 pallets/level)' : 'Single (1 pallet/level)'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium">Warehouse ID</label>
-                      <p className="text-sm text-muted-foreground">
-                        {currentWarehouseConfig.warehouse_id}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Structure</label>
-                      <p className="text-sm text-muted-foreground">
-                        {currentWarehouseConfig.num_aisles} aisles × {currentWarehouseConfig.racks_per_aisle} racks × {currentWarehouseConfig.positions_per_rack} positions × {currentWarehouseConfig.levels_per_position} levels
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Level Names</label>
-                      <p className="text-sm text-muted-foreground">
-                        {currentWarehouseConfig.level_names}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Default Capacity</label>
-                      <p className="text-sm text-muted-foreground">
-                        {currentWarehouseConfig.default_pallet_capacity} pallet{currentWarehouseConfig.default_pallet_capacity > 1 ? 's' : ''} per level
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Rack Type</label>
-                      <p className="text-sm text-muted-foreground">
-                        {currentWarehouseConfig.bidimensional_racks ? 'Bidimensional (2 pallets/level)' : 'Single (1 pallet/level)'}
-                      </p>
-                    </div>
-                  </div>
+                  )
                 )}
-                
-                <div className="pt-4 border-t">
-                  <Button onClick={() => setShowSetupWizard(true)}>
-                    <Settings className="h-4 w-4 mr-2" />
-                    Reconfigure Warehouse
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>

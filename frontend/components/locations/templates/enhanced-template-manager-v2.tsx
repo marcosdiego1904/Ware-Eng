@@ -19,7 +19,9 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { TemplateCreationWizard } from './template-creation-wizard';
 import { TemplateGrid } from './template-preview';
-import useLocationStore from '@/lib/location-store';
+import { TemplateEditModal } from './template-edit-modal';
+import useLocationStore, { WarehouseTemplate } from '@/lib/location-store';
+import { useAuth } from '@/lib/auth-context';
 import { 
   Share2, 
   Plus, 
@@ -70,6 +72,7 @@ const isTemplateActive = (template: any, config: any) => {
 };
 
 export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManagerProps) {
+  const { user } = useAuth();
   const {
     templates,
     currentWarehouseConfig,
@@ -86,6 +89,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const [activeTab, setActiveTab] = useState('browse');
   const [viewMode, setViewMode] = useState<'card' | 'compact' | 'detailed'>('card');
   const [showCreateWizard, setShowCreateWizard] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<WarehouseTemplate | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   
   // Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -265,6 +270,22 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
 
   const handleTemplateCreated = (template: unknown) => {
     // Refresh templates list
+    const scope = templateScope === 'featured' ? 'all' : templateScope;
+    fetchTemplates(scope, searchTerm);
+  };
+
+  const handleEditTemplate = (template: WarehouseTemplate) => {
+    setEditingTemplate(template);
+    setShowEditModal(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setEditingTemplate(null);
+    setShowEditModal(false);
+  };
+
+  const handleTemplateUpdated = (updatedTemplate: WarehouseTemplate) => {
+    // Refresh templates list to show updated information
     const scope = templateScope === 'featured' ? 'all' : templateScope;
     fetchTemplates(scope, searchTerm);
   };
@@ -496,6 +517,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
             onApply={handleApplyTemplate}
             onView={handleViewTemplate}
             onCopyCode={copyTemplateCode}
+            onEdit={handleEditTemplate}
+            currentUsername={user?.username}
             emptyMessage={
               templateScope === 'my' 
                 ? "You haven't created any templates yet. Click 'Design New Template' to get started!"
@@ -550,6 +573,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
                 onApply={handleApplyTemplate}
                 onView={handleViewTemplate}
                 onCopyCode={copyTemplateCode}
+                onEdit={handleEditTemplate}
+                currentUsername={user?.username}
                 emptyMessage="No recently used templates"
               />
             </CardContent>
@@ -583,11 +608,13 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
             </CardHeader>
             <CardContent>
               <TemplateGrid
-                templates={templates.filter(t => t.creator_username === 'currentuser')} // TODO: Use actual user
+                templates={templates.filter(t => t.creator_username === user?.username)}
                 variant={viewMode}
                 onApply={handleApplyTemplate}
                 onView={handleViewTemplate}
                 onCopyCode={copyTemplateCode}
+                onEdit={handleEditTemplate}
+                currentUsername={user?.username}
                 emptyMessage="You haven't created any templates yet. Design your first template to get started!"
               />
             </CardContent>
@@ -600,6 +627,14 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
         open={showCreateWizard}
         onClose={() => setShowCreateWizard(false)}
         onTemplateCreated={handleTemplateCreated}
+      />
+
+      {/* Template Edit Modal */}
+      <TemplateEditModal
+        template={editingTemplate}
+        open={showEditModal}
+        onClose={handleCloseEditModal}
+        onTemplateUpdated={handleTemplateUpdated}
       />
     </div>
   );

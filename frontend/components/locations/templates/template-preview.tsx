@@ -4,6 +4,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { WarehouseTemplate } from '@/lib/location-store';
 import { 
   Building2, 
   Grid3X3, 
@@ -17,30 +18,20 @@ import {
   Lock,
   Globe,
   Building,
-  CheckCircle
+  CheckCircle,
+  Edit
 } from 'lucide-react';
 
-interface TemplateData {
-  id?: number;
-  name: string;
-  description?: string;
+// Extend WarehouseTemplate with optional fields for UI display
+interface TemplateData extends WarehouseTemplate {
   category?: string;
   visibility?: 'PRIVATE' | 'COMPANY' | 'PUBLIC';
-  num_aisles: number;
-  racks_per_aisle: number;
-  positions_per_rack: number;
-  levels_per_position: number;
-  default_pallet_capacity?: number;
   tags?: string[];
   featured?: boolean;
   rating?: number;
-  usage_count?: number;
   downloads_count?: number;
-  creator_username?: string;
   creator_organization?: string;
   review_count?: number;
-  template_code?: string;
-  created_at?: string;
   is_applied?: boolean;
   applied_warehouse_id?: string;
 }
@@ -51,6 +42,8 @@ interface TemplatePreviewProps {
   onApply?: (template: TemplateData) => void;
   onView?: (template: TemplateData) => void;
   onCopyCode?: (code: string) => void;
+  onEdit?: (template: TemplateData) => void;
+  currentUsername?: string;
   className?: string;
 }
 
@@ -60,6 +53,8 @@ export function TemplatePreview({
   onApply,
   onView,
   onCopyCode,
+  onEdit,
+  currentUsername,
   className = '' 
 }: TemplatePreviewProps) {
   
@@ -85,6 +80,18 @@ export function TemplatePreview({
       default: return 'Private';
     }
   };
+
+  // Check if the current user owns this template
+  const isOwner = currentUsername && template.creator_username === currentUsername;
+  
+  // Debug info - temporary
+  console.log('Template ownership check:', {
+    templateName: template.name,
+    templateCreator: template.creator_username,
+    currentUser: currentUsername,
+    isOwner: isOwner,
+    hasEditHandler: !!onEdit
+  });
 
   // Render warehouse layout visualization
   const renderWarehouseLayout = () => {
@@ -165,6 +172,17 @@ export function TemplatePreview({
           {onView && (
             <Button variant="ghost" size="sm" onClick={() => onView(template)}>
               <Eye className="h-3 w-3" />
+            </Button>
+          )}
+          {onEdit && (isOwner || true) && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => onEdit(template)} 
+              title={isOwner ? "Edit template" : "Edit template (debug)"}
+              className={isOwner ? "" : "border border-orange-300 bg-orange-50"}
+            >
+              <Edit className="h-3 w-3" />
             </Button>
           )}
           {onApply && (
@@ -301,6 +319,18 @@ export function TemplatePreview({
                 View Details
               </Button>
             )}
+            {onEdit && (isOwner || true) && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => onEdit(template)}
+                title={isOwner ? "Edit template" : "Edit template (debug)"}
+                className={isOwner ? "" : "border-orange-300 bg-orange-50"}
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Edit Template
+              </Button>
+            )}
             {onApply && (
               <Button size="sm" onClick={() => onApply(template)}>
                 <Download className="h-4 w-4 mr-2" />
@@ -413,6 +443,18 @@ export function TemplatePreview({
                 View
               </Button>
             )}
+            {onEdit && (isOwner || true) && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => onEdit(template)} 
+                className={`flex-1 ${isOwner ? "" : "border border-orange-300 bg-orange-50"}`}
+                title={isOwner ? "Edit template" : "Edit template (debug)"}
+              >
+                <Edit className="h-3 w-3 mr-1" />
+                Edit
+              </Button>
+            )}
             {onApply && (
               <Button size="sm" onClick={() => onApply(template)} className="flex-1">
                 <Download className="h-3 w-3 mr-1" />
@@ -433,6 +475,8 @@ interface TemplateGridProps {
   onApply?: (template: TemplateData) => void;
   onView?: (template: TemplateData) => void;
   onCopyCode?: (code: string) => void;
+  onEdit?: (template: TemplateData) => void;
+  currentUsername?: string;
   emptyMessage?: string;
   className?: string;
 }
@@ -443,6 +487,8 @@ export function TemplateGrid({
   onApply,
   onView,
   onCopyCode,
+  onEdit,
+  currentUsername,
   emptyMessage = 'No templates found',
   className = '' 
 }: TemplateGridProps) {
@@ -467,6 +513,8 @@ export function TemplateGrid({
             onApply={onApply}
             onView={onView}
             onCopyCode={onCopyCode}
+            onEdit={onEdit}
+            currentUsername={currentUsername}
           />
         ))}
       </div>
@@ -483,6 +531,8 @@ export function TemplateGrid({
           onApply={onApply}
           onView={onView}
           onCopyCode={onCopyCode}
+          onEdit={onEdit}
+          currentUsername={currentUsername}
         />
       ))}
     </div>
