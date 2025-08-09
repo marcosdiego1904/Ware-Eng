@@ -696,11 +696,17 @@ const useLocationStore = create<LocationStore>()(
           const response = await api.put(`/warehouse/config/${id}`, configData);
           
           const updatedConfig = response.data.configuration;
+          const locationsRegenerated = response.data.locations_regenerated;
           
           set({
             currentWarehouseConfig: updatedConfig,
             loading: false
           });
+
+          // If locations were regenerated, refresh the locations list
+          if (locationsRegenerated) {
+            await get().fetchLocations({ warehouse_id: updatedConfig.warehouse_id }, 1, 500);
+          }
           
           return updatedConfig;
           

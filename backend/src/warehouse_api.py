@@ -121,7 +121,10 @@ def create_warehouse_config(current_user):
 @warehouse_bp.route('/config/<int:config_id>', methods=['PUT'])
 @token_required
 def update_warehouse_config(current_user, config_id):
-    """Update existing warehouse configuration"""
+    """
+    Update existing warehouse configuration and regenerate all associated locations.
+    This is a destructive operation that replaces the old location set.
+    """
     try:
         config = WarehouseConfig.query.get_or_404(config_id)
         data = request.get_json()
@@ -129,7 +132,7 @@ def update_warehouse_config(current_user, config_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Update basic fields
+        # --- 1. Update WarehouseConfig object ---
         updatable_fields = [
             'warehouse_name', 'num_aisles', 'racks_per_aisle', 'positions_per_rack',
             'levels_per_position', 'level_names', 'default_pallet_capacity',
@@ -137,8 +140,18 @@ def update_warehouse_config(current_user, config_id):
             'position_numbering_split'
         ]
         
+        structure_changed = False
+        structural_fields = [
+            'num_aisles', 'racks_per_aisle', 'positions_per_rack', 'levels_per_position',
+            'level_names', 'bidimensional_racks', 'position_numbering_start', 'position_numbering_split'
+        ]
+
         for field in updatable_fields:
-            if field in data:
+            if field in data and getattr(config, field) != data[field]:
+                if field in structural_fields:
+                    structure_changed = True
+                
+                # Type conversion for numeric and boolean fields
                 if field in ['num_aisles', 'racks_per_aisle', 'positions_per_rack', 
                            'levels_per_position', 'default_pallet_capacity', 'position_numbering_start']:
                     setattr(config, field, int(data[field]))
@@ -147,22 +160,78 @@ def update_warehouse_config(current_user, config_id):
                 else:
                     setattr(config, field, data[field])
         
-        # Update special areas
+        # Update special areas (these also affect structure)
         if 'receiving_areas' in data:
             config.set_receiving_areas(data['receiving_areas'])
-        
+            structure_changed = True
         if 'staging_areas' in data:
             config.set_staging_areas(data['staging_areas'])
-            
+            structure_changed = True
         if 'dock_areas' in data:
             config.set_dock_areas(data['dock_areas'])
-        
+            structure_changed = True
+
         config.updated_at = datetime.utcnow()
+        
+        # --- 2. If structure changed, regenerate locations ---
+        if structure_changed:
+            # Delete all existing locations for this warehouse
+            Location.query.filter_by(warehouse_id=config.warehouse_id).delete()
+            db.session.flush()
+
+            # Use the same generation logic as the setup wizard
+            created_locations = []
+            
+            # Generate storage locations
+            for aisle in range(1, config.num_aisles + 1):
+                for rack in range(1, config.racks_per_aisle + 1):
+                    if config.position_numbering_split and config.racks_per_aisle == 2:
+                        if rack == 1:
+                            start_pos, end_pos = config.position_numbering_start, config.positions_per_rack // 2
+                        else:
+                            start_pos, end_pos = (config.positions_per_rack // 2) + 1, config.positions_per_rack
+                    else:
+                        start_pos, end_pos = config.position_numbering_start, config.positions_per_rack
+
+                    for position in range(start_pos, end_pos + 1):
+                        for level_idx in range(config.levels_per_position):
+                            level = config.level_names[level_idx] if level_idx < len(config.level_names) else f'L{level_idx + 1}'
+                            location = Location.create_from_structure(
+                                warehouse_id=config.warehouse_id,
+                                aisle_num=aisle, rack_num=rack, position_num=position, level=level,
+                                pallet_capacity=config.default_pallet_capacity,
+                                zone=config.default_zone,
+                                location_type='STORAGE',
+                                created_by=current_user.id
+                            )
+                            db.session.add(location)
+                            created_locations.append(location)
+
+            # Generate special areas
+            special_area_configs = [
+                (config.get_receiving_areas(), 'RECEIVING', 'DOCK', 10),
+                (config.get_staging_areas(), 'STAGING', 'STAGING', 5),
+                (config.get_dock_areas(), 'DOCK', 'DOCK', 20)
+            ]
+            for areas, loc_type, zone, default_cap in special_area_configs:
+                for area in areas:
+                    location = Location(
+                        code=area['code'], location_type=loc_type,
+                        capacity=area.get('capacity', default_cap),
+                        pallet_capacity=area.get('capacity', default_cap),
+                        zone=area.get('zone', zone),
+                        warehouse_id=config.warehouse_id, created_by=current_user.id
+                    )
+                    db.session.add(location)
+                    created_locations.append(location)
+        
+        # --- 3. Commit all changes ---
         db.session.commit()
         
         return jsonify({
-            'message': 'Configuration updated successfully',
-            'config': config.to_dict()
+            'message': 'Configuration updated successfully' + ('. Locations have been regenerated.' if structure_changed else '.'),
+            'configuration': config.to_dict(),
+            'locations_regenerated': structure_changed
         }), 200
         
     except Exception as e:
