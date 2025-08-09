@@ -186,17 +186,14 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     if (!currentWarehouseConfig) return;
 
     try {
-      // Update the warehouse configuration
+      // Update the warehouse configuration. The store will trigger the useEffect.
       await updateWarehouseConfig(currentWarehouseConfig.id, settingsFormData);
       
-      // Show success message
       alert('Warehouse configuration updated successfully! Locations will be regenerated to match the new structure.');
-      
       setIsEditingSettings(false);
       
-      // Refresh all data to reflect changes
+      // Fetch the updated config, which will trigger the useEffect to refresh locations.
       await fetchWarehouseConfig(warehouseId);
-      await fetchLocations({ warehouse_id: warehouseId });
       await fetchTemplates('all');
       
     } catch (error) {
@@ -744,11 +741,10 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           existingConfig={currentWarehouseConfig}
           warehouseId={warehouseId}
           onClose={() => setShowSetupWizard(false)}
-          onComplete={() => {
+          onComplete={async () => {
             setShowSetupWizard(false);
-            // Refresh data
-            fetchWarehouseConfig(warehouseId);
-            fetchLocations({ warehouse_id: warehouseId }, 1, 500); // Fetch all locations
+            // Refresh the config. The useEffect hook will react to this and fetch the new locations.
+            await fetchWarehouseConfig(warehouseId);
           }}
         />
       )}
