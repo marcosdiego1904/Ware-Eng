@@ -53,18 +53,21 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                     for level_idx in range(template.levels_per_position):
                         level = template.level_names[level_idx] if level_idx < len(template.level_names) else f'L{level_idx + 1}'
                         
-                        # Generate unique code with warehouse prefix to avoid global conflicts
-                        code = f"{warehouse_id}_{position:03d}{level}"
+                        # Generate unique code that includes aisle and rack for uniqueness
+                        base_code = f"{aisle:02d}-{rack:02d}-{position:03d}{level}"
+                        code = f"{warehouse_id}_{base_code}"
                         
-                        if code in created_codes:
-                            continue  # Skip duplicate codes
+                        # Ensure uniqueness with timestamp suffix if needed
+                        attempt = 0
+                        original_code = code
+                        while code in created_codes:
+                            attempt += 1
+                            code = f"{original_code}_{attempt}"
                         
-                        # Check if this code already exists in the database
-                        existing_location = Location.query.filter_by(code=code).first()
-                        if existing_location:
-                            # Generate a more unique code with timestamp
-                            timestamp = int(datetime.utcnow().timestamp()) % 10000
-                            code = f"{warehouse_id}_{position:03d}{level}_{timestamp}"
+                        # Double-check database for conflicts (though they should be deleted)
+                        while Location.query.filter_by(code=code).first():
+                            attempt += 1
+                            code = f"{original_code}_{attempt}"
                         
                         created_codes.add(code)
                         
@@ -105,7 +108,17 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                 receiving_areas = json.loads(template.receiving_areas_template) if isinstance(template.receiving_areas_template, str) else template.receiving_areas_template
                 if receiving_areas:
                     for idx, area in enumerate(receiving_areas):
-                        area_code = f"{warehouse_id}_{area.get('code', f'RECV_{idx+1}')}"
+                        base_area_code = area.get('code', f'RECV_{idx+1}')
+                        area_code = f"{warehouse_id}_{base_area_code}"
+                        
+                        # Ensure uniqueness for special areas
+                        attempt = 0
+                        original_area_code = area_code
+                        while area_code in created_codes or Location.query.filter_by(code=area_code).first():
+                            attempt += 1
+                            area_code = f"{original_area_code}_{attempt}"
+                        
+                        created_codes.add(area_code)
                         location = Location(
                             code=area_code,
                             location_type='RECEIVING',
@@ -128,7 +141,17 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                 staging_areas = json.loads(template.staging_areas_template) if isinstance(template.staging_areas_template, str) else template.staging_areas_template
                 if staging_areas:
                     for idx, area in enumerate(staging_areas):
-                        area_code = f"{warehouse_id}_{area.get('code', f'STAGE_{idx+1}')}"
+                        base_area_code = area.get('code', f'STAGE_{idx+1}')
+                        area_code = f"{warehouse_id}_{base_area_code}"
+                        
+                        # Ensure uniqueness for special areas
+                        attempt = 0
+                        original_area_code = area_code
+                        while area_code in created_codes or Location.query.filter_by(code=area_code).first():
+                            attempt += 1
+                            area_code = f"{original_area_code}_{attempt}"
+                        
+                        created_codes.add(area_code)
                         location = Location(
                             code=area_code,
                             location_type='STAGING',
@@ -151,7 +174,17 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                 dock_areas = json.loads(template.dock_areas_template) if isinstance(template.dock_areas_template, str) else template.dock_areas_template
                 if dock_areas:
                     for idx, area in enumerate(dock_areas):
-                        area_code = f"{warehouse_id}_{area.get('code', f'DOCK_{idx+1}')}"
+                        base_area_code = area.get('code', f'DOCK_{idx+1}')
+                        area_code = f"{warehouse_id}_{base_area_code}"
+                        
+                        # Ensure uniqueness for special areas
+                        attempt = 0
+                        original_area_code = area_code
+                        while area_code in created_codes or Location.query.filter_by(code=area_code).first():
+                            attempt += 1
+                            area_code = f"{original_area_code}_{attempt}"
+                        
+                        created_codes.add(area_code)
                         location = Location(
                             code=area_code,
                             location_type='DOCK',
@@ -477,15 +510,17 @@ def apply_template(current_user, template_id):
         
         # Check if warehouse already exists
         existing_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
-        if existing_config and not data.get('force_recreate', False):
-            return jsonify({
-                'error': f'Warehouse {warehouse_id} already exists. Use force_recreate=true to override.'
-            }), 409
         
-        # Create warehouse configuration from template
         if existing_config:
+            # Update existing warehouse configuration
             config = existing_config
+            # Clear existing locations before generating new ones (bulk delete for efficiency)
+            Location.query.filter_by(warehouse_id=warehouse_id).delete()
+            
+            # Flush deletions to ensure they complete before creating new locations
+            db.session.flush()
         else:
+            # Create new warehouse configuration
             config = WarehouseConfig(warehouse_id=warehouse_id, created_by=current_user.id)
             db.session.add(config)
         
@@ -515,14 +550,12 @@ def apply_template(current_user, template_id):
         # Generate locations if requested
         generate_locations = data.get('generate_locations', True)
         locations_created = 0
+        created_locations = []
         
         if generate_locations:
-            # Import location generation logic from warehouse_api
-            from location_api import location_bp
-            
-            # This would typically call the warehouse generation endpoint
-            # For now, we'll return the config and let the client make a separate call
-            pass
+            # Generate warehouse locations from template
+            created_locations = generate_locations_from_template(template, warehouse_id, current_user)
+            locations_created = len(created_locations)
         
         # Increment template usage count
         template.increment_usage()
@@ -532,7 +565,9 @@ def apply_template(current_user, template_id):
             'warehouse_id': warehouse_id,
             'configuration': config.to_dict(),
             'template_code': template.template_code,
-            'locations_to_generate': generate_locations
+            'locations_created': locations_created,
+            'storage_locations': len([loc for loc in created_locations if loc.location_type == 'STORAGE']) if generate_locations else 0,
+            'special_areas': len([loc for loc in created_locations if loc.location_type != 'STORAGE']) if generate_locations else 0
         }), 201
         
     except Exception as e:
@@ -570,29 +605,49 @@ def apply_template_by_code(current_user):
         
         # Check if warehouse_id already exists
         existing_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
-        if existing_config:
-            return jsonify({'error': f'Warehouse with ID {warehouse_id} already exists. Please choose a different warehouse or delete the existing one first.'}), 409
-            
         warehouse_name = data.get('warehouse_name', f'Warehouse from {template.name}')
         
-        # Create warehouse configuration from template
-        config = WarehouseConfig(
-            warehouse_id=warehouse_id,
-            warehouse_name=warehouse_name,
-            num_aisles=template.num_aisles,
-            racks_per_aisle=template.racks_per_aisle,
-            positions_per_rack=template.positions_per_rack,
-            levels_per_position=template.levels_per_position,
-            level_names=template.level_names,
-            default_pallet_capacity=template.default_pallet_capacity,
-            bidimensional_racks=template.bidimensional_racks,
-            receiving_areas=template.receiving_areas_template,
-            staging_areas=template.staging_areas_template,
-            dock_areas=template.dock_areas_template,
-            created_by=current_user.id
-        )
-        
-        db.session.add(config)
+        if existing_config:
+            # Update existing warehouse configuration
+            config = existing_config
+            config.warehouse_name = warehouse_name
+            config.num_aisles = template.num_aisles
+            config.racks_per_aisle = template.racks_per_aisle
+            config.positions_per_rack = template.positions_per_rack
+            config.levels_per_position = template.levels_per_position
+            config.level_names = template.level_names
+            config.default_pallet_capacity = template.default_pallet_capacity
+            config.bidimensional_racks = template.bidimensional_racks
+            config.receiving_areas = template.receiving_areas_template
+            config.staging_areas = template.staging_areas_template
+            config.dock_areas = template.dock_areas_template
+            config.updated_at = datetime.utcnow()
+            
+            # Clear existing locations before generating new ones (bulk delete for efficiency)
+            Location.query.filter_by(warehouse_id=warehouse_id).delete()
+            
+            # Flush deletions to ensure they complete before creating new locations
+            db.session.flush()
+            
+        else:
+            # Create new warehouse configuration from template
+            config = WarehouseConfig(
+                warehouse_id=warehouse_id,
+                warehouse_name=warehouse_name,
+                num_aisles=template.num_aisles,
+                racks_per_aisle=template.racks_per_aisle,
+                positions_per_rack=template.positions_per_rack,
+                levels_per_position=template.levels_per_position,
+                level_names=template.level_names,
+                default_pallet_capacity=template.default_pallet_capacity,
+                bidimensional_racks=template.bidimensional_racks,
+                receiving_areas=template.receiving_areas_template,
+                staging_areas=template.staging_areas_template,
+                dock_areas=template.dock_areas_template,
+                created_by=current_user.id
+            )
+            
+            db.session.add(config)
         db.session.flush()  # Ensure config is saved before generating locations
         
         # Generate warehouse locations from template

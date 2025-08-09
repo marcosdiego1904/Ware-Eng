@@ -88,6 +88,8 @@ export interface WarehouseTemplate {
   created_at: string;
   updated_at: string;
   is_active: boolean;
+  is_applied?: boolean;
+  applied_warehouse_id?: string;
 }
 
 export interface LocationFilters {

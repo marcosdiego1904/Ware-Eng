@@ -320,8 +320,9 @@ class Location(db.Model):
     def generate_code_from_structure(self):
         """Generate location code from hierarchical structure"""
         if self.is_storage_location():
-            # Format: 001A, 050B, etc.
-            return f"{self.position_number:03d}{self.level}"
+            # Format: DEFAULT_01-02-001A (warehouse_aisle-rack-position+level)
+            base_code = f"{self.aisle_number:02d}-{self.rack_number:02d}-{self.position_number:03d}{self.level}"
+            return f"{self.warehouse_id}_{base_code}"
         else:
             return self.code
     
@@ -329,7 +330,16 @@ class Location(db.Model):
     def create_from_structure(cls, warehouse_id, aisle_num, rack_num, position_num, level, 
                             pallet_capacity=1, zone='GENERAL', location_type='STORAGE', **kwargs):
         """Create location from warehouse structure parameters"""
-        code = f"{position_num:03d}{level}"
+        # Generate unique code including aisle, rack, and warehouse info
+        base_code = f"{aisle_num:02d}-{rack_num:02d}-{position_num:03d}{level}"
+        code = f"{warehouse_id}_{base_code}"
+        
+        # Check for conflicts and add suffix if needed
+        attempt = 0
+        original_code = code
+        while cls.query.filter_by(code=code).first():
+            attempt += 1
+            code = f"{original_code}_{attempt}"
         
         location = cls(
             code=code,

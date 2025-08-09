@@ -241,24 +241,11 @@ def setup_warehouse(current_user):
         created_locations = []
         
         if generate_locations:
-            # Clear existing locations if force recreate
-            if data.get('force_recreate', False):
-                Location.query.filter_by(warehouse_id=warehouse_id).delete()
-                db.session.flush()  # Ensure deletions are applied before continuing
+            # Always clear existing locations when updating warehouse configuration
+            Location.query.filter_by(warehouse_id=warehouse_id).delete()
+            db.session.flush()  # Ensure deletions are applied before continuing
             
-            # Check if warehouse already has structured locations
-            existing_structured_locations = Location.query.filter(
-                Location.warehouse_id == warehouse_id,
-                Location.aisle_number.isnot(None),
-                Location.rack_number.isnot(None),
-                Location.position_number.isnot(None),
-                Location.level.isnot(None)
-            ).count()
-            
-            if existing_structured_locations > 0 and not data.get('force_recreate', False):
-                return jsonify({
-                    'error': f'Warehouse {warehouse_id} already has {existing_structured_locations} structured locations. Use force_recreate=true to override.'
-                }), 409
+            # Locations have been cleared above, so we can proceed with generation
             
             # Generate storage locations with simplified approach
             created_codes = set()  # Track codes to prevent duplicates
@@ -304,12 +291,8 @@ def setup_warehouse(current_user):
                             db.session.add(location)
                             created_locations.append(location)
             
-            # Create special areas
+            # Create special areas (all existing locations were cleared above)
             for area in receiving_areas:
-                # Check if special area already exists
-                existing_area = Location.query.filter_by(warehouse_id=warehouse_id, code=area['code']).first()
-                if existing_area and not data.get('force_recreate', False):
-                    continue  # Skip existing special areas
                 
                 location = Location(
                     code=area['code'],
@@ -327,12 +310,8 @@ def setup_warehouse(current_user):
                 db.session.add(location)
                 created_locations.append(location)
             
-            # Create staging areas
+            # Create staging areas (all existing locations were cleared above)
             for area in config.get_staging_areas():
-                # Check if staging area already exists
-                existing_staging = Location.query.filter_by(warehouse_id=warehouse_id, code=area['code']).first()
-                if existing_staging and not data.get('force_recreate', False):
-                    continue  # Skip existing staging areas
                 
                 location = Location(
                     code=area['code'],

@@ -15,7 +15,6 @@ import useLocationStore, { Location } from '@/lib/location-store';
 import { 
   Plus, 
   Search, 
-  Filter, 
   Download, 
   Upload, 
   Settings, 
@@ -33,15 +32,15 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   const {
     locations,
     currentWarehouseConfig,
-    loading,
+    templates,
     locationsLoading,
     configLoading,
     error,
-    summary,
     pagination,
     filters,
     fetchLocations,
     fetchWarehouseConfig,
+    fetchTemplates,
     setFilters,
     clearError
   } = useLocationStore();
@@ -56,7 +55,15 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   useEffect(() => {
     fetchWarehouseConfig(warehouseId);
     fetchLocations({ warehouse_id: warehouseId });
+    fetchTemplates('all'); // Load templates to identify active one
   }, [warehouseId]);
+
+  // Refresh locations when warehouse config changes
+  useEffect(() => {
+    if (currentWarehouseConfig) {
+      fetchLocations({ warehouse_id: warehouseId });
+    }
+  }, [currentWarehouseConfig?.id, currentWarehouseConfig?.updated_at]);
 
   // Handle search
   const handleSearch = () => {
@@ -80,9 +87,24 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     fetchLocations(newFilters);
   };
 
+  // Helper function to find the active template based on current warehouse config
+  const findActiveTemplate = () => {
+    if (!currentWarehouseConfig || !templates || templates.length === 0) {
+      return null;
+    }
+    
+    return templates.find(template => 
+      template.num_aisles === currentWarehouseConfig.num_aisles &&
+      template.racks_per_aisle === currentWarehouseConfig.racks_per_aisle &&
+      template.positions_per_rack === currentWarehouseConfig.positions_per_rack &&
+      template.levels_per_position === currentWarehouseConfig.levels_per_position &&
+      template.default_pallet_capacity === currentWarehouseConfig.default_pallet_capacity &&
+      template.bidimensional_racks === currentWarehouseConfig.bidimensional_racks
+    ) || null;
+  };
+
   // Check if warehouse needs setup
   const needsSetup = !currentWarehouseConfig && !configLoading;
-  const hasLocations = locations.length > 0;
 
   if (configLoading) {
     return (
@@ -158,69 +180,119 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
       )}
 
       {/* Warehouse Overview */}
-      {currentWarehouseConfig && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Locations</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {summary?.total_locations || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Active locations in warehouse
-              </p>
-            </CardContent>
-          </Card>
+      {currentWarehouseConfig && (() => {
+        // Calculate accurate metrics from current warehouse configuration
+        const storageLocations = currentWarehouseConfig.num_aisles * 
+          currentWarehouseConfig.racks_per_aisle * 
+          currentWarehouseConfig.positions_per_rack * 
+          currentWarehouseConfig.levels_per_position;
+        
+        const storageCapacity = storageLocations * currentWarehouseConfig.default_pallet_capacity;
+        
+        // Add receiving/staging/dock area capacities from configuration
+        let specialAreaCapacity = 0;
+        let specialAreaCount = 0;
+        
+        try {
+          if (currentWarehouseConfig.receiving_areas && Array.isArray(currentWarehouseConfig.receiving_areas)) {
+            specialAreaCapacity += currentWarehouseConfig.receiving_areas.reduce((sum: number, area: { capacity?: number }) => sum + (area.capacity || 0), 0);
+            specialAreaCount += currentWarehouseConfig.receiving_areas.length;
+          }
+          if (currentWarehouseConfig.staging_areas && Array.isArray(currentWarehouseConfig.staging_areas)) {
+            specialAreaCapacity += currentWarehouseConfig.staging_areas.reduce((sum: number, area: { capacity?: number }) => sum + (area.capacity || 0), 0);
+            specialAreaCount += currentWarehouseConfig.staging_areas.length;
+          }
+          if (currentWarehouseConfig.dock_areas && Array.isArray(currentWarehouseConfig.dock_areas)) {
+            specialAreaCapacity += currentWarehouseConfig.dock_areas.reduce((sum: number, area: { capacity?: number }) => sum + (area.capacity || 0), 0);
+            specialAreaCount += currentWarehouseConfig.dock_areas.length;
+          }
+        } catch (error) {
+          // Handle JSON parsing errors gracefully
+          console.warn('Error parsing special areas:', error);
+        }
+        
+        const totalLocations = storageLocations + specialAreaCount;
+        const totalCapacity = storageCapacity + specialAreaCapacity;
+        
+        // Find the active template
+        const activeTemplate = findActiveTemplate();
+        
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Locations</CardTitle>
+                <Package className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {totalLocations.toLocaleString()}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {storageLocations.toLocaleString()} storage + {specialAreaCount} special areas
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Storage Capacity</CardTitle>
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {summary?.total_capacity || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total pallet capacity
-              </p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Storage Capacity</CardTitle>
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {totalCapacity.toLocaleString()}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Total pallet capacity ({storageCapacity.toLocaleString()} storage + {specialAreaCapacity.toLocaleString()} special)
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Structure</CardTitle>
-              <Settings className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {currentWarehouseConfig.num_aisles}A/{currentWarehouseConfig.racks_per_aisle}R
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Aisles / Racks per aisle
-              </p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Structure</CardTitle>
+                <Settings className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {currentWarehouseConfig.num_aisles}A/{currentWarehouseConfig.racks_per_aisle}R
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {currentWarehouseConfig.positions_per_rack}P × {currentWarehouseConfig.levels_per_position}L per rack
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Warehouse</CardTitle>
-              <Badge variant="secondary">{currentWarehouseConfig.warehouse_id}</Badge>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm font-medium">
-                {currentWarehouseConfig.warehouse_name}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Created {new Date(currentWarehouseConfig.created_at).toLocaleDateString()}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Template</CardTitle>
+                {activeTemplate ? (
+                  <Badge variant="secondary" className="bg-green-100 text-green-700">
+                    {activeTemplate.template_code}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="bg-gray-100 text-gray-700">
+                    Custom
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm font-medium">
+                  {activeTemplate ? activeTemplate.name : 'Custom Configuration'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {activeTemplate ? (
+                    `${activeTemplate.description || 'No description'} • Updated ${new Date(currentWarehouseConfig.updated_at || currentWarehouseConfig.created_at).toLocaleDateString()}`
+                  ) : (
+                    `${currentWarehouseConfig.default_pallet_capacity} pallet${currentWarehouseConfig.default_pallet_capacity > 1 ? 's' : ''}/level • ${currentWarehouseConfig.bidimensional_racks ? 'Bidimensional' : 'Single'} racks`
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* Main Content Tabs */}
       {currentWarehouseConfig && (
@@ -398,7 +470,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
             setShowLocationForm(false);
             setEditingLocation(null);
           }}
-          onSave={(location) => {
+          onSave={() => {
             setShowLocationForm(false);
             setEditingLocation(null);
             // Refresh locations
@@ -412,7 +484,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           existingConfig={currentWarehouseConfig}
           warehouseId={warehouseId}
           onClose={() => setShowSetupWizard(false)}
-          onComplete={(config) => {
+          onComplete={() => {
             setShowSetupWizard(false);
             // Refresh data
             fetchWarehouseConfig(warehouseId);

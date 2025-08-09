@@ -35,7 +35,8 @@ import {
   Palette,
   Grid3X3,
   Crown,
-  SlidersHorizontal
+  SlidersHorizontal,
+  CheckCircle
 } from 'lucide-react';
 
 interface EnhancedTemplateManagerProps {
@@ -53,6 +54,21 @@ const TEMPLATE_CATEGORIES = [
   { value: 'CUSTOM', label: 'Custom' }
 ];
 
+// Helper function to check if a template is currently active
+const isTemplateActive = (template: any, config: any) => {
+  if (!template || !config) return false;
+  
+  // Compare key template characteristics with current warehouse config
+  return (
+    template.num_aisles === config.num_aisles &&
+    template.racks_per_aisle === config.racks_per_aisle &&
+    template.positions_per_rack === config.positions_per_rack &&
+    template.levels_per_position === config.levels_per_position &&
+    template.default_pallet_capacity === config.default_pallet_capacity &&
+    template.bidimensional_racks === config.bidimensional_racks
+  );
+};
+
 export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManagerProps) {
   const {
     templates,
@@ -61,6 +77,8 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     fetchTemplates,
     applyTemplateByCode,
     createTemplateFromConfig,
+    fetchWarehouseConfig,
+    fetchLocations,
     error
   } = useLocationStore();
 
@@ -88,6 +106,15 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const filteredAndSortedTemplates = React.useMemo(() => {
     let filtered = [...templates];
     
+    // Mark active template based on current warehouse config
+    if (currentWarehouseConfig) {
+      filtered = filtered.map(template => ({
+        ...template,
+        is_applied: isTemplateActive(template, currentWarehouseConfig),
+        applied_warehouse_id: isTemplateActive(template, currentWarehouseConfig) ? currentWarehouseConfig.warehouse_id : undefined
+      }));
+    }
+    
     // Apply category filter (TODO: Add category field to WarehouseTemplate interface)
     if (selectedCategory && selectedCategory !== 'all') {
       filtered = filtered.filter(t => (t as any).category === selectedCategory);
@@ -114,7 +141,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     });
     
     return filtered;
-  }, [templates, selectedCategory, showFeaturedOnly, sortBy]);
+  }, [templates, selectedCategory, showFeaturedOnly, sortBy, currentWarehouseConfig]);
 
   const handleSearch = () => {
     const scope = templateScope === 'featured' ? 'all' : templateScope;
@@ -124,22 +151,27 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const handleApplyByCode = async () => {
     if (shareCode.trim()) {
       try {
-        // Generate a unique warehouse ID to avoid conflicts
-        const uniqueWarehouseId = `QUICK_${shareCode.trim()}_${Date.now()}`;
+        // Use the existing warehouse ID from props or default
+        const targetWarehouseId = warehouseId || 'DEFAULT';
+        const warehouseName = currentWarehouseConfig?.warehouse_name || `Warehouse ${targetWarehouseId}`;
         
         const result = await applyTemplateByCode(
           shareCode.trim(), 
-          uniqueWarehouseId,
-          `Template ${shareCode.trim()} - Applied ${new Date().toLocaleDateString()}`
+          targetWarehouseId,
+          warehouseName
         );
         
         // Show success message with details
         alert(`Template "${shareCode.trim()}" applied successfully!\n\n` + 
-              `Warehouse ID: ${uniqueWarehouseId}\n` +
+              `Applied to: ${warehouseName} (${targetWarehouseId})\n` +
               `Locations created: ${result?.locations_created || 'Unknown'}\n\n` +
-              `You can now view the locations in the Warehouse Locations section.`);
+              `Switch to the Locations tab to see the generated warehouse locations.`);
         
         setShareCode('');
+        
+        // Refresh warehouse config and locations
+        await fetchWarehouseConfig(targetWarehouseId);
+        await fetchLocations({ warehouse_id: targetWarehouseId });
         
         // Refresh templates to show updated status
         const scope = templateScope === 'featured' ? 'all' : templateScope;
@@ -176,21 +208,26 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     if (!template.template_code) return;
     
     try {
-      // Generate a unique warehouse ID to avoid conflicts
-      const uniqueWarehouseId = `TMPL_${template.template_code}_${Date.now()}`;
+      // Use the existing warehouse ID from props or default
+      const targetWarehouseId = warehouseId || 'DEFAULT';
       const templateName = template.name || 'Applied Template';
+      const warehouseName = currentWarehouseConfig?.warehouse_name || `Warehouse ${targetWarehouseId}`;
       
       const result = await applyTemplateByCode(
         template.template_code, 
-        uniqueWarehouseId, 
-        `${templateName} - Applied ${new Date().toLocaleDateString()}`
+        targetWarehouseId, 
+        warehouseName
       );
       
       // Show success message with details
       alert(`Template "${templateName}" applied successfully!\n\n` + 
-            `Warehouse ID: ${uniqueWarehouseId}\n` +
+            `Applied to: ${warehouseName} (${targetWarehouseId})\n` +
             `Locations created: ${result?.locations_created || 'Unknown'}\n\n` +
-            `You can now view the locations in the Warehouse Locations section.`);
+            `Switch to the Locations tab to see the generated warehouse locations.`);
+      
+      // Refresh warehouse config and locations to reflect changes
+      await fetchWarehouseConfig(targetWarehouseId);
+      await fetchLocations({ warehouse_id: targetWarehouseId });
       
       // Refresh templates to show updated status
       const scope = templateScope === 'featured' ? 'all' : templateScope;
@@ -286,6 +323,21 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
           <p className="text-muted-foreground">
             Create, browse, and apply warehouse layout templates
           </p>
+          {/* Active Template Indicator */}
+          {(() => {
+            const activeTemplate = filteredAndSortedTemplates.find(t => t.is_applied);
+            return activeTemplate ? (
+              <div className="mt-2 flex items-center gap-2">
+                <Badge variant="secondary" className="flex items-center gap-1 bg-green-100 text-green-700">
+                  <CheckCircle className="h-3 w-3" />
+                  Active: {activeTemplate.name}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Currently applied to {currentWarehouseConfig?.warehouse_name || warehouseId}
+                </span>
+              </div>
+            ) : null;
+          })()}
         </div>
         
         <div className="flex items-center gap-2">
