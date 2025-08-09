@@ -662,6 +662,10 @@ def apply_template_by_code(current_user):
         
         db.session.commit()
         
+        # Debug: Check if locations were actually created
+        created_count = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
+        print(f"DEBUG: After template application, found {created_count} active locations for warehouse {warehouse_id}")
+        
         # Increment template usage count
         template.increment_usage()
         

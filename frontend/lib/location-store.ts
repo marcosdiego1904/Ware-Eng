@@ -191,6 +191,7 @@ const useLocationStore = create<LocationStore>()(
       
       // Location Management Actions
       fetchLocations: async (filters = {}, page = 1, perPage = 50) => {
+        console.log('fetchLocations called with:', { filters, page, perPage });
         set({ locationsLoading: true, error: null });
         
         try {
@@ -207,7 +208,9 @@ const useLocationStore = create<LocationStore>()(
             }, {} as Record<string, string>)
           });
           
+          console.log('API request URL:', `/locations?${params}`);
           const response = await api.get(`/locations?${params}`);
+          console.log('API response:', response.data);
           
           set({
             locations: response.data.locations,

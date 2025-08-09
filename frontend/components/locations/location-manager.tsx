@@ -78,17 +78,33 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
 
   // Refresh locations when warehouse config changes or initially loads
   useEffect(() => {
+    console.log('LocationManager useEffect triggered:', {
+      configId: currentWarehouseConfig?.id,
+      updatedAt: currentWarehouseConfig?.updated_at,
+      warehouseId,
+      configLoading
+    });
+    
     if (currentWarehouseConfig?.id) {
       // Clear any existing filters that might hide new locations
       const freshFilters = { warehouse_id: warehouseId };
       setFilters(freshFilters);
       // Fetch with increased pagination to show all locations
+      console.log('Fetching locations from LocationManager with filters:', freshFilters);
       fetchLocations(freshFilters, 1, 500); // Increased from default 50 to 500
     } else if (!configLoading && warehouseId) {
       // Initial load when no config exists yet
+      console.log('Fetching locations from LocationManager (no config):', { warehouse_id: warehouseId });
       fetchLocations({ warehouse_id: warehouseId }, 1, 500);
     }
-  }, [currentWarehouseConfig?.id, currentWarehouseConfig?.updated_at, warehouseId, configLoading]);
+  }, [currentWarehouseConfig?.id, currentWarehouseConfig?.updated_at, warehouseId]);
+
+  // Separate useEffect for initial config loading to avoid conflicts
+  useEffect(() => {
+    if (!currentWarehouseConfig && !configLoading && warehouseId) {
+      fetchLocations({ warehouse_id: warehouseId }, 1, 500);
+    }
+  }, [configLoading, warehouseId]);
 
   // Populate settings form when config loads
   useEffect(() => {

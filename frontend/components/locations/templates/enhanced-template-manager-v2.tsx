@@ -218,28 +218,42 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
       const templateName = template.name || 'Applied Template';
       const warehouseName = currentWarehouseConfig?.warehouse_name || `Warehouse ${targetWarehouseId}`;
       
+      console.log(`Applying template: ${template.template_code} to warehouse: ${targetWarehouseId}`);
+      
       const result = await applyTemplateByCode(
         template.template_code, 
         targetWarehouseId, 
         warehouseName
       );
       
+      console.log('Template application result:', result);
+      
       // Show success message with details
       alert(`Template "${templateName}" applied successfully!\n\n` + 
             `Applied to: ${warehouseName} (${targetWarehouseId})\n` +
-            `Locations created: ${result?.locations_created || 'Unknown'}\n\n` +
+            `Locations created: ${result?.locations_created || 'Unknown'}\n` +
+            `Storage locations: ${result?.storage_locations || 'Unknown'}\n` +
+            `Special areas: ${result?.special_areas || 'Unknown'}\n\n` +
             `Switch to the Locations tab to see the generated warehouse locations.`);
       
-      // Refresh warehouse config and locations to reflect changes
+      // Refresh warehouse config first
       await fetchWarehouseConfig(targetWarehouseId);
-      // Wait a moment for the config update to propagate
-      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Wait for database transaction to fully commit and propagate
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Force refresh locations directly to ensure they show up
+      console.log(`Fetching locations for warehouse: ${targetWarehouseId}`);
+      try {
+        await fetchLocations({ warehouse_id: targetWarehouseId }, 1, 500);
+        console.log('Location fetch completed successfully');
+      } catch (fetchError) {
+        console.error('Failed to fetch locations:', fetchError);
+      }
       
       // Refresh templates to show updated status
       const scope = templateScope === 'featured' ? 'all' : templateScope;
       await fetchTemplates(scope, searchTerm);
-      
-      // Note: Location refresh is handled by LocationManager's useEffect
     } catch (error: any) {
       console.error('Failed to apply template:', error);
       

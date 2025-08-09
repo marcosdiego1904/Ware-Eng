@@ -97,9 +97,15 @@ def get_locations(current_user):
             Location.code.asc()
         )
         
+        # Debug: Print query details
+        print(f"DEBUG: Location query for warehouse_id={warehouse_id}, filters={request.args.to_dict()}")
+        total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
+        print(f"DEBUG: Total locations in warehouse {warehouse_id}: {total_for_warehouse}")
+        
         # Paginate
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         locations = pagination.items
+        print(f"DEBUG: Query returned {len(locations)} locations")
         
         # Get summary statistics
         total_locations = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
