@@ -748,7 +748,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
             setShowSetupWizard(false);
             // Refresh data
             fetchWarehouseConfig(warehouseId);
-            fetchLocations({ warehouse_id: warehouseId });
+            fetchLocations({ warehouse_id: warehouseId }, 1, 500); // Fetch all locations
           }}
         />
       )}
