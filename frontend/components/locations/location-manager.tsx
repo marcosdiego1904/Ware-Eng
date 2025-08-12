@@ -192,7 +192,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     return () => {
       abortController.abort();
     };
-  }, [warehouseId, fetchWarehouseConfig, fetchTemplates, fetchLocations, clearError, resetStore, currentWarehouseConfig?.warehouse_id, locations.length]);
+  }, [warehouseId, fetchWarehouseConfig, fetchTemplates, fetchLocations, clearError, resetStore, currentWarehouseConfig?.warehouse_id]);
 
   // Refresh locations when warehouse ID changes (but not on config loading state changes)
   useEffect(() => {
