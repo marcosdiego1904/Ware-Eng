@@ -70,7 +70,7 @@ export function ClearAuth() {
           Clear Auth Data
         </Button>
         <p className="text-sm text-gray-600 mt-2">
-          Use this if you're getting "Signature verification failed" errors
+          Use this if you&apos;re getting &quot;Signature verification failed&quot; errors
         </p>
       </CardContent>
     </Card>

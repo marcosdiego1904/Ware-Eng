@@ -76,7 +76,7 @@ This is a **Warehouse Intelligence Engine** - a full-stack web application for a
 ### Authentication & API Communication
 - **JWT-based authentication** with token storage in localStorage
 - **CORS-enabled API** with support for multiple origins (localhost + Vercel)
-- **API base URL**: `http://localhost:5001/api/v1` (development)
+- **API base URL**: `http://localhost:5000/api/v1` (development)
 - **Axios interceptors** for automatic token attachment and auth error handling
 
 ### Rule System Architecture

@@ -95,7 +95,7 @@ export const locationApi = {
   async getLocations(
     filters: LocationFilters = {},
     page: number = 1,
-    perPage: number = 50
+    perPage: number = 100
   ): Promise<LocationsResponse> {
     const params = new URLSearchParams({
       page: page.toString(),
@@ -267,7 +267,7 @@ export const warehouseApi = {
 export const templateApi = {
   // Get templates
   async getTemplates(
-    scope: 'my' | 'public' | 'all' = 'all',
+    scope: 'my' | 'public' | 'all' = 'my',
     search: string = '',
     page: number = 1,
     perPage: number = 20

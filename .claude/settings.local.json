@@ -33,7 +33,8 @@
       "Bash(npm run lint:*)",
       "Bash(timeout 3 python run_server.py)",
       "Bash(grep:*)",
-      "Bash(timeout 10 python:*)"
+      "Bash(timeout 10 python:*)",
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": []
   }

@@ -11,19 +11,28 @@ import { Badge } from '@/components/ui/badge';
 import { WizardData } from './warehouse-wizard';
 import { 
   Building2, 
-  Package, 
   Info, 
   Calculator,
   AlertTriangle,
   CheckCircle,
-  Grid3X3,
-  Layers
+  Grid3X3
 } from 'lucide-react';
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  calculations: {
+    total_storage_locations: number;
+    total_capacity: number;
+    estimated_setup_time_minutes: number;
+  };
+}
 
 interface Step1StructureProps {
   data: WizardData;
   onChange: (updates: Partial<WizardData>) => void;
-  validationResults?: any;
+  validationResults?: ValidationResult | null;
 }
 
 export function Step1Structure({ data, onChange, validationResults }: Step1StructureProps) {

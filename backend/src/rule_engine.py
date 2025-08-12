@@ -299,14 +299,22 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         return anomalies
     
     def _assign_location_types(self, inventory_df: pd.DataFrame) -> pd.DataFrame:
-        """Assign location types based on location patterns"""
+        """Assign location types based on location patterns with smart matching"""
         df = inventory_df.copy()
         
         # Get location mappings from database
         locations = Location.query.all()
         location_map = {}
+        location_map_normalized = {}  # For handling prefixed codes
+        
         for loc in locations:
             location_map[loc.code] = loc.location_type
+            
+            # Create normalized mapping for prefixed warehouse codes
+            # Remove common prefixes like "ALICE_", "USER_", etc.
+            normalized_code = self._normalize_location_code(loc.code)
+            if normalized_code != loc.code:
+                location_map_normalized[normalized_code] = loc.location_type
         
         def get_location_type(location):
             if pd.isna(location) or not str(location).strip():
@@ -314,19 +322,173 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
             
             location_str = str(location).strip()
             
-            # Direct match
+            # 1. Direct exact match
             if location_str in location_map:
                 return location_map[location_str]
             
-            # Pattern matching
+            # 2. Try normalized matching (handles user prefixes)
+            normalized_input = self._normalize_location_code(location_str)
+            if normalized_input in location_map_normalized:
+                return location_map_normalized[normalized_input]
+            
+            # 3. Try reverse matching (inventory might have prefixed code, db might not)
+            for db_code, loc_type in location_map.items():
+                db_normalized = self._normalize_location_code(db_code)
+                if db_normalized == location_str or location_str == db_normalized:
+                    return loc_type
+            
+            # 4. Pattern matching
             for loc in locations:
-                if loc.pattern and self._matches_pattern(location_str, loc.pattern):
-                    return loc.location_type
+                if loc.pattern:
+                    if self._matches_pattern(location_str, loc.pattern):
+                        return loc.location_type
+                    # Also try pattern matching with normalized codes
+                    if self._matches_pattern(normalized_input, loc.pattern):
+                        return loc.location_type
             
             return 'UNKNOWN'
         
         df['location_type'] = df['location'].apply(get_location_type)
         return df
+    
+    def _normalize_location_code(self, location_code: str) -> str:
+        """
+        Normalize location codes by removing user prefixes and standardizing format
+        
+        Examples:
+        - "ALICE_A-01-01A" -> "A-01-01A"
+        - "USER_BOB_001A" -> "001A" 
+        - "WH01_RECEIVING" -> "RECEIVING"
+        - "A-01-01A" -> "A-01-01A" (unchanged)
+        """
+        if not location_code:
+            return location_code
+            
+        code = str(location_code).strip().upper()
+        
+        # Remove common warehouse/user prefixes
+        prefixes_to_remove = [
+            # User-specific warehouse prefixes (USER_USERNAME_)
+            r'^USER_[A-Z0-9]+_',
+            # Simplified user prefixes (USERNAME_)  
+            r'^[A-Z]{2,10}_',  # 2-10 letter username prefixes
+            # Warehouse prefixes (WH01_, WH_)
+            r'^WH\d*_',
+            # Default warehouse prefixes
+            r'^DEFAULT_',
+        ]
+        
+        for prefix_pattern in prefixes_to_remove:
+            code = re.sub(prefix_pattern, '', code)
+            
+        return code
+    
+    def _find_location_by_code(self, location_code: str) -> 'Location':
+        """
+        Find location in database using smart matching (handles user prefixes)
+        
+        Args:
+            location_code: Location code from inventory data
+            
+        Returns:
+            Location object if found, None otherwise
+        """
+        if not location_code:
+            return None
+            
+        location_str = str(location_code).strip()
+        
+        # 1. Direct exact match
+        location = Location.query.filter_by(code=location_str).first()
+        if location:
+            return location
+        
+        # 2. Try normalized matching
+        normalized_input = self._normalize_location_code(location_str)
+        
+        # Search all locations and check if normalized versions match
+        all_locations = Location.query.all()
+        for loc in all_locations:
+            # Check if normalized database code matches input
+            if self._normalize_location_code(loc.code) == location_str:
+                return loc
+            # Check if input normalized matches database code
+            if normalized_input == loc.code:
+                return loc
+            # Check if both normalized versions match
+            if self._normalize_location_code(loc.code) == normalized_input:
+                return loc
+        
+        return None
+    
+    def test_location_matching(self, test_codes: list = None) -> dict:
+        """
+        Test the location matching system with various code formats
+        
+        Args:
+            test_codes: List of location codes to test. If None, uses default test cases
+            
+        Returns:
+            Dictionary with test results and mapping information
+        """
+        if test_codes is None:
+            test_codes = [
+                "A-01-01A",
+                "01-02-015C", 
+                "001A",
+                "RECEIVING",
+                "ALICE_A-01-01A",
+                "USER_BOB_001A",
+                "WH01_RECEIVING"
+            ]
+        
+        results = {
+            'database_locations': [],
+            'test_results': {},
+            'normalization_examples': {},
+            'recommendations': []
+        }
+        
+        # Get all database locations
+        all_locations = Location.query.all()
+        results['database_locations'] = [
+            {
+                'code': loc.code,
+                'normalized': self._normalize_location_code(loc.code),
+                'type': loc.location_type,
+                'warehouse_id': loc.warehouse_id
+            }
+            for loc in all_locations
+        ]
+        
+        # Test each code
+        for test_code in test_codes:
+            normalized = self._normalize_location_code(test_code)
+            found_location = self._find_location_by_code(test_code)
+            
+            results['test_results'][test_code] = {
+                'normalized': normalized,
+                'found_match': found_location is not None,
+                'matched_code': found_location.code if found_location else None,
+                'location_type': found_location.location_type if found_location else 'NOT_FOUND'
+            }
+            
+            results['normalization_examples'][test_code] = normalized
+        
+        # Generate recommendations
+        if len([r for r in results['test_results'].values() if not r['found_match']]) > 0:
+            results['recommendations'].append(
+                "Some test codes didn't find matches. Consider creating location mappings or patterns."
+            )
+        
+        prefixed_count = len([loc for loc in all_locations if '_' in loc.code])
+        if prefixed_count > 0:
+            results['recommendations'].append(
+                f"Found {prefixed_count} prefixed location codes in database. "
+                "Ensure inventory reports use matching formats or rely on normalization."
+            )
+        
+        return results
     
     def _matches_pattern(self, location: str, pattern: str) -> bool:
         """Check if location matches pattern"""
@@ -380,16 +542,13 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         
         anomalies = []
         
-        # Get location capacity mappings
-        locations = Location.query.all()
-        capacity_map = {loc.code: loc.capacity for loc in locations}
-        
         # Count pallets per location
         location_counts = inventory_df['location'].value_counts()
         
         for location, count in location_counts.items():
-            # Check capacity for this location
-            capacity = capacity_map.get(str(location), 1)  # Default capacity 1
+            # Find location using smart matching to get capacity
+            location_obj = self._find_location_by_code(str(location))
+            capacity = location_obj.capacity if location_obj else 1  # Default capacity 1
             
             if count > capacity:
                 # Find all pallets in overcapacity location
@@ -518,8 +677,8 @@ class TemperatureZoneMismatchEvaluator(BaseRuleEvaluator):
             )
             
             if is_temp_sensitive:
-                # Get location zone
-                location = Location.query.filter_by(code=str(pallet['location'])).first()
+                # Get location zone using smart matching
+                location = self._find_location_by_code(str(pallet['location']))
                 if location and location.zone in prohibited_zones:
                     anomalies.append({
                         'pallet_id': pallet['pallet_id'],
@@ -623,7 +782,7 @@ class ProductIncompatibilityEvaluator(BaseRuleEvaluator):
             if pd.isna(pallet.get('description')) or pd.isna(pallet.get('location')):
                 continue
             
-            location = Location.query.filter_by(code=str(pallet['location'])).first()
+            location = self._find_location_by_code(str(pallet['location']))
             if not location:
                 continue
             

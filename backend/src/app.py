@@ -1762,6 +1762,37 @@ def complete_database_fix():
         """
         return error_html, 500
 
+# Add location matching test endpoint
+@app.route('/api/v1/test-location-matching', methods=['POST'])
+@login_required
+def test_location_matching():
+    """Test the location code matching system with various formats"""
+    try:
+        data = request.get_json() or {}
+        test_codes = data.get('test_codes', None)
+        
+        # Load rule engine if not already loaded
+        load_enhanced_engine()
+        
+        if not HAS_ENHANCED_ENGINE:
+            return jsonify({'error': 'Enhanced engine not available'}), 500
+        
+        # Get rule engine instance
+        from rule_engine import RuleEngine
+        engine = RuleEngine()
+        
+        # Run location matching test
+        results = engine.test_location_matching(test_codes)
+        
+        return jsonify({
+            'status': 'success',
+            'results': results,
+            'message': f'Tested {len(results["test_results"])} location codes'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Location matching test failed: {str(e)}'}), 500
+
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

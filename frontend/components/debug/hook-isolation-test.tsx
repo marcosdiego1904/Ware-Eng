@@ -110,8 +110,8 @@ export function HookIsolationTest() {
         <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
           <strong>Instructions:</strong>
           <ol className="list-decimal list-inside mt-1 space-y-1">
-            <li>Click "Test Default Rule Edit Flow" first - should work fine</li>
-            <li>Click "Test Custom Rule Edit Flow" - may trigger React Hook Error #185</li>
+            <li>Click &quot;Test Default Rule Edit Flow&quot; first - should work fine</li>
+            <li>Click &quot;Test Custom Rule Edit Flow&quot; - may trigger React Hook Error #185</li>
             <li>Compare the console logs to see where the error occurs</li>
           </ol>
         </div>

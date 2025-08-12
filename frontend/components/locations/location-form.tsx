@@ -26,11 +26,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import useLocationStore, { Location } from '@/lib/location-store';
+import { useToast } from '@/hooks/use-toast';
 import { 
   AlertCircle, 
   MapPin, 
   Package, 
-  Settings, 
   Building2,
   Loader2,
   Save,
@@ -56,16 +56,18 @@ interface LocationFormData {
   level?: string;
   pattern?: string;
   allowed_products: string[];
-  special_requirements: Record<string, any>;
+  special_requirements: Record<string, unknown>;
   is_active: boolean;
 }
 
 export function LocationForm({ location, warehouseId, onClose, onSave }: LocationFormProps) {
   const { createLocation, updateLocation, loading, error } = useLocationStore();
+  const { toast } = useToast();
   const [allowedProductsText, setAllowedProductsText] = useState('');
   const [specialRequirementsText, setSpecialRequirementsText] = useState('');
   const [isStorageLocation, setIsStorageLocation] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [palletWarnings, setPalletWarnings] = useState<string[]>([]);
 
   const {
     register,
@@ -88,6 +90,48 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
   });
 
   const locationType = watch('location_type');
+  const palletCapacity = watch('pallet_capacity');
+
+  // Validate pallet capacity values
+  const validatePalletCapacity = React.useCallback((capacity: number) => {
+    console.log('🔍 validatePalletCapacity called with:', { capacity, locationType });
+    const warnings: string[] = [];
+    
+    if (!capacity || capacity <= 0) {
+      warnings.push('❌ Pallet capacity must be greater than 0');
+    } else if (capacity > 1000) {
+      warnings.push('❌ Extremely high pallet capacity detected. This value seems incorrect.');
+    } else if (capacity > 100) {
+      warnings.push('⚠️ Very high pallet capacity detected. Please verify this is correct.');
+    } else if (capacity > 10 && locationType === 'STORAGE') {
+      warnings.push('⚠️ High pallet capacity for storage location. Typical storage locations hold 1-2 pallets.');
+    } else if (capacity > 50 && (locationType === 'RECEIVING' || locationType === 'STAGING')) {
+      warnings.push('⚠️ Very high capacity for this location type. Please verify this is accurate.');
+    }
+    
+    // Check for suspicious values that might indicate typos
+    const suspiciousValues = [11, 111, 123, 1234, 999, 9999];
+    if (suspiciousValues.includes(capacity)) {
+      warnings.push('🤔 This pallet capacity seems unusual. Did you mean to enter this value?');
+    }
+    
+    // Validate against typical warehouse standards
+    if (locationType === 'STORAGE' && capacity > 4) {
+      warnings.push('💡 Most storage locations hold 1-4 pallets maximum. Double-check your entry.');
+    } else if (locationType === 'DOCK' && capacity > 20) {
+      warnings.push('💡 High capacity for dock location. Typical dock areas hold 5-20 pallets.');
+    } else if ((locationType === 'RECEIVING' || locationType === 'STAGING') && capacity > 30) {
+      warnings.push('💡 High capacity for this area type. Typical values are 5-30 pallets.');
+    }
+    
+    // Helpful suggestions
+    if (capacity === 0) {
+      warnings.push('💡 Tip: Even blocked locations usually have capacity 1. Use 0 only if completely unusable.');
+    }
+    
+    console.log('🔍 Setting pallet warnings:', warnings);
+    setPalletWarnings(warnings);
+  }, [locationType]);
 
   // Initialize form when location prop changes
   useEffect(() => {
@@ -111,24 +155,38 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
       setAllowedProductsText(location.allowed_products.join(', '));
       setSpecialRequirementsText(JSON.stringify(location.special_requirements, null, 2));
       setIsStorageLocation(location.is_storage_location);
+      
+      // Trigger validation for existing location's pallet capacity
+      if (location.pallet_capacity) {
+        validatePalletCapacity(location.pallet_capacity);
+      }
     } else {
       reset();
       setAllowedProductsText('');
       setSpecialRequirementsText('{}');
       setIsStorageLocation(locationType === 'STORAGE');
+      setPalletWarnings([]); // Clear warnings for new locations
     }
-  }, [location, reset]);
+  }, [location, reset, validatePalletCapacity, locationType]);
 
   // Update storage location flag when type changes
   useEffect(() => {
     setIsStorageLocation(locationType === 'STORAGE');
   }, [locationType]);
 
+  // Validate pallet capacity when it changes
+  useEffect(() => {
+    console.log('🔍 Pallet capacity validation triggered:', { palletCapacity, locationType });
+    if (palletCapacity !== undefined && palletCapacity !== null && !isNaN(palletCapacity)) {
+      validatePalletCapacity(palletCapacity);
+    } else {
+      setPalletWarnings([]);
+    }
+  }, [palletCapacity, validatePalletCapacity, locationType]);
+
   // Auto-generate code for storage locations
   const handleStructureChange = () => {
     if (isStorageLocation) {
-      const aisleNum = watch('aisle_number');
-      const rackNum = watch('rack_number');
       const posNum = watch('position_number');
       const level = watch('level');
       
@@ -142,6 +200,23 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
   const onSubmit = async (data: LocationFormData) => {
     setFormErrors({});
     
+    // Show confirmation if there are warnings about pallet capacity
+    if (palletWarnings.length > 0 && palletWarnings.some(w => w.includes('❌'))) {
+      const confirmed = confirm(
+        `There are issues with the pallet capacity (${data.pallet_capacity}):\n\n${palletWarnings.join('\n')}\n\nDo you want to continue anyway?`
+      );
+      if (!confirmed) {
+        return;
+      }
+    } else if (palletWarnings.length > 0) {
+      const confirmed = confirm(
+        `Please verify the pallet capacity (${data.pallet_capacity}):\n\n${palletWarnings.join('\n')}\n\nIs this value correct?`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    
     try {
       // Parse allowed products
       const allowedProducts = allowedProductsText
@@ -154,7 +229,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
       if (specialRequirementsText.trim()) {
         try {
           specialRequirements = JSON.parse(specialRequirementsText);
-        } catch (e) {
+        } catch {
           setFormErrors({ special_requirements: 'Invalid JSON format' });
           return;
         }
@@ -179,15 +254,28 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
         savedLocation = await createLocation(locationData);
       }
       
+      toast({
+        title: location ? "Location Updated" : "Location Created",
+        description: `Location ${savedLocation.code} has been ${location ? 'updated' : 'created'} successfully.`,
+        variant: "success",
+      });
+      
       onSave(savedLocation);
-    } catch (error) {
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
       console.error('Error saving location:', error);
+      
+      toast({
+        title: "Save Failed",
+        description: error.response?.data?.error || `Failed to ${location ? 'update' : 'create'} location. Please try again.`,
+        variant: "destructive",
+      });
     }
   };
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[95vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5" />
@@ -201,7 +289,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -209,14 +297,14 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
             </Alert>
           )}
 
-          <Tabs defaultValue="basic" className="w-full">
+          <Tabs defaultValue="basic" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="basic">Basic Info</TabsTrigger>
               <TabsTrigger value="structure">Structure</TabsTrigger>
               <TabsTrigger value="advanced">Advanced</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="basic" className="space-y-6">
+            <TabsContent value="basic" className="flex-1 overflow-y-auto space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -248,7 +336,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
                       <Label htmlFor="location_type">Location Type *</Label>
                       <Select
                         value={locationType}
-                        onValueChange={(value) => setValue('location_type', value as any)}
+                        onValueChange={(value: LocationFormData['location_type']) => setValue('location_type', value)}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -281,12 +369,33 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
                         min="1"
                         {...register('pallet_capacity', { 
                           valueAsNumber: true,
-                          min: { value: 1, message: 'Capacity must be at least 1' }
+                          min: { value: 1, message: 'Capacity must be at least 1' },
+                          onChange: (e) => {
+                            const value = parseInt(e.target.value) || 0;
+                            console.log('🔍 Pallet capacity input changed:', value);
+                            validatePalletCapacity(value);
+                          }
                         })}
                         placeholder="Number of pallets"
                       />
                       {errors.pallet_capacity && (
                         <p className="text-sm text-destructive">{errors.pallet_capacity.message}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {locationType === 'STORAGE' && 'Storage: 1-2 pallets typical, 4 maximum'}
+                        {locationType === 'RECEIVING' && 'Receiving: 5-30 pallets typical'}
+                        {locationType === 'STAGING' && 'Staging: 5-30 pallets typical'}
+                        {locationType === 'DOCK' && 'Dock: 5-20 pallets typical'}
+                        {' • Validation active ✓'}
+                      </p>
+                      {palletWarnings.length > 0 && (
+                        <div className="space-y-1">
+                          {palletWarnings.map((warning, index) => (
+                            <p key={index} className="text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                              {warning}
+                            </p>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -315,7 +424,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
               </Card>
             </TabsContent>
 
-            <TabsContent value="structure" className="space-y-6">
+            <TabsContent value="structure" className="flex-1 overflow-y-auto space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -393,7 +502,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
                       <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                          When you enter position number and level, the location code will be auto-generated (e.g., 001A).
+                          When you enter position number and level, the location code will be auto-generated (e.g., 01-02-015A).
                         </AlertDescription>
                       </Alert>
                     </div>
@@ -401,14 +510,14 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
                     <div className="text-center py-12 text-muted-foreground">
                       <Building2 className="h-16 w-16 mx-auto mb-4 opacity-50" />
                       <p>Structure information is only applicable to storage locations.</p>
-                      <p>Special areas like receiving, staging, and dock don't need hierarchy details.</p>
+                      <p>Special areas like receiving, staging, and dock don&apos;t need hierarchy details.</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            <TabsContent value="advanced" className="space-y-6">
+            <TabsContent value="advanced" className="flex-1 overflow-y-auto space-y-6">
               <div className="grid gap-6">
                 <Card>
                   <CardHeader>
@@ -460,9 +569,9 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
             </TabsContent>
           </Tabs>
 
-          <Separator />
+          <Separator className="mt-auto" />
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>
               <X className="h-4 w-4 mr-2" />
               Cancel

@@ -7,6 +7,15 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ClearAuth } from './clear-auth'
 
+interface ApiTestResult {
+  status?: number;
+  statusText?: string;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  timestamp: string;
+}
+
 export function AuthDebug() {
   const { login, register, user, isAuth, isLoading } = useAuth()
   const [username, setUsername] = useState('')
@@ -14,7 +23,7 @@ export function AuthDebug() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [mounted, setMounted] = useState(false)
-  const [apiTestResult, setApiTestResult] = useState<any>(null)
+  const [apiTestResult, setApiTestResult] = useState<ApiTestResult | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -63,12 +72,13 @@ export function AuthDebug() {
         data: response.data,
         timestamp: new Date().toISOString()
       })
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string }; status?: number }; message?: string }
       console.error('API test error:', err)
       setApiTestResult({
         success: false,
-        error: err.response?.data?.message || err.message || 'Unknown error',
-        status: err.response?.status,
+        error: error.response?.data?.message || error.message || 'Unknown error',
+        status: error.response?.status,
         timestamp: new Date().toISOString()
       })
     }

@@ -26,7 +26,6 @@ import {
   Trash2, 
   MapPin, 
   Package,
-  Building2,
   ChevronLeft,
   ChevronRight,
   Loader2
@@ -84,18 +83,22 @@ export function LocationList({
   const formatLocationDisplay = (location: Location) => {
     if (location.is_storage_location) {
       return (
-        <div className="space-y-1">
-          <div className="font-medium">{location.code}</div>
-          <div className="text-sm text-muted-foreground">
+        <div className="space-y-1 min-w-0">
+          <div className="font-medium font-mono text-sm truncate" title={location.code}>
+            {location.code}
+          </div>
+          <div className="text-xs text-muted-foreground truncate" title={location.full_address}>
             {location.full_address}
           </div>
         </div>
       );
     } else {
       return (
-        <div className="space-y-1">
-          <div className="font-medium">{location.code}</div>
-          <div className="text-sm text-muted-foreground">
+        <div className="space-y-1 min-w-0">
+          <div className="font-medium font-mono text-sm truncate" title={location.code}>
+            {location.code}
+          </div>
+          <div className="text-xs text-muted-foreground">
             Special Area
           </div>
         </div>
@@ -157,16 +160,16 @@ export function LocationList({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="rounded-md border">
-          <Table>
+        <div className="rounded-md border overflow-x-auto">
+          <Table className="min-w-full">
             <TableHeader>
               <TableRow>
-                <TableHead>Location</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Zone</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Structure</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="min-w-[180px]">Location</TableHead>
+                <TableHead className="min-w-[100px]">Type</TableHead>
+                <TableHead className="min-w-[80px]">Zone</TableHead>
+                <TableHead className="min-w-[80px]">Capacity</TableHead>
+                <TableHead className="min-w-[120px]">Structure</TableHead>
+                <TableHead className="min-w-[80px]">Status</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>

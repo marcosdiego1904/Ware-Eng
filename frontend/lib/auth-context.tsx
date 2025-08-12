@@ -63,7 +63,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     removeAuthToken()
     setUserState(null)
     setIsAuth(false)
-    // Force page reload to ensure clean state
+    
+    // Clear all user-specific Zustand stores to prevent data contamination
+    if (typeof window !== 'undefined') {
+      // Clear location store
+      try {
+        const { default: useLocationStore } = require('./location-store');
+        useLocationStore.getState().resetStore();
+        console.log('🔄 Location store reset on logout');
+      } catch (error) {
+        console.warn('Failed to reset location store:', error);
+      }
+      
+      // Clear other stores if needed
+      try {
+        const { useRulesStore } = require('./rules-store');
+        if (useRulesStore?.getState()?.resetStore) {
+          useRulesStore.getState().resetStore();
+          console.log('🔄 Rules store reset on logout');
+        }
+      } catch (error) {
+        console.warn('Failed to reset rules store:', error);
+      }
+    }
+    
+    // Force page reload to ensure completely clean state
     if (typeof window !== 'undefined') {
       window.location.href = '/auth'
     }

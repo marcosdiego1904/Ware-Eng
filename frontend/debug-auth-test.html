@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Auth Test</title>
+</head>
+<body>
+    <h1>Frontend Authentication Debug</h1>
+    <div id="status"></div>
+    <button onclick="testLogin()">Test Login</button>
+    <button onclick="testAPI()">Test Locations API</button>
+    <button onclick="clearStorage()">Clear Storage</button>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000/api/v1';
+        
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML += '<br>' + new Date().toLocaleTimeString() + ': ' + message;
+        }
+        
+        async function testLogin() {
+            updateStatus('Testing login...');
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'password123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify({username: data.username}));
+                    updateStatus('✅ Login successful! Token saved.');
+                } else {
+                    updateStatus('❌ Login failed: ' + data.message);
+                }
+            } catch (error) {
+                updateStatus('❌ Login error: ' + error.message);
+            }
+        }
+        
+        async function testAPI() {
+            updateStatus('Testing locations API...');
+            
+            const token = localStorage.getItem('token');
+            if (!token) {
+                updateStatus('❌ No token found. Please login first.');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/locations?warehouse_id=DEFAULT&per_page=50`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const special = data.locations.filter(loc => ['RECEIVING', 'STAGING', 'DOCK'].includes(loc.location_type));
+                    updateStatus(`✅ API Success! Total: ${data.locations.length}, Special: ${special.length}`);
+                    
+                    special.forEach(loc => {
+                        updateStatus(`  - ${loc.code} (${loc.location_type}) Zone:${loc.zone}`);
+                    });
+                } else {
+                    updateStatus('❌ API failed: ' + data.error);
+                }
+            } catch (error) {
+                updateStatus('❌ API error: ' + error.message);
+            }
+        }
+        
+        function clearStorage() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            updateStatus('🧹 Storage cleared');
+        }
+        
+        // Check initial state
+        window.onload = function() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            updateStatus('Initial state: Token=' + (token ? 'EXISTS' : 'NONE') + ', User=' + (user ? JSON.parse(user).username : 'NONE'));
+        };
+    </script>
+</body>
+</html>

@@ -79,10 +79,24 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                 areas = json.loads(areas_template) if isinstance(areas_template, str) else areas_template
                 for idx, area_data in enumerate(areas):
                     base_code = area_data.get('code', f'{loc_type}_{idx+1}')
-                    code = f"{warehouse_id}_{base_code}"
+                    
+                    # Generate warehouse-specific code to avoid global conflicts
+                    if warehouse_id != 'DEFAULT':
+                        # For user-specific warehouses, prefix the code to ensure uniqueness
+                        warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
+                        unique_code = f"{warehouse_prefix}_{base_code}"
+                    else:
+                        unique_code = base_code
+                    
+                    # Check for conflicts and add suffix if needed
+                    attempt = 0
+                    original_code = unique_code
+                    while Location.query.filter_by(code=unique_code).first():
+                        attempt += 1
+                        unique_code = f"{original_code}_{attempt}"
 
                     location = Location(
-                        code=code,
+                        code=unique_code,
                         location_type=loc_type,
                         capacity=area_data.get('capacity', default_cap),
                         pallet_capacity=area_data.get('capacity', default_cap),
@@ -351,7 +365,24 @@ def update_template(current_user, template_id):
         
         # Update special areas templates
         if 'receiving_areas_template' in data:
-            template.set_receiving_areas_template(data['receiving_areas_template'])
+            if isinstance(data['receiving_areas_template'], str):
+                # If it's a JSON string, use it directly
+                template.receiving_areas_template = data['receiving_areas_template']
+            else:
+                # If it's a list, convert to JSON
+                template.set_receiving_areas_template(data['receiving_areas_template'])
+        
+        if 'staging_areas_template' in data:
+            if isinstance(data['staging_areas_template'], str):
+                template.staging_areas_template = data['staging_areas_template']
+            else:
+                template.set_staging_areas_template(data['staging_areas_template'])
+        
+        if 'dock_areas_template' in data:
+            if isinstance(data['dock_areas_template'], str):
+                template.dock_areas_template = data['dock_areas_template']
+            else:
+                template.set_dock_areas_template(data['dock_areas_template'])
         
         template.updated_at = datetime.utcnow()
         db.session.commit()

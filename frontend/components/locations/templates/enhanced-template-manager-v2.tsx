@@ -19,7 +19,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { TemplateCreationWizard } from './template-creation-wizard';
 import { TemplateGrid } from './template-preview';
-import { TemplateEditModal } from './template-edit-modal';
+import { EnhancedTemplateEditModal } from './enhanced-template-edit-modal';
+import { TemplateApplyModal } from './template-apply-modal';
 import useLocationStore, { WarehouseTemplate } from '@/lib/location-store';
 import { useAuth } from '@/lib/auth-context';
 import { 
@@ -78,6 +79,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     currentWarehouseConfig,
     templatesLoading,
     fetchTemplates,
+    applyTemplate,
     applyTemplateByCode,
     createTemplateFromConfig,
     fetchWarehouseConfig,
@@ -92,10 +94,15 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const [editingTemplate, setEditingTemplate] = useState<WarehouseTemplate | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   
+  // Template Apply Modal State
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [templateToApply, setTemplateToApply] = useState<any>(null);
+  const [applyResult, setApplyResult] = useState<any>(null);
+  
   // Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [templateScope, setTemplateScope] = useState<'all' | 'my' | 'public' | 'featured'>('all');
+  const [templateScope, setTemplateScope] = useState<'all' | 'my' | 'public' | 'featured'>('my');
   const [showFeaturedOnly, setShowFeaturedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'rating' | 'name'>('recent');
   
@@ -156,40 +163,23 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const handleApplyByCode = async () => {
     if (shareCode.trim()) {
       try {
-        // Use the existing warehouse ID from props or default
-        const targetWarehouseId = warehouseId || 'DEFAULT';
-        const warehouseName = currentWarehouseConfig?.warehouse_name || `Warehouse ${targetWarehouseId}`;
+        // Create mock template for the modal
+        const mockTemplate = {
+          name: `Template ${shareCode.trim()}`,
+          template_code: shareCode.trim(),
+          description: 'Template applied by code',
+          num_aisles: 0,
+          racks_per_aisle: 0,
+          positions_per_rack: 0,
+          levels_per_position: 0,
+          default_pallet_capacity: 1
+        };
         
-        const result = await applyTemplateByCode(
-          shareCode.trim(), 
-          targetWarehouseId,
-          warehouseName
-        );
-        
-        // Show success message with details
-        alert(`Template "${shareCode.trim()}" applied successfully!\n\n` + 
-              `Applied to: ${warehouseName} (${targetWarehouseId})\n` +
-              `Locations created: ${result?.locations_created || 'Unknown'}\n\n` +
-              `Switch to the Locations tab to see the generated warehouse locations.`);
-        
-        setShareCode('');
-        
-        // Refresh warehouse config and locations
-        await fetchWarehouseConfig(targetWarehouseId);
-        await fetchLocations({ warehouse_id: targetWarehouseId });
-        
-        // Refresh templates to show updated status
-        const scope = templateScope === 'featured' ? 'all' : templateScope;
-        fetchTemplates(scope, searchTerm);
+        setTemplateToApply(mockTemplate);
+        setApplyResult(null);
+        setShowApplyModal(true);
       } catch (error: any) {
-        console.error('Failed to apply template:', error);
-        
-        // Show user-friendly error message
-        if (error?.response?.data?.error) {
-          alert(`Failed to apply template: ${error.response.data.error}`);
-        } else {
-          alert('Failed to apply template. Please try again.');
-        }
+        console.error('Failed to prepare template application:', error);
       }
     }
   };
@@ -212,58 +202,10 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   const handleApplyTemplate = async (template: { template_code?: string; name?: string }) => {
     if (!template.template_code) return;
     
-    try {
-      // Use the existing warehouse ID from props or default
-      const targetWarehouseId = warehouseId || 'DEFAULT';
-      const templateName = template.name || 'Applied Template';
-      const warehouseName = currentWarehouseConfig?.warehouse_name || `Warehouse ${targetWarehouseId}`;
-      
-      console.log(`Applying template: ${template.template_code} to warehouse: ${targetWarehouseId}`);
-      
-      const result = await applyTemplateByCode(
-        template.template_code, 
-        targetWarehouseId, 
-        warehouseName
-      );
-      
-      console.log('Template application result:', result);
-      
-      // Show success message with details
-      alert(`Template "${templateName}" applied successfully!\n\n` + 
-            `Applied to: ${warehouseName} (${targetWarehouseId})\n` +
-            `Locations created: ${result?.locations_created || 'Unknown'}\n` +
-            `Storage locations: ${result?.storage_locations || 'Unknown'}\n` +
-            `Special areas: ${result?.special_areas || 'Unknown'}\n\n` +
-            `Switch to the Locations tab to see the generated warehouse locations.`);
-      
-      // Refresh warehouse config first
-      await fetchWarehouseConfig(targetWarehouseId);
-      
-      // Wait for database transaction to fully commit and propagate
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Force refresh locations directly to ensure they show up
-      console.log(`Fetching locations for warehouse: ${targetWarehouseId}`);
-      try {
-        await fetchLocations({ warehouse_id: targetWarehouseId }, 1, 500);
-        console.log('Location fetch completed successfully');
-      } catch (fetchError) {
-        console.error('Failed to fetch locations:', fetchError);
-      }
-      
-      // Refresh templates to show updated status
-      const scope = templateScope === 'featured' ? 'all' : templateScope;
-      await fetchTemplates(scope, searchTerm);
-    } catch (error: any) {
-      console.error('Failed to apply template:', error);
-      
-      // Show user-friendly error message
-      if (error?.response?.data?.error) {
-        alert(`Failed to apply template: ${error.response.data.error}`);
-      } else {
-        alert('Failed to apply template. Please try again.');
-      }
-    }
+    // Set up the modal with template data
+    setTemplateToApply(template);
+    setApplyResult(null);
+    setShowApplyModal(true);
   };
 
   const handleViewTemplate = (template: any) => {
@@ -281,14 +223,84 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     alert(`Template Details:\n\n${details}`);
   };
 
+  // Modal handlers
+  const handleModalApply = async () => {
+    if (!templateToApply?.template_code) return;
+    
+    try {
+      const targetWarehouseId = warehouseId || 'DEFAULT';
+      const templateName = templateToApply.name || 'Applied Template';
+      const warehouseName = currentWarehouseConfig?.warehouse_name || `Warehouse ${targetWarehouseId}`;
+      
+      console.log(`Applying template: ${templateToApply.template_code} to warehouse: ${targetWarehouseId}`);
+      
+      const result = await applyTemplateByCode(
+        templateToApply.template_code, 
+        targetWarehouseId, 
+        warehouseName
+      );
+      
+      console.log('Template application result:', result);
+      
+      // Set success result
+      setApplyResult({
+        success: true,
+        locations_created: result?.locations_created,
+        storage_locations: result?.storage_locations,
+        special_areas: result?.special_areas
+      });
+      
+      // Clear share code if it was used
+      setShareCode('');
+      
+      // Refresh warehouse config first
+      await fetchWarehouseConfig(targetWarehouseId);
+      
+      // Wait for database transaction to fully commit and propagate
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      console.log(`Template applied successfully to warehouse: ${targetWarehouseId}`);
+      
+      // Refresh templates to show updated status
+      const scope = templateScope === 'featured' ? 'all' : templateScope;
+      await fetchTemplates(scope, searchTerm);
+      
+    } catch (error: any) {
+      console.error('Failed to apply template:', error);
+      
+      // Set error result
+      setApplyResult({
+        success: false,
+        error: error?.response?.data?.error || 'Failed to apply template. Please try again.'
+      });
+    }
+  };
+
+  const handleCloseApplyModal = () => {
+    setShowApplyModal(false);
+    setTemplateToApply(null);
+    setApplyResult(null);
+  };
+
   const copyTemplateCode = (code: string) => {
     navigator.clipboard.writeText(code);
   };
 
-  const handleTemplateCreated = (template: unknown) => {
+  const handleTemplateCreated = async (template: any, shouldTest: boolean = false) => {
     // Refresh templates list
     const scope = templateScope === 'featured' ? 'all' : templateScope;
     fetchTemplates(scope, searchTerm);
+    
+    // If testing was requested, apply the template immediately
+    if (shouldTest && template) {
+      try {
+        await applyTemplate(template.id, warehouseId, `Testing ${template.name}`, true);
+        alert(`Template "${template.name}" created and applied successfully! Check the Locations tab to see the special areas.`);
+      } catch (error) {
+        console.error('Failed to apply template for testing:', error);
+        alert(`Template "${template.name}" was created successfully, but failed to apply for testing. You can apply it manually from the template list.`);
+      }
+    }
   };
 
   const handleEditTemplate = (template: WarehouseTemplate) => {
@@ -538,7 +550,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
             currentUsername={user?.username}
             emptyMessage={
               templateScope === 'my' 
-                ? "You haven't created any templates yet. Click 'Design New Template' to get started!"
+                ? "Welcome! You haven't created any templates yet. Get started: Click 'Design New Template' or use 'Import Template Code' to import a shared template."
                 : "No templates match your search criteria. Try adjusting your filters."
             }
           />
@@ -570,7 +582,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
                 </Button>
               </div>
               <div className="text-sm text-muted-foreground">
-                Template codes are typically shared in the format: <code className="bg-muted px-1 rounded">TPL-XAXR-XXXX</code>
+                Get template codes from colleagues to import their warehouse setups. Template codes look like: <code className="bg-muted px-1 rounded">TPL-XAXR-XXXX</code>
               </div>
             </CardContent>
           </Card>
@@ -647,11 +659,23 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
       />
 
       {/* Template Edit Modal */}
-      <TemplateEditModal
+      <EnhancedTemplateEditModal
         template={editingTemplate}
         open={showEditModal}
         onClose={handleCloseEditModal}
         onTemplateUpdated={handleTemplateUpdated}
+        warehouseId={warehouseId}
+      />
+
+      {/* Template Apply Modal */}
+      <TemplateApplyModal
+        open={showApplyModal}
+        onClose={handleCloseApplyModal}
+        template={templateToApply}
+        warehouseName={currentWarehouseConfig?.warehouse_name}
+        warehouseId={warehouseId}
+        onApply={handleModalApply}
+        applyResult={applyResult}
       />
     </div>
   );

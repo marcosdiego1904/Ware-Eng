@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,11 +25,30 @@ import {
   Settings
 } from 'lucide-react';
 
+interface PreviewData {
+  sample_locations: {
+    code: string;
+    full_address: string;
+  }[];
+  totals: {
+    storage_locations: number;
+    receiving_areas: number;
+    staging_areas: number;
+    total_locations: number;
+  };
+}
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
 interface Step3PreviewProps {
   data: WizardData;
   onChange: (updates: Partial<WizardData>) => void;
-  previewData?: any;
-  validationResults?: any;
+  previewData?: PreviewData | null;
+  validationResults?: ValidationResult | null;
 }
 
 export function Step3Preview({ data, onChange, previewData, validationResults }: Step3PreviewProps) {

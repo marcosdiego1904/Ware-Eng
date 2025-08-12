@@ -320,9 +320,15 @@ class Location(db.Model):
     def generate_code_from_structure(self):
         """Generate location code from hierarchical structure"""
         if self.is_storage_location():
-            # Format: DEFAULT_01-02-001A (warehouse_aisle-rack-position+level)
+            # Format: 01-02-001A (clean format, no DEFAULT_ prefix)
             base_code = f"{self.aisle_number:02d}-{self.rack_number:02d}-{self.position_number:03d}{self.level}"
-            return f"{self.warehouse_id}_{base_code}"
+            
+            # Apply clean naming logic
+            if self.warehouse_id == 'DEFAULT' or self.warehouse_id is None:
+                return base_code
+            else:
+                warehouse_prefix = self.warehouse_id.replace('DEFAULT', 'WH')[:4]
+                return f"{warehouse_prefix}_{base_code}"
         else:
             return self.code
     
@@ -330,9 +336,16 @@ class Location(db.Model):
     def create_from_structure(cls, warehouse_id, aisle_num, rack_num, position_num, level, 
                             pallet_capacity=1, zone='GENERAL', location_type='STORAGE', **kwargs):
         """Create location from warehouse structure parameters"""
-        # Generate unique code including aisle, rack, and warehouse info
+        # Generate clean location code (Phase 1: Remove DEFAULT_ prefix)
         base_code = f"{aisle_num:02d}-{rack_num:02d}-{position_num:03d}{level}"
-        code = f"{warehouse_id}_{base_code}"
+        
+        # For single warehouse or DEFAULT warehouse, use clean format
+        if warehouse_id == 'DEFAULT' or warehouse_id is None:
+            code = base_code
+        else:
+            # For multi-warehouse scenarios, keep the prefix with shorter format
+            warehouse_prefix = warehouse_id.replace('DEFAULT', 'WH')[:4]  # Max 4 chars
+            code = f"{warehouse_prefix}_{base_code}"
         
         # Check for conflicts and add suffix if needed
         attempt = 0
@@ -556,6 +569,28 @@ class WarehouseTemplate(db.Model):
         """Set receiving areas template from list to JSON string"""
         self.receiving_areas_template = json.dumps(areas_list)
     
+    def get_staging_areas_template(self):
+        """Parse staging areas template JSON string into list"""
+        try:
+            return json.loads(self.staging_areas_template) if self.staging_areas_template else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_staging_areas_template(self, areas_list):
+        """Set staging areas template from list to JSON string"""
+        self.staging_areas_template = json.dumps(areas_list)
+    
+    def get_dock_areas_template(self):
+        """Parse dock areas template JSON string into list"""
+        try:
+            return json.loads(self.dock_areas_template) if self.dock_areas_template else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_dock_areas_template(self, areas_list):
+        """Set dock areas template from list to JSON string"""
+        self.dock_areas_template = json.dumps(areas_list)
+    
     def generate_template_code(self):
         """Generate unique shareable template code"""
         import random
@@ -616,6 +651,8 @@ class WarehouseTemplate(db.Model):
             'default_pallet_capacity': self.default_pallet_capacity,
             'bidimensional_racks': self.bidimensional_racks,
             'receiving_areas_template': self.get_receiving_areas_template(),
+            'staging_areas_template': self.get_staging_areas_template(),
+            'dock_areas_template': self.get_dock_areas_template(),
             'based_on_config_id': self.based_on_config_id,
             'is_public': self.is_public,
             'usage_count': self.usage_count,

@@ -4,6 +4,7 @@ Provides CRUD operations and bulk management for warehouse locations
 """
 
 import json
+import re
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import current_user, login_required
 from sqlalchemy import and_, or_
@@ -14,6 +15,38 @@ from core_models import User
 
 # Create the location API blueprint
 location_bp = Blueprint('location_api', __name__, url_prefix='/api/v1/locations')
+
+def _normalize_location_code(location_code: str) -> str:
+    """
+    Normalize location codes by removing user prefixes and standardizing format
+    
+    Examples:
+    - "ALICE_A-01-01A" -> "A-01-01A"
+    - "USER_BOB_001A" -> "001A" 
+    - "WH01_RECEIVING" -> "RECEIVING"
+    - "A-01-01A" -> "A-01-01A" (unchanged)
+    """
+    if not location_code:
+        return location_code
+        
+    code = str(location_code).strip().upper()
+    
+    # Remove common warehouse/user prefixes
+    prefixes_to_remove = [
+        # User-specific warehouse prefixes (USER_USERNAME_)
+        r'^USER_[A-Z0-9]+_',
+        # Simplified user prefixes (USERNAME_)  
+        r'^[A-Z]{2,10}_',  # 2-10 letter username prefixes
+        # Warehouse prefixes (WH01_, WH_)
+        r'^WH\d*_',
+        # Default warehouse prefixes
+        r'^DEFAULT_',
+    ]
+    
+    for prefix_pattern in prefixes_to_remove:
+        code = re.sub(prefix_pattern, '', code)
+        
+    return code
 
 # Import auth decorator from app.py
 def token_required(f):
@@ -65,8 +98,11 @@ def get_locations(current_user):
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 50)), 100)  # Max 100 per page
         
-        # Build query
-        query = Location.query.filter_by(warehouse_id=warehouse_id)
+        # Build query - CRITICAL: Filter by user to ensure data isolation
+        query = Location.query.filter_by(
+            warehouse_id=warehouse_id,
+            created_by=current_user.id  # Essential: Only show user's own locations
+        )
         
         if location_type:
             query = query.filter_by(location_type=location_type)
@@ -81,15 +117,64 @@ def get_locations(current_user):
             query = query.filter_by(aisle_number=int(aisle_number))
             
         if search:
+            # Enhanced search with location code normalization
+            search_term = search.strip()
+            
+            # Standard search filters
             search_filter = or_(
-                Location.code.ilike(f'%{search}%'),
-                Location.pattern.ilike(f'%{search}%'),
-                Location.zone.ilike(f'%{search}%')
+                Location.code.ilike(f'%{search_term}%'),
+                Location.pattern.ilike(f'%{search_term}%'),
+                Location.zone.ilike(f'%{search_term}%')
             )
+            
+            # Add normalized code matching for better search results
+            # This helps when searching for "A-01-01A" but database has "ALICE_A-01-01A"
+            normalized_search = _normalize_location_code(search_term)
+            
+            print(f"🔍 Location API Search Debug:")
+            print(f"  Original search: '{search_term}'")
+            print(f"  Normalized search: '{normalized_search}'")
+            
+            if normalized_search != search_term:
+                # Get all locations and check normalized matches
+                all_locations = Location.query.filter_by(
+                    warehouse_id=warehouse_id,
+                    created_by=current_user.id
+                ).all()
+                
+                matching_ids = []
+                for loc in all_locations:
+                    normalized_db_code = _normalize_location_code(loc.code)
+                    if (normalized_search in normalized_db_code or 
+                        normalized_db_code in normalized_search or
+                        normalized_search == normalized_db_code):
+                        matching_ids.append(loc.id)
+                        print(f"  ✓ Normalized match: '{loc.code}' -> '{normalized_db_code}' matches '{normalized_search}'")
+                
+                if matching_ids:
+                    print(f"  Found {len(matching_ids)} normalized matches")
+                    # Add normalized matches to the search filter
+                    search_filter = or_(
+                        search_filter,
+                        Location.id.in_(matching_ids)
+                    )
+                else:
+                    print(f"  No normalized matches found")
+            else:
+                print(f"  Using standard search only")
+            
             query = query.filter(search_filter)
         
-        # Order by hierarchy for storage locations, then by code
+        # Order by location type to prioritize special areas, then by hierarchy for storage locations
         query = query.order_by(
+            # Special areas first (RECEIVING, STAGING, DOCK), then STORAGE
+            db.case(
+                (Location.location_type == 'RECEIVING', 1),
+                (Location.location_type == 'STAGING', 2), 
+                (Location.location_type == 'DOCK', 3),
+                (Location.location_type == 'STORAGE', 4),
+                else_=5
+            ).asc(),
             Location.aisle_number.asc().nulls_last(),
             Location.rack_number.asc().nulls_last(),
             Location.position_number.asc().nulls_last(),
@@ -106,6 +191,14 @@ def get_locations(current_user):
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         locations = pagination.items
         print(f"DEBUG: Query returned {len(locations)} locations")
+        
+        # Debug: Show location types in response
+        location_types = {}
+        for loc in locations:
+            location_types[loc.location_type] = location_types.get(loc.location_type, 0) + 1
+        print(f"DEBUG: Location types in response: {location_types}")
+        special_areas = [loc.code for loc in locations if loc.location_type in ['RECEIVING', 'STAGING', 'DOCK']]
+        print(f"DEBUG: Special areas in response: {special_areas}")
         
         # Get summary statistics
         total_locations = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
@@ -145,7 +238,11 @@ def get_locations(current_user):
 def get_location(current_user, location_id):
     """Get a specific location by ID"""
     try:
-        location = Location.query.get_or_404(location_id)
+        # CRITICAL: Ensure user can only access their own locations
+        location = Location.query.filter_by(
+            id=location_id,
+            created_by=current_user.id
+        ).first_or_404()
         return jsonify({'location': location.to_dict()}), 200
     except Exception as e:
         return jsonify({'error': f'Location not found: {str(e)}'}), 404
@@ -217,7 +314,11 @@ def create_location(current_user):
 def update_location(current_user, location_id):
     """Update an existing location"""
     try:
-        location = Location.query.get_or_404(location_id)
+        # CRITICAL: Ensure user can only update their own locations
+        location = Location.query.filter_by(
+            id=location_id,
+            created_by=current_user.id
+        ).first_or_404()
         data = request.get_json()
         
         if not data:
@@ -266,7 +367,11 @@ def update_location(current_user, location_id):
 def delete_location(current_user, location_id):
     """Delete a location (soft delete by setting is_active=False)"""
     try:
-        location = Location.query.get_or_404(location_id)
+        # CRITICAL: Ensure user can only delete their own locations
+        location = Location.query.filter_by(
+            id=location_id,
+            created_by=current_user.id
+        ).first_or_404()
         
         # Soft delete by setting is_active to False
         location.is_active = False
@@ -489,7 +594,12 @@ def export_locations(current_user):
         warehouse_id = request.args.get('warehouse_id', 'DEFAULT')
         format_type = request.args.get('format', 'json')  # json or csv
         
-        locations = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).all()
+        # CRITICAL: Only export user's own locations
+        locations = Location.query.filter_by(
+            warehouse_id=warehouse_id, 
+            is_active=True,
+            created_by=current_user.id
+        ).all()
         
         if format_type == 'csv':
             import csv

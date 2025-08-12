@@ -362,9 +362,24 @@ def setup_warehouse(current_user):
             
             # Create special areas (all existing locations were cleared above)
             for area in receiving_areas:
+                # Generate warehouse-specific code to avoid global conflicts
+                base_code = area['code']
+                if warehouse_id != 'DEFAULT':
+                    # For user-specific warehouses, prefix the code to ensure uniqueness
+                    warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
+                    unique_code = f"{warehouse_prefix}_{base_code}"
+                else:
+                    unique_code = base_code
+                
+                # Check for conflicts and add suffix if needed
+                attempt = 0
+                original_code = unique_code
+                while Location.query.filter_by(code=unique_code).first():
+                    attempt += 1
+                    unique_code = f"{original_code}_{attempt}"
                 
                 location = Location(
-                    code=area['code'],
+                    code=unique_code,
                     location_type=area['type'],
                     capacity=area.get('capacity', 10),
                     pallet_capacity=area.get('capacity', 10),
@@ -381,9 +396,24 @@ def setup_warehouse(current_user):
             
             # Create staging areas (all existing locations were cleared above)
             for area in config.get_staging_areas():
+                # Generate warehouse-specific code to avoid global conflicts
+                base_code = area['code']
+                if warehouse_id != 'DEFAULT':
+                    # For user-specific warehouses, prefix the code to ensure uniqueness
+                    warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
+                    unique_code = f"{warehouse_prefix}_{base_code}"
+                else:
+                    unique_code = base_code
+                
+                # Check for conflicts and add suffix if needed
+                attempt = 0
+                original_code = unique_code
+                while Location.query.filter_by(code=unique_code).first():
+                    attempt += 1
+                    unique_code = f"{original_code}_{attempt}"
                 
                 location = Location(
-                    code=area['code'],
+                    code=unique_code,
                     location_type=area['type'],
                     capacity=area.get('capacity', 5),
                     pallet_capacity=area.get('capacity', 5),

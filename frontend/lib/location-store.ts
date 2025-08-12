@@ -80,6 +80,8 @@ export interface WarehouseTemplate {
   default_pallet_capacity: number;
   bidimensional_racks: boolean;
   receiving_areas_template: ReceivingArea[];
+  staging_areas_template: SpecialArea[];
+  dock_areas_template: SpecialArea[];
   based_on_config_id?: number;
   is_public: boolean;
   usage_count: number;
@@ -136,6 +138,10 @@ interface LocationStore {
   
   // Error handling
   error: string | null;
+
+  // Actions
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
   
   // Actions - Location Management
   fetchLocations: (filters?: LocationFilters, page?: number, perPage?: number) => Promise<void>;
@@ -188,11 +194,38 @@ const useLocationStore = create<LocationStore>()(
       filters: {},
       
       error: null,
+
+      // Actions
+      setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
       
       // Location Management Actions
-      fetchLocations: async (filters = {}, page = 1, perPage = 50) => {
-        console.log('fetchLocations called with:', { filters, page, perPage });
-        set({ locationsLoading: true, error: null });
+      fetchLocations: async (filters = {}, page = 1, perPage = 100) => {
+        console.log('🚀 fetchLocations called with:', { filters, page, perPage });
+        
+        // Enhanced race condition protection with parameter checking
+        const currentState = get();
+        const requestKey = JSON.stringify({ filters, page, perPage });
+        
+        if (currentState.locationsLoading) {
+          console.log('⏸️ Skipping fetchLocations - already loading');
+          return;
+        }
+        
+        // Store the request key to prevent duplicate requests
+        const lastRequestKey = (currentState as any)._lastRequestKey;
+        if (lastRequestKey === requestKey) {
+          console.log('⏸️ Skipping fetchLocations - same request already processed');
+          return;
+        }
+        
+        console.log('📊 Current store state:', {
+          locationsCount: currentState.locations.length,
+          loading: currentState.locationsLoading,
+          error: currentState.error
+        });
+        
+        set({ locationsLoading: true, error: null, _lastRequestKey: requestKey } as any);
         
         try {
           const { api } = await import('./api');
@@ -208,24 +241,51 @@ const useLocationStore = create<LocationStore>()(
             }, {} as Record<string, string>)
           });
           
-          console.log('API request URL:', `/locations?${params}`);
+          console.log('🌐 API request URL:', `/locations?${params}`);
+          console.log('🔑 Auth token exists:', !!localStorage.getItem('token'));
+          
           const response = await api.get(`/locations?${params}`);
-          console.log('API response:', response.data);
+          
+          console.log('✅ API response received:', {
+            status: response.status,
+            dataKeys: Object.keys(response.data),
+            locationsCount: response.data.locations?.length || 0
+          });
+          
+          const locations = response.data.locations || [];
+          const pagination = response.data.pagination || null;
+          const summary = response.data.summary || null;
+
+          const specialLocations = locations.filter((loc: any) => 
+            ['RECEIVING', 'STAGING', 'DOCK'].includes(loc.location_type)
+          );
+          
+          console.log('🏢 Locations analysis:', {
+            totalLocations: locations.length,
+            specialLocations: specialLocations.length,
+            specialDetails: specialLocations.map((loc: any) => ({
+              code: loc.code,
+              type: loc.location_type,
+              zone: loc.zone
+            }))
+          });
           
           set({
-            locations: response.data.locations,
-            pagination: response.data.pagination,
-            summary: response.data.summary,
+            locations,
+            pagination,
+            summary,
             filters,
-            locationsLoading: false
-          });
+            locationsLoading: false,
+            _lastRequestKey: undefined
+          } as any);
           
         } catch (error: any) {
           console.error('Error fetching locations:', error);
           set({ 
             error: error.response?.data?.error || 'Failed to fetch locations',
-            locationsLoading: false 
-          });
+            locationsLoading: false,
+            _lastRequestKey: undefined
+          } as any);
         }
       },
       
@@ -262,7 +322,13 @@ const useLocationStore = create<LocationStore>()(
         
         try {
           const { api } = await import('./api');
+          
+          // Enhanced debugging for the 404 issue
+          console.log('🔧 updateLocation called with:', { id, locationData });
+          console.log('🌐 Making API call to:', `PUT /locations/${id}`);
+          
           const response = await api.put(`/locations/${id}`, locationData);
+          console.log('✅ API call successful:', response.data);
           
           const updatedLocation = response.data.location;
           
@@ -277,7 +343,16 @@ const useLocationStore = create<LocationStore>()(
           return updatedLocation;
           
         } catch (error: any) {
-          console.error('Error updating location:', error);
+          console.error('❌ Location update failed:', error);
+          console.error('   Error details:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            url: error.config?.url,
+            method: error.config?.method,
+            headers: error.config?.headers,
+            data: error.response?.data
+          });
+          
           set({ 
             error: error.response?.data?.error || 'Failed to update location',
             loading: false 
@@ -484,7 +559,7 @@ const useLocationStore = create<LocationStore>()(
       },
       
       // Template Management Actions
-      fetchTemplates: async (scope = 'all', search = '') => {
+      fetchTemplates: async (scope = 'my', search = '') => {
         set({ templatesLoading: true, error: null });
         
         try {
@@ -634,6 +709,15 @@ const useLocationStore = create<LocationStore>()(
             loading: false
           });
           
+          // Reload locations after template is applied (ALWAYS, not just when generating)
+          console.log('🔄 Template applied, reloading locations...');
+          if (warehouseId) {
+            // Clear existing locations to force fresh load
+            set({ locations: [] });
+            const filters = { warehouse_id: warehouseId };
+            await get().fetchLocations(filters, 1, 100);
+          }
+          
           return response.data;
           
         } catch (error: any) {
@@ -663,6 +747,15 @@ const useLocationStore = create<LocationStore>()(
             currentWarehouseConfig: configuration,
             loading: false
           });
+          
+          // Reload locations after template is applied by code
+          console.log('🔄 Template applied by code, reloading locations...');
+          if (warehouseId) {
+            // Clear existing locations to force fresh load
+            set({ locations: [] });
+            const filters = { warehouse_id: warehouseId };
+            await get().fetchLocations(filters, 1, 100);
+          }
           
           return response.data;
           
@@ -703,9 +796,9 @@ const useLocationStore = create<LocationStore>()(
             loading: false
           });
 
-          // If locations were regenerated, refresh the locations list
+          // If locations were regenerated, refresh the locations list with reasonable pagination
           if (locationsRegenerated) {
-            await get().fetchLocations({ warehouse_id: updatedConfig.warehouse_id }, 1, 500);
+            await get().fetchLocations({ warehouse_id: updatedConfig.warehouse_id }, 1, 100);
           }
           
           return updatedConfig;

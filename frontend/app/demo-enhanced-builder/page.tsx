@@ -18,12 +18,13 @@ import {
   Info,
   Lightbulb
 } from 'lucide-react'
+import { Rule } from '@/lib/rules-types'
 
 export default function DemoEnhancedBuilderPage() {
   const [currentView, setCurrentView] = useState<'comparison' | 'enhanced' | 'smart' | 'original'>('comparison')
-  const [createdRule, setCreatedRule] = useState<any>(null)
+  const [createdRule, setCreatedRule] = useState<Rule | null>(null)
 
-  const handleRuleCreate = (ruleData: any) => {
+  const handleRuleCreate = (ruleData: Rule) => {
     setCreatedRule(ruleData)
     console.log('Rule created:', ruleData)
   }
@@ -88,7 +89,7 @@ export default function DemoEnhancedBuilderPage() {
               <div className="space-y-3">
                 <h4 className="font-medium">User Experience:</h4>
                 <div className="bg-orange-50 p-3 rounded-lg text-sm">
-                  <p>"What does 'time_threshold_hours: 6' actually mean?"</p>
+                  <p>&quot;What does &apos;time_threshold_hours: 6&apos; actually mean?&quot;</p>
                   <p className="text-muted-foreground mt-1">- Typical user confusion</p>
                 </div>
               </div>
@@ -172,7 +173,7 @@ export default function DemoEnhancedBuilderPage() {
               
               <div className="space-y-2">
                 <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-lg text-xs">
-                  <p className="font-medium">"AI suggests: 4-hour limit for your warehouse size"</p>
+                  <p className="font-medium">&quot;AI suggests: 4-hour limit for your warehouse size&quot;</p>
                   <p className="text-muted-foreground">- Intelligent recommendations</p>
                 </div>
               </div>
@@ -231,7 +232,7 @@ export default function DemoEnhancedBuilderPage() {
                 <CheckCircle className="w-6 h-6 text-green-600" />
                 <div>
                   <CardTitle className="text-green-800">Rule Created Successfully!</CardTitle>
-                  <p className="text-green-700">Here's what was generated from the enhanced builder</p>
+                  <p className="text-green-700">Here&apos;s what was generated from the enhanced builder</p>
                 </div>
               </div>
             </CardHeader>

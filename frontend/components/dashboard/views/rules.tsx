@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Plus, Zap, BarChart3, Brain, Sparkles } from 'lucide-react'
+import { Settings, Zap, BarChart3, Brain, Sparkles } from 'lucide-react'
 import { useRulesStore, useRulesViewState } from '@/lib/rules-store'
 import { RulesOverview } from '@/components/rules/rules-overview'
 import { EnhancedRuleCreator } from '@/components/rules/enhanced-rule-creator'

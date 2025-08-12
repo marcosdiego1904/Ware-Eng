@@ -39,14 +39,16 @@ import {
   Lock,
   Building,
   Globe,
-  Users
+  Users,
+  Zap
 } from 'lucide-react';
 import { standaloneTemplateAPI, type StandaloneTemplateData } from '@/lib/standalone-template-api';
+import { SpecialAreaEditor } from './special-area-editor';
 
 interface TemplateCreationWizardProps {
   open: boolean;
   onClose: () => void;
-  onTemplateCreated?: (template: any) => void;
+  onTemplateCreated?: (template: any, shouldTest?: boolean) => void;
 }
 
 interface TemplateData {
@@ -242,7 +244,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (shouldTest: boolean = false) => {
     setLoading(true);
     setError(null);
     
@@ -269,7 +271,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
       
       const createdTemplate = await standaloneTemplateAPI.createTemplate(apiData);
       
-      onTemplateCreated?.(createdTemplate);
+      onTemplateCreated?.(createdTemplate, shouldTest);
       onClose();
       
     } catch (err: any) {
@@ -615,117 +617,29 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
       </Alert>
 
       <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Receiving Areas</CardTitle>
-            <CardDescription>Areas for incoming inventory</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {templateData.receiving_areas.map((area, index) => (
-                <div key={index} className="flex items-center gap-2 p-3 border rounded">
-                  <div className="flex-1">
-                    <div className="font-medium">{area.code}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Capacity: {area.capacity} | Zone: {area.zone}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const newAreas = templateData.receiving_areas.filter((_, i) => i !== index);
-                      updateTemplateData({ receiving_areas: newAreas });
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={addReceivingArea}>
-                Add Receiving Area
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <SpecialAreaEditor
+          title="Receiving Areas"
+          description="Areas for incoming inventory"
+          areas={templateData.receiving_areas}
+          areaType="RECEIVING"
+          onAreasChange={(areas) => updateTemplateData({ receiving_areas: areas })}
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Staging Areas</CardTitle>
-            <CardDescription>Temporary storage for order preparation</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {templateData.staging_areas.map((area, index) => (
-                <div key={index} className="flex items-center gap-2 p-3 border rounded">
-                  <div className="flex-1">
-                    <div className="font-medium">{area.code}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Capacity: {area.capacity} | Zone: {area.zone}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const newAreas = templateData.staging_areas.filter((_, i) => i !== index);
-                      updateTemplateData({ staging_areas: newAreas });
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-              {templateData.staging_areas.length === 0 && (
-                <div className="text-center py-4 text-muted-foreground">
-                  No staging areas defined
-                </div>
-              )}
-              <Button variant="outline" size="sm" onClick={addStagingArea}>
-                Add Staging Area
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <SpecialAreaEditor
+          title="Staging Areas"
+          description="Temporary storage areas"
+          areas={templateData.staging_areas}
+          areaType="STAGING"
+          onAreasChange={(areas) => updateTemplateData({ staging_areas: areas })}
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Dock Areas</CardTitle>
-            <CardDescription>Loading and unloading zones</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {templateData.dock_areas.map((area, index) => (
-                <div key={index} className="flex items-center gap-2 p-3 border rounded">
-                  <div className="flex-1">
-                    <div className="font-medium">{area.code}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Capacity: {area.capacity} | Zone: {area.zone}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const newAreas = templateData.dock_areas.filter((_, i) => i !== index);
-                      updateTemplateData({ dock_areas: newAreas });
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-              {templateData.dock_areas.length === 0 && (
-                <div className="text-center py-4 text-muted-foreground">
-                  No dock areas defined
-                </div>
-              )}
-              <Button variant="outline" size="sm" onClick={addDockArea}>
-                Add Dock Area
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <SpecialAreaEditor
+          title="Dock Areas"
+          description="Loading/unloading docks"
+          areas={templateData.dock_areas}
+          areaType="DOCK"
+          onAreasChange={(areas) => updateTemplateData({ dock_areas: areas })}
+        />
       </div>
     </div>
   );
@@ -890,16 +804,40 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
                   <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
               ) : (
-                <Button onClick={handleSubmit} disabled={!canProceed() || loading}>
-                  {loading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Creating...
-                    </>
-                  ) : (
-                    'Create Template'
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleSubmit(false)} 
+                    disabled={!canProceed() || loading}
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                        Creating...
+                      </>
+                    ) : (
+                      'Create Only'
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => handleSubmit(true)} 
+                    disabled={!canProceed() || loading}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Create & Test Now
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
           </div>
