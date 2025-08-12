@@ -1244,6 +1244,161 @@ try:
 except ImportError as e:
     print(f"Rules API not available: {e}")
 
+# ==================== DEBUGGING AND MONITORING SETUP ====================
+
+# Initialize monitoring system
+try:
+    from monitoring import create_monitoring_endpoints, start_monitoring_cleanup
+    create_monitoring_endpoints(app)
+    print("Production monitoring system initialized")
+except ImportError as e:
+    print(f"Monitoring system not available: {e}")
+
+# Initialize API debugging
+try:
+    from api_debugger import create_api_debugging_endpoints, WarehouseDebugMiddleware
+    create_api_debugging_endpoints(app) 
+    # Apply debug middleware
+    WarehouseDebugMiddleware(app)
+    print("API debugging system initialized")
+except ImportError as e:
+    print(f"API debugging system not available: {e}")
+
+# Initialize deployment health checker
+try:
+    from deployment_health_checker import deployment_health_checker
+    
+    @app.route('/api/v1/deployment/health')
+    def deployment_health_status():
+        """Get deployment health status"""
+        return deployment_health_checker.get_health_status()
+    
+    @app.route('/api/v1/deployment/start-monitoring', methods=['POST'])
+    def start_deployment_monitoring():
+        """Start deployment monitoring"""
+        data = request.get_json() or {}
+        phase = data.get('phase', 'deployment')
+        deployment_health_checker.start_deployment_monitoring(phase)
+        return {'message': f'Deployment monitoring started for phase: {phase}'}
+    
+    @app.route('/api/v1/deployment/stop-monitoring', methods=['POST'])
+    def stop_deployment_monitoring():
+        """Stop deployment monitoring"""
+        deployment_health_checker.stop_deployment_monitoring()
+        return {'message': 'Deployment monitoring stopped'}
+    
+    print("Deployment health checker initialized")
+except ImportError as e:
+    print(f"Deployment health checker not available: {e}")
+
+# Initialize debug test framework
+try:
+    from debug_test_framework import debug_test_framework
+    
+    @app.route('/api/v1/debug/run-tests', methods=['POST'])
+    def run_debug_tests():
+        """Run debugging test framework"""
+        data = request.get_json() or {}
+        parallel = data.get('parallel', False)
+        results = debug_test_framework.run_all_tests(parallel=parallel)
+        return results
+    
+    @app.route('/api/v1/debug/test-status')
+    def get_test_status():
+        """Get test framework status"""
+        return {
+            'setup_complete': debug_test_framework.setup_complete,
+            'registered_suites': list(debug_test_framework.test_suites.keys()),
+            'last_results_count': len(debug_test_framework.test_results)
+        }
+    
+    print("Debug test framework initialized")
+except ImportError as e:
+    print(f"Debug test framework not available: {e}")
+
+# Initialize migration debugger endpoints
+try:
+    from migration_debugger import migration_debugger
+    
+    @app.route('/api/v1/debug/migration-report')
+    def get_migration_report():
+        """Get comprehensive migration debugging report"""
+        return migration_debugger.generate_migration_report()
+    
+    @app.route('/api/v1/debug/schema-validation')
+    def validate_database_schema():
+        """Validate database schema"""
+        return migration_debugger.validate_schema()
+    
+    @app.route('/api/v1/debug/migration-health')
+    def check_migration_health():
+        """Check migration health"""
+        return migration_debugger.check_migration_health()
+    
+    print("Migration debugger endpoints initialized")
+except ImportError as e:
+    print(f"Migration debugger not available: {e}")
+
+# Create comprehensive debugging dashboard endpoint
+@app.route('/api/v1/debug/dashboard')
+def comprehensive_debug_dashboard():
+    """Comprehensive debugging dashboard data"""
+    try:
+        dashboard_data = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'system_health': {},
+            'migration_status': {},
+            'deployment_health': {},
+            'test_results': {},
+            'monitoring_data': {}
+        }
+        
+        # Get system health
+        try:
+            from monitoring import MonitoringDashboard
+            dashboard_data['system_health'] = MonitoringDashboard.get_system_health()
+            dashboard_data['monitoring_data'] = {
+                'errors': MonitoringDashboard.get_error_summary(hours=1),
+                'performance': MonitoringDashboard.get_performance_summary(hours=1),
+                'database': MonitoringDashboard.get_database_summary(hours=1)
+            }
+        except Exception as e:
+            dashboard_data['system_health'] = {'error': str(e)}
+        
+        # Get migration status
+        try:
+            from migration_debugger import migration_debugger
+            dashboard_data['migration_status'] = migration_debugger.validate_schema()
+        except Exception as e:
+            dashboard_data['migration_status'] = {'error': str(e)}
+        
+        # Get deployment health
+        try:
+            from deployment_health_checker import deployment_health_checker
+            dashboard_data['deployment_health'] = deployment_health_checker.get_health_status()
+        except Exception as e:
+            dashboard_data['deployment_health'] = {'error': str(e)}
+        
+        # Get test status
+        try:
+            from debug_test_framework import debug_test_framework
+            recent_results = debug_test_framework.test_results[-10:] if debug_test_framework.test_results else []
+            dashboard_data['test_results'] = {
+                'recent_tests': len(recent_results),
+                'setup_complete': debug_test_framework.setup_complete,
+                'available_suites': list(debug_test_framework.test_suites.keys())
+            }
+        except Exception as e:
+            dashboard_data['test_results'] = {'error': str(e)}
+        
+        return dashboard_data
+        
+    except Exception as e:
+        return {
+            'error': f'Debug dashboard error: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
+        }, 500
+
 
 # ==================== RULES MANAGEMENT WEB INTERFACE ====================
 

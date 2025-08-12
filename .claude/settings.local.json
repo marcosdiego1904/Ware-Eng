@@ -34,7 +34,9 @@
       "Bash(timeout 3 python run_server.py)",
       "Bash(grep:*)",
       "Bash(timeout 10 python:*)",
-      "WebFetch(domain:docs.anthropic.com)"
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(mv:*)",
+      "Bash(git restore:*)"
     ],
     "deny": []
   }
