@@ -161,7 +161,18 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
         validatePalletCapacity(location.pallet_capacity);
       }
     } else {
-      reset();
+      // Only reset non-user-controlled fields for new locations
+      // Don't reset location_type to preserve user selection
+      reset({
+        code: '',
+        location_type: locationType, // Preserve current selection
+        zone: 'GENERAL',
+        capacity: 1,
+        pallet_capacity: 1,
+        allowed_products: [],
+        special_requirements: {},
+        is_active: true
+      });
       setAllowedProductsText('');
       setSpecialRequirementsText('{}');
       setIsStorageLocation(locationType === 'STORAGE');

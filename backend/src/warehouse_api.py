@@ -425,7 +425,51 @@ def setup_warehouse(current_user):
                 db.session.add(location)
                 created_locations.append(location)
             
-            db.session.commit()
+            # Create dock areas (FIX: This was missing entirely!)
+            for area in config.get_dock_areas():
+                # Generate warehouse-specific code to avoid global conflicts
+                base_code = area['code']
+                if warehouse_id != 'DEFAULT':
+                    # For user-specific warehouses, prefix the code to ensure uniqueness
+                    warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
+                    unique_code = f"{warehouse_prefix}_{base_code}"
+                else:
+                    unique_code = base_code
+                
+                # Check for conflicts and add suffix if needed
+                attempt = 0
+                original_code = unique_code
+                while Location.query.filter_by(code=unique_code).first():
+                    attempt += 1
+                    unique_code = f"{original_code}_{attempt}"
+                
+                location = Location(
+                    code=unique_code,
+                    location_type=area['type'],
+                    capacity=area.get('capacity', 20),
+                    pallet_capacity=area.get('capacity', 20),
+                    zone=area.get('zone', 'DOCK'),
+                    warehouse_id=warehouse_id,
+                    created_by=current_user.id
+                )
+                
+                if 'special_requirements' in area:
+                    location.set_special_requirements(area['special_requirements'])
+                
+                db.session.add(location)
+                created_locations.append(location)
+            
+            # Better PostgreSQL transaction handling
+            try:
+                db.session.flush()  # Catch constraint violations early
+                db.session.commit()
+            except Exception as commit_error:
+                db.session.rollback()
+                error_msg = str(commit_error)
+                if 'unique constraint' in error_msg.lower() or 'duplicate key' in error_msg.lower():
+                    return jsonify({'error': f'Warehouse setup failed due to duplicate data. Try with force_recreate=true.'}), 409
+                else:
+                    raise  # Re-raise other exceptions
         
         # Step 3: Create template if requested
         create_template = data.get('create_template', False)

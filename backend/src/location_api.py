@@ -266,10 +266,18 @@ def create_location(current_user):
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
-        # Check if location code already exists
-        existing = Location.query.filter_by(code=data['code']).first()
+        # Check if location code already exists (PostgreSQL case-sensitive issue)
+        # PostgreSQL is case-sensitive, so check both exact and normalized versions
+        code = data['code'].upper().strip()  # Normalize the code
+        existing = Location.query.filter(
+            (Location.code == data['code']) | 
+            (Location.code == code)
+        ).first()
         if existing:
             return jsonify({'error': f'Location with code {data["code"]} already exists'}), 409
+        
+        # Use normalized code
+        data['code'] = code
         
         # Create location
         location = Location(
@@ -297,13 +305,27 @@ def create_location(current_user):
         if 'special_requirements' in data:
             location.set_special_requirements(data['special_requirements'])
         
-        db.session.add(location)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Location created successfully',
-            'location': location.to_dict()
-        }), 201
+        # Add better error handling for PostgreSQL
+        try:
+            db.session.add(location)
+            db.session.flush()  # Flush to catch constraint violations before commit
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'Location created successfully',
+                'location': location.to_dict()
+            }), 201
+            
+        except Exception as commit_error:
+            db.session.rollback()
+            # Check for common PostgreSQL constraint violations
+            error_msg = str(commit_error)
+            if 'unique constraint' in error_msg.lower() or 'duplicate key' in error_msg.lower():
+                return jsonify({'error': f'Location code {data["code"]} already exists'}), 409
+            elif 'foreign key' in error_msg.lower():
+                return jsonify({'error': 'Invalid warehouse_id or user reference'}), 400
+            else:
+                return jsonify({'error': f'Database error: {error_msg}'}), 500
         
     except Exception as e:
         db.session.rollback()
