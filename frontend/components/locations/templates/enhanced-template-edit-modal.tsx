@@ -142,34 +142,39 @@ export function EnhancedTemplateEditModal({
     }
   }, [open, currentWarehouseId, fetchLocations]);
 
-  // Populate form when template changes or locations are loaded
+  // Populate form when template changes or locations are loaded (but not when user is editing)
   useEffect(() => {
     if (template) {
-      // Extract current warehouse special areas from locations
-      const warehouseSpecialAreas = extractSpecialAreasFromLocations(locations || []);
-      
-      const templateFormData: ExtendedFormData = {
-        name: template.name || '',
-        description: template.description || '',
-        num_aisles: template.num_aisles || 0,
-        racks_per_aisle: template.racks_per_aisle || 0,
-        positions_per_rack: template.positions_per_rack || 0,
-        levels_per_position: template.levels_per_position || 0,
-        level_names: template.level_names || '',
-        default_pallet_capacity: template.default_pallet_capacity || 0,
-        bidimensional_racks: template.bidimensional_racks || false,
-        is_public: template.is_public || false,
-        // Use current warehouse special areas instead of template stored ones
-        receiving_areas_template: warehouseSpecialAreas.receiving_areas,
-        staging_areas_template: warehouseSpecialAreas.staging_areas,
-        dock_areas_template: warehouseSpecialAreas.dock_areas
-      };
-      
-      console.log('🏗️ Template form populated with current warehouse special areas:', warehouseSpecialAreas);
-      setFormData(templateFormData);
-      setOriginalData(templateFormData);
+      // Only reset form data if there are no unsaved changes (prevents overriding user input)
+      if (!hasChanges) {
+        // Extract current warehouse special areas from locations
+        const warehouseSpecialAreas = extractSpecialAreasFromLocations(locations || []);
+        
+        const templateFormData: ExtendedFormData = {
+          name: template.name || '',
+          description: template.description || '',
+          num_aisles: template.num_aisles || 0,
+          racks_per_aisle: template.racks_per_aisle || 0,
+          positions_per_rack: template.positions_per_rack || 0,
+          levels_per_position: template.levels_per_position || 0,
+          level_names: template.level_names || '',
+          default_pallet_capacity: template.default_pallet_capacity || 0,
+          bidimensional_racks: template.bidimensional_racks || false,
+          is_public: template.is_public || false,
+          // Use current warehouse special areas instead of template stored ones
+          receiving_areas_template: warehouseSpecialAreas.receiving_areas,
+          staging_areas_template: warehouseSpecialAreas.staging_areas,
+          dock_areas_template: warehouseSpecialAreas.dock_areas
+        };
+        
+        console.log('🏗️ Template form populated with current warehouse special areas:', warehouseSpecialAreas);
+        setFormData(templateFormData);
+        setOriginalData(templateFormData);
+      } else {
+        console.log('🚫 Skipping form reset - user has unsaved changes');
+      }
     }
-  }, [template, locations]);
+  }, [template, locations, hasChanges]);
 
   // Check for changes
   useEffect(() => {
