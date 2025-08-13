@@ -537,7 +537,7 @@ def default_json_serializer(obj):
 #     """
 #     try:
 #         report_count = AnalysisReport.query.filter_by(user_id=current_user.id).count()
-#         if report_count >= 3 and current_user.username not in ['marcosbarzola@devbymarcos.com', 'marcos9']:
+#         if report_count >= 3 and current_user.username not in ['marcosbarzola@devbymarcos.com', 'marcos9', 'testf']:
 #             return render_template('error.html', error_message="You have reached the maximum limit of 3 analysis reports."), 403
 # 
 #         inventory_path = session.get('inventory_filepath')
@@ -933,7 +933,7 @@ def get_user_reports(current_user):
 def create_analysis_report(current_user):
     # Check user report limit
     report_count = AnalysisReport.query.filter_by(user_id=current_user.id).count()
-    if report_count >= 3 and current_user.username not in ['marcosbarzola@devbymarcos.com', 'marcos9']:
+    if report_count >= 3 and current_user.username not in ['marcosbarzola@devbymarcos.com', 'marcos9', 'testf']:
         return jsonify({'message': 'You have reached the maximum limit of 3 analysis reports.'}), 403
 
     # The frontend will send the data as 'multipart/form-data'
