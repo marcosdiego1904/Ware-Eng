@@ -32,27 +32,51 @@ class RuleEngine:
     Dynamic rule engine that evaluates database-stored rules against inventory data
     """
     
-    def __init__(self, db_session):
+    def __init__(self, db_session, app=None):
         self.db = db_session
+        self.app = app
         self.evaluators = self._initialize_evaluators()
+    
+    def _ensure_app_context(self):
+        """Ensure we're running within Flask app context"""
+        if self.app:
+            return self.app.app_context()
+        else:
+            # Try to get current app context if available
+            from flask import current_app
+            try:
+                current_app._get_current_object()
+                return None  # Already in context
+            except RuntimeError:
+                # No context available, need to create one
+                return None
         
     def _initialize_evaluators(self):
         """Initialize rule evaluator registry"""
         return {
-            'STAGNANT_PALLETS': StagnantPalletsEvaluator(),
-            'UNCOORDINATED_LOTS': UncoordinatedLotsEvaluator(),
-            'OVERCAPACITY': OvercapacityEvaluator(),
-            'INVALID_LOCATION': InvalidLocationEvaluator(),
-            'LOCATION_SPECIFIC_STAGNANT': LocationSpecificStagnantEvaluator(),
-            'TEMPERATURE_ZONE_MISMATCH': TemperatureZoneMismatchEvaluator(),
-            'DATA_INTEGRITY': DataIntegrityEvaluator(),
-            'LOCATION_MAPPING_ERROR': LocationMappingErrorEvaluator(),
-            'MISSING_LOCATION': MissingLocationEvaluator(),
-            'PRODUCT_INCOMPATIBILITY': ProductIncompatibilityEvaluator()
+            'STAGNANT_PALLETS': StagnantPalletsEvaluator(app=self.app),
+            'UNCOORDINATED_LOTS': UncoordinatedLotsEvaluator(app=self.app),
+            'OVERCAPACITY': OvercapacityEvaluator(app=self.app),
+            'INVALID_LOCATION': InvalidLocationEvaluator(app=self.app),
+            'LOCATION_SPECIFIC_STAGNANT': LocationSpecificStagnantEvaluator(app=self.app),
+            'TEMPERATURE_ZONE_MISMATCH': TemperatureZoneMismatchEvaluator(app=self.app),
+            'DATA_INTEGRITY': DataIntegrityEvaluator(app=self.app),
+            'LOCATION_MAPPING_ERROR': LocationMappingErrorEvaluator(app=self.app),
+            'MISSING_LOCATION': MissingLocationEvaluator(app=self.app),
+            'PRODUCT_INCOMPATIBILITY': ProductIncompatibilityEvaluator(app=self.app)
         }
     
     def load_active_rules(self, category_filter: str = None) -> List[Rule]:
         """Load all active rules from database, optionally filtered by category"""
+        context = self._ensure_app_context()
+        if context:
+            with context:
+                return self._load_active_rules_internal(category_filter)
+        else:
+            return self._load_active_rules_internal(category_filter)
+    
+    def _load_active_rules_internal(self, category_filter: str = None) -> List[Rule]:
+        """Internal method to load rules"""
         query = Rule.query.filter_by(is_active=True)
         
         if category_filter:
@@ -74,6 +98,16 @@ class RuleEngine:
         Returns:
             List of evaluation results for each rule
         """
+        context = self._ensure_app_context()
+        if context:
+            with context:
+                return self._evaluate_all_rules_internal(inventory_df, rule_ids)
+        else:
+            return self._evaluate_all_rules_internal(inventory_df, rule_ids)
+    
+    def _evaluate_all_rules_internal(self, inventory_df: pd.DataFrame, 
+                                   rule_ids: List[int] = None) -> List[RuleEvaluationResult]:
+        """Internal method to evaluate rules"""
         if rule_ids:
             rules = Rule.query.filter(Rule.id.in_(rule_ids), Rule.is_active == True).all()
         else:
@@ -236,6 +270,9 @@ class RuleEngine:
 class BaseRuleEvaluator:
     """Base class for all rule evaluators"""
     
+    def __init__(self, app=None):
+        self.app = app
+    
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
         Evaluate rule against inventory data
@@ -248,6 +285,20 @@ class BaseRuleEvaluator:
             List of anomaly dictionaries
         """
         raise NotImplementedError("Subclasses must implement evaluate method")
+    
+    def _ensure_app_context(self):
+        """Ensure we're running within Flask app context"""
+        if self.app:
+            return self.app.app_context()
+        else:
+            # Try to get current app context if available
+            from flask import current_app
+            try:
+                current_app._get_current_object()
+                return None  # Already in context
+            except RuntimeError:
+                # No context available, cannot proceed with DB operations
+                return None
     
     def _parse_conditions(self, rule: Rule) -> Dict[str, Any]:
         """Parse rule conditions from JSON"""
@@ -310,6 +361,20 @@ class BaseRuleEvaluator:
             
         location_str = str(location_code).strip()
         
+        # Get locations with proper context
+        context = self._ensure_app_context()
+        if context:
+            with context:
+                return self._find_location_by_code_internal(location_str)
+        else:
+            try:
+                return self._find_location_by_code_internal(location_str)
+            except RuntimeError:
+                # No database context available
+                return None
+    
+    def _find_location_by_code_internal(self, location_str: str) -> 'Location':
+        """Internal method to find location"""
         # 1. Direct exact match
         location = Location.query.filter_by(code=location_str).first()
         if location:
@@ -381,8 +446,18 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         """Assign location types based on location patterns with smart matching"""
         df = inventory_df.copy()
         
-        # Get location mappings from database
-        locations = Location.query.all()
+        # Get location mappings from database with proper context
+        context = self._ensure_app_context()
+        if context:
+            with context:
+                locations = Location.query.all()
+        else:
+            try:
+                locations = Location.query.all()
+            except RuntimeError:
+                # Fallback if no database context available
+                locations = []
+        
         location_map = {}
         location_map_normalized = {}  # For handling prefixed codes
         
