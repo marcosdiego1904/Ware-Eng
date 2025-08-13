@@ -27,8 +27,7 @@ import {
   MapPin,
   Truck,
   Calculator,
-  Info,
-  Zap
+  Info
 } from 'lucide-react';
 
 interface TemplateEditModalProps {
@@ -300,58 +299,6 @@ export function EnhancedTemplateEditModal({
     }
   };
 
-  const handleSaveAndTest = async () => {
-    if (!template || !hasChanges) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // First save the template with clean, validated data
-      const updateData = {
-        name: String(formData.name).trim(),
-        description: String(formData.description).trim(),
-        num_aisles: Math.max(1, parseInt(String(formData.num_aisles)) || 1),
-        racks_per_aisle: Math.max(1, parseInt(String(formData.racks_per_aisle)) || 1),
-        positions_per_rack: Math.max(1, parseInt(String(formData.positions_per_rack)) || 1),
-        levels_per_position: Math.max(1, parseInt(String(formData.levels_per_position)) || 1),
-        level_names: String(formData.level_names).trim(),
-        default_pallet_capacity: Math.max(1, parseInt(String(formData.default_pallet_capacity)) || 1),
-        bidimensional_racks: Boolean(formData.bidimensional_racks),
-        is_public: Boolean(formData.is_public),
-        // Deep clone to prevent reference conflicts
-        receiving_areas_template: JSON.parse(JSON.stringify(formData.receiving_areas_template || [])),
-        staging_areas_template: JSON.parse(JSON.stringify(formData.staging_areas_template || [])),
-        dock_areas_template: JSON.parse(JSON.stringify(formData.dock_areas_template || []))
-      };
-
-      console.log(`Updating and testing template ${template.id} with isolated data:`, updateData);
-
-      const updatedTemplate = await updateTemplate(template.id, updateData);
-      
-      // Wait a moment for the update to propagate to prevent race conditions
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Then apply it to DEFAULT warehouse for testing (isolated operation)
-      await applyTemplate(template.id, 'DEFAULT', `Testing ${formData.name}`, true);
-      
-      console.log(`Template ${template.id} updated and applied successfully, operations isolated`);
-      
-      // Update local state to reflect successful save
-      setOriginalData(formData);
-      
-      if (onTemplateUpdated) {
-        onTemplateUpdated(updatedTemplate);
-      }
-      
-      onClose();
-    } catch (error: any) {
-      console.error('Failed to save and test template:', error);
-      setError(error?.response?.data?.error || 'Failed to update and test template. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCancel = () => {
     if (template) {
@@ -763,28 +710,14 @@ export function EnhancedTemplateEditModal({
             <Button 
               onClick={handleSave} 
               disabled={!hasChanges || loading}
-              variant="outline"
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              Save Only
-            </Button>
-            
-            <Button 
-              onClick={handleSaveAndTest} 
-              disabled={!hasChanges || loading}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Zap className="h-4 w-4" />
-              )}
-              Save & Test Now
+              Save
             </Button>
           </div>
         </div>

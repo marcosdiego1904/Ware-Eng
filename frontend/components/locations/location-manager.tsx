@@ -69,6 +69,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   
   // Settings form state
   const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [settingsFormData, setSettingsFormData] = useState({
     warehouse_name: '',
     num_aisles: 0,
@@ -479,8 +480,21 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   const handleSaveSettings = async () => {
     if (!currentWarehouseConfig) return;
 
+    // Validation
+    const validation = validateSettingsForm();
+    if (!validation.isValid) {
+      toast({
+        title: "Validation Error",
+        description: validation.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSettingsLoading(true);
+
     try {
-      // Update the warehouse configuration. The store will trigger the useEffect.
+      // Update the warehouse configuration with optimized refresh
       await updateWarehouseConfig(currentWarehouseConfig.id, settingsFormData);
       
       if (isMountedRef.current) {
@@ -492,17 +506,23 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         setIsEditingSettings(false);
       }
       
-      // Clear any existing filters that might interfere with the refresh
+      // Optimized refresh - let the store handle the cascading updates
+      // Clear filters and refresh in sequence to prevent race conditions
       const freshFilters = { warehouse_id: warehouseId };
       setFilters(freshFilters);
       
-      // Fetch the updated config, which will trigger the useEffect to refresh locations.
-      await fetchWarehouseConfig(warehouseId);
-      await fetchTemplates('my');
+      // Single coordinated refresh instead of multiple sequential calls
+      await Promise.all([
+        fetchWarehouseConfig(warehouseId),
+        fetchTemplates('my')
+      ]);
       
-      // Explicitly fetch first page with fresh filters for consistent behavior
-      console.log('Settings updated - fetching locations with fresh filters');
-      await fetchLocations(freshFilters, 1, 100);
+      // Allow a brief moment for config to propagate, then refresh locations
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          fetchLocations(freshFilters, 1, 100);
+        }
+      }, 300);
       
     } catch (error) {
       console.error('Failed to update warehouse config:', error);
@@ -513,7 +533,43 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           variant: "destructive",
         });
       }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSettingsLoading(false);
+      }
     }
+  };
+
+  const validateSettingsForm = () => {
+    if (!settingsFormData.warehouse_name?.trim()) {
+      return { isValid: false, message: "Warehouse name is required" };
+    }
+    
+    if (settingsFormData.num_aisles < 1) {
+      return { isValid: false, message: "Number of aisles must be at least 1" };
+    }
+    
+    if (settingsFormData.racks_per_aisle < 1) {
+      return { isValid: false, message: "Racks per aisle must be at least 1" };
+    }
+    
+    if (settingsFormData.positions_per_rack < 1) {
+      return { isValid: false, message: "Positions per rack must be at least 1" };
+    }
+    
+    if (settingsFormData.levels_per_position < 1) {
+      return { isValid: false, message: "Levels per position must be at least 1" };
+    }
+    
+    if (settingsFormData.default_pallet_capacity < 1) {
+      return { isValid: false, message: "Default pallet capacity must be at least 1" };
+    }
+    
+    if (!settingsFormData.level_names?.trim()) {
+      return { isValid: false, message: "Level names are required" };
+    }
+    
+    return { isValid: true, message: "" };
   };
 
   const handleFormChange = (field: string, value: string | number | boolean) => {
@@ -536,9 +592,9 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-full overflow-hidden">
       {/* Header Section */}
-      <div className="flex justify-between items-start">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Warehouse Settings</h1>
           <p className="text-muted-foreground">
@@ -547,11 +603,11 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         </div>
         
         {currentWarehouseConfig && (
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => setShowLocationForm(true)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 whitespace-nowrap"
             >
               <Plus className="h-4 w-4" />
               Add Location
@@ -559,7 +615,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
             <Button
               variant="outline"
               onClick={() => setShowReconfigureWizard(true)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 whitespace-nowrap"
             >
               <Settings className="h-4 w-4" />
               Reconfigure
@@ -776,7 +832,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
 
       {/* Main Content Tabs */}
       {currentWarehouseConfig && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full overflow-hidden">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="locations">Locations</TabsTrigger>
             <TabsTrigger value="templates">Templates</TabsTrigger>
@@ -955,26 +1011,26 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card>
+            <Card className="overflow-hidden">
               <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      Warehouse Configuration
+                <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="flex flex-wrap items-center gap-2">
+                      <span>Warehouse Configuration</span>
                       {(() => {
                         const activeTemplate = findActiveTemplate();
                         return activeTemplate ? (
-                          <Badge variant="secondary" className="bg-green-100 text-green-700">
+                          <Badge variant="secondary" className="bg-green-100 text-green-700 flex-shrink-0">
                             {activeTemplate.name}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="bg-gray-100 text-gray-700">
+                          <Badge variant="secondary" className="bg-gray-100 text-gray-700 flex-shrink-0">
                             Custom
                           </Badge>
                         );
                       })()}
                     </CardTitle>
-                    <CardDescription>
+                    <CardDescription className="mt-2">
                       {isEditingSettings 
                         ? 'Edit your warehouse configuration - changes will regenerate all locations'
                         : 'Configure your active warehouse template settings'
@@ -982,33 +1038,45 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                     </CardDescription>
                   </div>
                   {!isEditingSettings && (
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0">
                       <Button 
                         variant="outline" 
                         size="sm"
                         onClick={handleEditSettings}
+                        disabled={isSettingsLoading}
+                        className="whitespace-nowrap"
                       >
-                        <Edit className="h-4 w-4 mr-2" />
+                        {isSettingsLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Edit className="h-4 w-4 mr-2" />
+                        )}
                         Edit Configuration
                       </Button>
                       <Button 
                         variant="outline" 
                         size="sm"
                         onClick={() => setShowReconfigureWizard(true)}
+                        disabled={isSettingsLoading}
+                        className="whitespace-nowrap"
                       >
-                        <Settings className="h-4 w-4 mr-2" />
+                        {isSettingsLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Settings className="h-4 w-4 mr-2" />
+                        )}
                         Reconfigure
                       </Button>
                     </div>
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 overflow-hidden">
                 {currentWarehouseConfig && (
                   isEditingSettings ? (
                     // Edit Form
                     <form className="space-y-6">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="warehouse_name">Warehouse Name</Label>
                           <Input
@@ -1077,23 +1145,27 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                             onChange={(e) => handleFormChange('default_pallet_capacity', parseInt(e.target.value) || 0)}
                           />
                         </div>
-                        <div className="space-y-2 flex items-center gap-2">
-                          <Switch
-                            id="bidimensional_racks"
-                            checked={settingsFormData.bidimensional_racks}
-                            onCheckedChange={(checked) => handleFormChange('bidimensional_racks', checked)}
-                          />
-                          <Label htmlFor="bidimensional_racks" className="cursor-pointer">
-                            Bidimensional Racks (2 pallets per level)
-                          </Label>
+                        <div className="space-y-2 md:col-span-2">
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              id="bidimensional_racks"
+                              checked={settingsFormData.bidimensional_racks}
+                              onCheckedChange={(checked) => handleFormChange('bidimensional_racks', checked)}
+                            />
+                            <Label htmlFor="bidimensional_racks" className="cursor-pointer">
+                              Bidimensional Racks (2 pallets per level)
+                            </Label>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex justify-end gap-2 pt-4 border-t">
+                      <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
                         <Button 
                           type="button" 
                           variant="outline" 
                           onClick={handleCancelEdit}
+                          disabled={isSettingsLoading}
+                          className="order-2 sm:order-1"
                         >
                           <X className="h-4 w-4 mr-2" />
                           Cancel
@@ -1101,15 +1173,21 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                         <Button 
                           type="button" 
                           onClick={handleSaveSettings}
+                          disabled={isSettingsLoading}
+                          className="order-1 sm:order-2"
                         >
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Changes
+                          {isSettingsLoading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4 mr-2" />
+                          )}
+                          {isSettingsLoading ? 'Saving...' : 'Save Changes'}
                         </Button>
                       </div>
                     </form>
                   ) : (
                     // View Mode
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium">Warehouse Name</label>
                         <p className="text-sm text-muted-foreground">

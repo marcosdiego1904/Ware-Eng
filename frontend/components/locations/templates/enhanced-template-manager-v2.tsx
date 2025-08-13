@@ -282,36 +282,10 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     navigator.clipboard.writeText(code);
   };
 
-  const handleTemplateCreated = async (template: any, shouldTest: boolean = false) => {
-    // If testing was requested, apply the template immediately (optimized flow)
-    if (shouldTest && template) {
-      try {
-        // Apply template with optimized parameters
-        const result = await applyTemplate(template.id, warehouseId, `Testing ${template.name}`, true);
-        
-        // Set up success state for better UX
-        setApplyResult({
-          success: true,
-          locations_created: result?.locations_created,
-          storage_locations: result?.storage_locations,
-          special_areas: result?.special_areas
-        });
-        
-        // Show apply modal with success state
-        setTemplateToApply(template);
-        setShowApplyModal(true);
-        
-      } catch (error) {
-        console.error('Failed to apply template for testing:', error);
-        alert(`Template "${template.name}" was created successfully, but failed to apply for testing. You can apply it manually from the template list.`);
-      }
-    }
-    
-    // Refresh templates list (only when not testing to avoid redundant calls)
-    if (!shouldTest) {
-      const scope = templateScope === 'featured' ? 'all' : templateScope;
-      fetchTemplates(scope, searchTerm);
-    }
+  const handleTemplateCreated = async (template: any) => {
+    // Refresh templates list to show the newly created template
+    const scope = templateScope === 'featured' ? 'all' : templateScope;
+    fetchTemplates(scope, searchTerm);
   };
 
   const handleEditTemplate = (template: WarehouseTemplate) => {

@@ -48,7 +48,7 @@ import { SpecialAreaEditor } from './special-area-editor';
 interface TemplateCreationWizardProps {
   open: boolean;
   onClose: () => void;
-  onTemplateCreated?: (template: any, shouldTest?: boolean) => void;
+  onTemplateCreated?: (template: any) => void;
 }
 
 interface TemplateData {
@@ -244,7 +244,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     });
   };
 
-  const handleSubmit = async (shouldTest: boolean = false) => {
+  const handleSubmit = async () => {
     setLoading(true);
     setError(null);
     
@@ -271,7 +271,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
       
       const createdTemplate = await standaloneTemplateAPI.createTemplate(apiData);
       
-      onTemplateCreated?.(createdTemplate, shouldTest);
+      onTemplateCreated?.(createdTemplate);
       onClose();
       
     } catch (err: any) {
@@ -804,40 +804,23 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
                   <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
               ) : (
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => handleSubmit(false)} 
-                    disabled={!canProceed() || loading}
-                  >
-                    {loading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Only'
-                    )}
-                  </Button>
-                  
-                  <Button 
-                    onClick={() => handleSubmit(true)} 
-                    disabled={!canProceed() || loading}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {loading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="h-4 w-4 mr-2" />
-                        Create & Test Now
-                      </>
-                    )}
-                  </Button>
-                </div>
+                <Button 
+                  onClick={handleSubmit} 
+                  disabled={!canProceed() || loading}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Building2 className="h-4 w-4 mr-2" />
+                      Create
+                    </>
+                  )}
+                </Button>
               )}
             </div>
           </div>
