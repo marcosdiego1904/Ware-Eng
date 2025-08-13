@@ -105,6 +105,44 @@ class RuleEngine:
         else:
             return self._evaluate_all_rules_internal(inventory_df, rule_ids)
     
+    def _normalize_dataframe_columns(self, inventory_df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize DataFrame column names to match expected format"""
+        df = inventory_df.copy()
+        
+        # Define column mapping from common variations to expected names
+        column_mapping = {
+            'Pallet ID': 'pallet_id',
+            'pallet_id': 'pallet_id',
+            'PALLET_ID': 'pallet_id',
+            'PalletID': 'pallet_id',
+            'Pallet': 'pallet_id',
+            
+            'Location': 'location',
+            'location': 'location',
+            'LOCATION': 'location',
+            'Current Location': 'location',
+            'Current_Location': 'location',
+            'LocationCode': 'location',
+            
+            'Created Date': 'creation_date',
+            'CreatedDate': 'creation_date',
+            'creation_date': 'creation_date',
+            'CREATED_DATE': 'creation_date',
+            'Date Created': 'creation_date',
+            'Last Activity': 'creation_date',
+            'LastActivity': 'creation_date',
+            'Timestamp': 'creation_date'
+        }
+        
+        # Apply column mapping
+        df = df.rename(columns=column_mapping)
+        
+        print(f"[RULE_ENGINE_DEBUG] Column normalization:")
+        print(f"   Original columns: {list(inventory_df.columns)}")
+        print(f"   Normalized columns: {list(df.columns)}")
+        
+        return df
+    
     def _evaluate_all_rules_internal(self, inventory_df: pd.DataFrame, 
                                    rule_ids: List[int] = None) -> List[RuleEvaluationResult]:
         """Internal method to evaluate rules"""
@@ -113,11 +151,35 @@ class RuleEngine:
         else:
             rules = self.load_active_rules()
         
+        # Normalize column names before processing
+        inventory_df = self._normalize_dataframe_columns(inventory_df)
+        
+        print(f"[RULE_ENGINE_DEBUG] Evaluating {len(rules)} active rules")
+        print(f"[RULE_ENGINE_DEBUG] Inventory DataFrame shape: {inventory_df.shape}")
+        
         results = []
+        total_anomalies = 0
+        
         for rule in rules:
+            print(f"\n[RULE_ENGINE_DEBUG] Evaluating Rule ID {rule.id}: {rule.name}")
+            print(f"   Type: {rule.rule_type}, Priority: {rule.priority}")
+            print(f"   Conditions: {rule.conditions}")
+            
             result = self.evaluate_rule(rule, inventory_df)
             results.append(result)
+            
+            if result.success:
+                anomaly_count = len(result.anomalies)
+                total_anomalies += anomaly_count
+                print(f"   SUCCESS: Rule executed successfully: {anomaly_count} anomalies found")
+                if anomaly_count > 0:
+                    print(f"   ANOMALIES:")
+                    for i, anomaly in enumerate(result.anomalies):
+                        print(f"      {i+1}. {anomaly.get('pallet_id', 'N/A')} - {anomaly.get('issue_description', 'N/A')}")
+            else:
+                print(f"   FAILED: Rule failed: {result.error_message}")
         
+        print(f"\n[RULE_ENGINE_DEBUG] Total anomalies found: {total_anomalies}")
         return results
     
     def evaluate_rule(self, rule: Rule, inventory_df: pd.DataFrame) -> RuleEvaluationResult:
@@ -423,8 +485,15 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         conditions = self._parse_conditions(rule)
         parameters = self._parse_parameters(rule)
         
-        time_threshold = conditions.get('time_threshold_hours', 6)
+        # Parse different condition formats
+        time_threshold_hours = conditions.get('time_threshold_hours', 6)
+        max_days_in_location = conditions.get('max_days_in_location')
         location_types = conditions.get('location_types', ['RECEIVING'])
+        excluded_locations = conditions.get('excluded_locations', [])
+        
+        # Convert max_days_in_location to hours if specified
+        if max_days_in_location is not None:
+            time_threshold_hours = max_days_in_location * 24
         
         anomalies = []
         now = datetime.now()
@@ -433,21 +502,28 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         if 'location_type' not in inventory_df.columns:
             inventory_df = self._assign_location_types(inventory_df)
         
-        for location_type in location_types:
-            pallets = inventory_df[inventory_df['location_type'] == location_type]
-            for _, pallet in pallets.iterrows():
-                if pd.isna(pallet.get('creation_date')):
-                    continue
-                    
-                time_diff = now - pallet['creation_date']
-                if time_diff > timedelta(hours=time_threshold):
-                    anomalies.append({
-                        'pallet_id': pallet['pallet_id'],
-                        'location': pallet['location'],
-                        'anomaly_type': 'Stagnant Pallet',
-                        'priority': rule.priority,
-                        'details': f"Pallet in {location_type} for {time_diff.total_seconds()/3600:.1f}h (threshold: {time_threshold}h)"
-                    })
+        # Filter pallets based on included and excluded locations
+        if excluded_locations:
+            # If exclusions specified, check all pallets except those in excluded locations
+            valid_pallets = inventory_df[~inventory_df['location_type'].isin(excluded_locations)]
+        else:
+            # Otherwise, filter by included location types  
+            valid_pallets = inventory_df[inventory_df['location_type'].isin(location_types)]
+        
+        for _, pallet in valid_pallets.iterrows():
+            if pd.isna(pallet.get('creation_date')):
+                continue
+                
+            time_diff = now - pallet['creation_date']
+            if time_diff > timedelta(hours=time_threshold_hours):
+                anomalies.append({
+                    'pallet_id': pallet['pallet_id'],
+                    'location': pallet['location'],
+                    'location_type': pallet['location_type'],
+                    'anomaly_type': 'Stagnant Pallet',
+                    'priority': rule.priority,
+                    'issue_description': f"Pallet in {pallet['location_type']} for {time_diff.total_seconds()/3600:.1f}h (threshold: {time_threshold_hours:.1f}h)"
+                })
         
         return anomalies
     
