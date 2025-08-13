@@ -44,7 +44,10 @@ def generate_locations_from_template(template, warehouse_id, current_user):
     created_locations = []
     
     try:
-        # Generate storage locations using the model's class method
+        # Batch storage locations generation for better performance
+        storage_locations_batch = []
+        
+        # Generate storage locations using batch processing
         for aisle in range(1, template.num_aisles + 1):
             for rack in range(1, template.racks_per_aisle + 1):
                 for position in range(1, template.positions_per_rack + 1):
@@ -63,15 +66,30 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                             created_by=current_user.id
                         )
                         
-                        db.session.add(location)
+                        storage_locations_batch.append(location)
                         created_locations.append(location)
+        
+        # Bulk add storage locations in batches of 1000 for optimal performance
+        batch_size = 1000
+        for i in range(0, len(storage_locations_batch), batch_size):
+            batch = storage_locations_batch[i:i + batch_size]
+            db.session.bulk_save_objects(batch)
+            db.session.flush()  # Flush each batch to avoid memory issues
 
-        # Generate special areas from template
+        # Generate special areas from template with improved performance
         special_area_configs = [
             (template.receiving_areas_template, 'RECEIVING', 'DOCK', 10),
             (template.staging_areas_template, 'STAGING', 'STAGING', 5),
             (template.dock_areas_template, 'DOCK', 'DOCK', 2)
         ]
+
+        special_locations_batch = []
+        
+        # Get all existing location codes in one query for conflict checking
+        existing_codes = set()
+        if warehouse_id != 'DEFAULT':
+            existing_locations = Location.query.with_entities(Location.code).all()
+            existing_codes = {code[0] for code in existing_locations}
 
         for areas_template, loc_type, zone, default_cap in special_area_configs:
             if not areas_template: continue
@@ -88,12 +106,15 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                     else:
                         unique_code = base_code
                     
-                    # Check for conflicts and add suffix if needed
+                    # Check for conflicts and add suffix if needed (using cached codes)
                     attempt = 0
                     original_code = unique_code
-                    while Location.query.filter_by(code=unique_code).first():
+                    while unique_code in existing_codes:
                         attempt += 1
                         unique_code = f"{original_code}_{attempt}"
+                    
+                    # Add to cache to avoid future conflicts in this batch
+                    existing_codes.add(unique_code)
 
                     location = Location(
                         code=unique_code,
@@ -104,11 +125,16 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                         warehouse_id=warehouse_id,
                         created_by=current_user.id
                     )
-                    db.session.add(location)
+                    special_locations_batch.append(location)
                     created_locations.append(location)
             except (json.JSONDecodeError, TypeError) as e:
                 current_app.logger.warning(f"Skipping invalid special area JSON for {loc_type}: {e}")
                 pass
+        
+        # Bulk add special locations
+        if special_locations_batch:
+            db.session.bulk_save_objects(special_locations_batch)
+            db.session.flush()
 
         return created_locations
         

@@ -270,6 +270,16 @@ class Location(db.Model):
     # Relationships
     creator = db.relationship('User', foreign_keys=[created_by])
     
+    # Database indexes for performance optimization
+    __table_args__ = (
+        db.Index('idx_location_warehouse_type', 'warehouse_id', 'location_type'),
+        db.Index('idx_location_warehouse_zone', 'warehouse_id', 'zone'),
+        db.Index('idx_location_warehouse_active', 'warehouse_id', 'is_active'),
+        db.Index('idx_location_structure', 'warehouse_id', 'aisle_number', 'rack_number'),
+        db.Index('idx_location_code_active', 'code', 'is_active'),
+        db.Index('idx_location_created_by', 'created_by'),
+    )
+    
     def get_allowed_products(self):
         """Parse allowed products JSON string into list"""
         try:
@@ -557,6 +567,15 @@ class WarehouseTemplate(db.Model):
     
     # Relationships
     creator = db.relationship('User', foreign_keys=[created_by])
+    
+    # Database indexes for performance optimization
+    __table_args__ = (
+        db.Index('idx_template_public_active', 'is_public', 'is_active'),
+        db.Index('idx_template_usage_created', 'usage_count', 'created_at'),
+        db.Index('idx_template_creator_active', 'created_by', 'is_active'),
+        db.Index('idx_template_code_active', 'template_code', 'is_active'),
+        db.Index('idx_template_structure', 'num_aisles', 'racks_per_aisle', 'positions_per_rack'),
+    )
     
     def get_receiving_areas_template(self):
         """Parse receiving areas template JSON string into list"""
