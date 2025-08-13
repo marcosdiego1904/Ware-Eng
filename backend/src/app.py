@@ -984,7 +984,11 @@ def create_analysis_report(current_user):
         print(f"[DEBUG] Original shape: {inventory_df.shape}")
         print(f"[DEBUG] Column mapping received: {column_mapping}")
         
-        inventory_df.rename(columns=column_mapping, inplace=True)
+        # Fix: Invert the mapping - map FROM Excel columns TO system columns
+        inverted_mapping = {v: k for k, v in column_mapping.items()}
+        print(f"[DEBUG] Inverted mapping (Excel -> System): {inverted_mapping}")
+        
+        inventory_df.rename(columns=inverted_mapping, inplace=True)
         print(f"[DEBUG] After mapping columns: {list(inventory_df.columns)}")
         
         # Show first few rows for debugging
