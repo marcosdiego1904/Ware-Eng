@@ -10,6 +10,7 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200))  # Increased to accommodate scrypt hashes
+    analysis_limit = db.Column(db.Integer, default=10)  # Number of analyses allowed
     reports = db.relationship('AnalysisReport', backref='author', lazy=True)
 
     def set_password(self, password):
