@@ -656,8 +656,11 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         
         anomalies = []
         
-        # Get valid locations from database
-        locations = Location.query.filter_by(is_active=True).all()
+        # Get valid locations from database (include both is_active=True and NULL)
+        from sqlalchemy import or_
+        locations = Location.query.filter(
+            or_(Location.is_active == True, Location.is_active.is_(None))
+        ).all()
         valid_locations = set()
         valid_patterns = []
         
