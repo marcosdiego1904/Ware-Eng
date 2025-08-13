@@ -75,9 +75,20 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
                 if report_id:
                     _record_rule_performance(result, report_id)
                 
-                print(f"Rule {result.rule_id}: {len(result.anomalies)} anomalies found in {result.execution_time_ms}ms")
+                # Get rule name for better debug output
+                try:
+                    rule = Rule.query.get(result.rule_id)
+                    rule_name = rule.name if rule else f"Unknown Rule {result.rule_id}"
+                    print(f"Rule {result.rule_id} ({rule_name}): {len(result.anomalies)} anomalies found in {result.execution_time_ms}ms")
+                except Exception:
+                    print(f"Rule {result.rule_id}: {len(result.anomalies)} anomalies found in {result.execution_time_ms}ms")
             else:
-                print(f"Rule {result.rule_id} failed: {result.error_message}")
+                try:
+                    rule = Rule.query.get(result.rule_id)
+                    rule_name = rule.name if rule else f"Unknown Rule {result.rule_id}"
+                    print(f"Rule {result.rule_id} ({rule_name}) failed: {result.error_message}")
+                except Exception:
+                    print(f"Rule {result.rule_id} failed: {result.error_message}")
         
         # Update report with rules used
         if report_id and rules_used:
