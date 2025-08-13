@@ -329,20 +329,20 @@ class BaseRuleEvaluator:
             
         code = str(location_code).strip().upper()
         
-        # Remove common warehouse/user prefixes
-        prefixes_to_remove = [
-            # User-specific warehouse prefixes (USER_USERNAME_)
-            r'^USER_[A-Z0-9]+_',
-            # Simplified user prefixes (USERNAME_)  
-            r'^[A-Z]{2,10}_',  # 2-10 letter username prefixes
-            # Warehouse prefixes (WH01_, WH_)
-            r'^WH\d*_',
-            # Default warehouse prefixes
-            r'^DEFAULT_',
-        ]
+        # Remove common warehouse/user prefixes (simplified and faster)
+        # Handle USER_ prefixes specifically
+        if code.startswith('USER_'):
+            # Remove USER_USERNAME_ pattern
+            parts = code.split('_')
+            if len(parts) >= 3:  # USER_NAME_LOCATION
+                code = '_'.join(parts[2:])  # Keep everything after USER_NAME_
         
-        for prefix_pattern in prefixes_to_remove:
-            code = re.sub(prefix_pattern, '', code)
+        # Handle other common prefixes with simple string operations (faster than regex)
+        simple_prefixes = ['WH01_', 'WH02_', 'WH03_', 'WH04_', 'WH_', 'DEFAULT_']
+        for prefix in simple_prefixes:
+            if code.startswith(prefix):
+                code = code[len(prefix):]
+                break
             
         return code
     
@@ -383,18 +383,27 @@ class BaseRuleEvaluator:
         # 2. Try normalized matching
         normalized_input = self._normalize_location_code(location_str)
         
-        # Search all locations and check if normalized versions match
-        all_locations = Location.query.all()
+        # 3. If normalization didn't change anything, skip expensive search
+        if normalized_input == location_str:
+            return None
+        
+        # 4. Search all locations and check if normalized versions match
+        all_locations = Location.query.limit(1000).all()  # Limit to prevent massive queries
         for loc in all_locations:
-            # Check if normalized database code matches input
-            if self._normalize_location_code(loc.code) == location_str:
-                return loc
-            # Check if input normalized matches database code
-            if normalized_input == loc.code:
-                return loc
-            # Check if both normalized versions match
-            if self._normalize_location_code(loc.code) == normalized_input:
-                return loc
+            try:
+                # Check if normalized database code matches input
+                normalized_db_code = self._normalize_location_code(loc.code)
+                if normalized_db_code == location_str:
+                    return loc
+                # Check if input normalized matches database code
+                if normalized_input == loc.code:
+                    return loc
+                # Check if both normalized versions match
+                if normalized_db_code == normalized_input:
+                    return loc
+            except Exception:
+                # Skip problematic location codes
+                continue
         
         return None
     
