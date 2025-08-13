@@ -262,6 +262,85 @@ class BaseRuleEvaluator:
             return json.loads(rule.parameters) if rule.parameters else {}
         except json.JSONDecodeError:
             return {}
+    
+    def _normalize_location_code(self, location_code: str) -> str:
+        """
+        Normalize location codes by removing user prefixes and standardizing format
+        
+        Examples:
+        - "ALICE_A-01-01A" -> "A-01-01A"
+        - "USER_BOB_001A" -> "001A" 
+        - "WH01_RECEIVING" -> "RECEIVING"
+        - "A-01-01A" -> "A-01-01A" (unchanged)
+        """
+        if not location_code:
+            return location_code
+            
+        code = str(location_code).strip().upper()
+        
+        # Remove common warehouse/user prefixes
+        prefixes_to_remove = [
+            # User-specific warehouse prefixes (USER_USERNAME_)
+            r'^USER_[A-Z0-9]+_',
+            # Simplified user prefixes (USERNAME_)  
+            r'^[A-Z]{2,10}_',  # 2-10 letter username prefixes
+            # Warehouse prefixes (WH01_, WH_)
+            r'^WH\d*_',
+            # Default warehouse prefixes
+            r'^DEFAULT_',
+        ]
+        
+        for prefix_pattern in prefixes_to_remove:
+            code = re.sub(prefix_pattern, '', code)
+            
+        return code
+    
+    def _find_location_by_code(self, location_code: str) -> 'Location':
+        """
+        Find location in database using smart matching (handles user prefixes)
+        
+        Args:
+            location_code: Location code from inventory data
+            
+        Returns:
+            Location object if found, None otherwise
+        """
+        if not location_code:
+            return None
+            
+        location_str = str(location_code).strip()
+        
+        # 1. Direct exact match
+        location = Location.query.filter_by(code=location_str).first()
+        if location:
+            return location
+        
+        # 2. Try normalized matching
+        normalized_input = self._normalize_location_code(location_str)
+        
+        # Search all locations and check if normalized versions match
+        all_locations = Location.query.all()
+        for loc in all_locations:
+            # Check if normalized database code matches input
+            if self._normalize_location_code(loc.code) == location_str:
+                return loc
+            # Check if input normalized matches database code
+            if normalized_input == loc.code:
+                return loc
+            # Check if both normalized versions match
+            if self._normalize_location_code(loc.code) == normalized_input:
+                return loc
+        
+        return None
+    
+    def _matches_pattern(self, location: str, pattern: str) -> bool:
+        """Check if location matches pattern"""
+        try:
+            # Convert wildcard pattern to regex
+            regex_pattern = pattern.replace('*', '.*')
+            return bool(re.match(f"^{regex_pattern}$", location, re.IGNORECASE))
+        except re.error:
+            return False
 
 class StagnantPalletsEvaluator(BaseRuleEvaluator):
     """Evaluator for stagnant pallets detection"""
@@ -351,76 +430,6 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         df['location_type'] = df['location'].apply(get_location_type)
         return df
     
-    def _normalize_location_code(self, location_code: str) -> str:
-        """
-        Normalize location codes by removing user prefixes and standardizing format
-        
-        Examples:
-        - "ALICE_A-01-01A" -> "A-01-01A"
-        - "USER_BOB_001A" -> "001A" 
-        - "WH01_RECEIVING" -> "RECEIVING"
-        - "A-01-01A" -> "A-01-01A" (unchanged)
-        """
-        if not location_code:
-            return location_code
-            
-        code = str(location_code).strip().upper()
-        
-        # Remove common warehouse/user prefixes
-        prefixes_to_remove = [
-            # User-specific warehouse prefixes (USER_USERNAME_)
-            r'^USER_[A-Z0-9]+_',
-            # Simplified user prefixes (USERNAME_)  
-            r'^[A-Z]{2,10}_',  # 2-10 letter username prefixes
-            # Warehouse prefixes (WH01_, WH_)
-            r'^WH\d*_',
-            # Default warehouse prefixes
-            r'^DEFAULT_',
-        ]
-        
-        for prefix_pattern in prefixes_to_remove:
-            code = re.sub(prefix_pattern, '', code)
-            
-        return code
-    
-    def _find_location_by_code(self, location_code: str) -> 'Location':
-        """
-        Find location in database using smart matching (handles user prefixes)
-        
-        Args:
-            location_code: Location code from inventory data
-            
-        Returns:
-            Location object if found, None otherwise
-        """
-        if not location_code:
-            return None
-            
-        location_str = str(location_code).strip()
-        
-        # 1. Direct exact match
-        location = Location.query.filter_by(code=location_str).first()
-        if location:
-            return location
-        
-        # 2. Try normalized matching
-        normalized_input = self._normalize_location_code(location_str)
-        
-        # Search all locations and check if normalized versions match
-        all_locations = Location.query.all()
-        for loc in all_locations:
-            # Check if normalized database code matches input
-            if self._normalize_location_code(loc.code) == location_str:
-                return loc
-            # Check if input normalized matches database code
-            if normalized_input == loc.code:
-                return loc
-            # Check if both normalized versions match
-            if self._normalize_location_code(loc.code) == normalized_input:
-                return loc
-        
-        return None
-    
     def test_location_matching(self, test_codes: list = None) -> dict:
         """
         Test the location matching system with various code formats
@@ -489,15 +498,6 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
             )
         
         return results
-    
-    def _matches_pattern(self, location: str, pattern: str) -> bool:
-        """Check if location matches pattern"""
-        try:
-            # Convert wildcard pattern to regex
-            regex_pattern = pattern.replace('*', '.*')
-            return bool(re.match(f"^{regex_pattern}$", location, re.IGNORECASE))
-        except re.error:
-            return False
 
 class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
     """Evaluator for uncoordinated lots detection"""
@@ -609,14 +609,6 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                 })
         
         return anomalies
-    
-    def _matches_pattern(self, location: str, pattern: str) -> bool:
-        """Check if location matches pattern"""
-        try:
-            regex_pattern = pattern.replace('*', '.*')
-            return bool(re.match(f"^{regex_pattern}$", location, re.IGNORECASE))
-        except re.error:
-            return False
 
 class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
     """Evaluator for location-specific stagnant pallets"""
