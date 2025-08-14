@@ -450,7 +450,7 @@ class BaseRuleEvaluator:
             return None
         
         # 4. Search all locations and check if normalized versions match
-        all_locations = Location.query.limit(1000).all()  # Limit to prevent massive queries
+        all_locations = Location.query.all()  # Search all locations for comprehensive matching
         for loc in all_locations:
             try:
                 # Check if normalized database code matches input
@@ -750,13 +750,20 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                 locations = []
         
         print(f"[INVALID_LOCATION_DEBUG] Found {len(locations)} valid locations in database")
-        valid_locations = set()
         valid_patterns = []
         
         for loc in locations:
-            valid_locations.add(loc.code)
             if loc.pattern:
                 valid_patterns.append(loc.pattern)
+        
+        # Create a set of valid location codes for fast lookup (more efficient than repeated database calls)
+        valid_locations = set()
+        for loc in locations:
+            valid_locations.add(loc.code)
+            # Also add normalized version
+            normalized = self._normalize_location_code(loc.code)
+            if normalized != loc.code:
+                valid_locations.add(normalized)
         
         for _, pallet in inventory_df.iterrows():
             location = str(pallet['location']).strip()
@@ -765,10 +772,20 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             if pd.isna(pallet['location']) or not location:
                 continue
             
-            # Check if location is valid
-            is_valid = location in valid_locations
+            # Check if location exists directly or via normalization
+            is_valid = False
             
-            # Check against patterns if not directly valid
+            # 1. Direct lookup
+            if location in valid_locations:
+                is_valid = True
+            
+            # 2. Try normalized lookup
+            if not is_valid:
+                normalized_location = self._normalize_location_code(location)
+                if normalized_location in valid_locations:
+                    is_valid = True
+            
+            # 3. Check against patterns if not directly valid
             if not is_valid:
                 for pattern in valid_patterns:
                     if self._matches_pattern(location, pattern):
