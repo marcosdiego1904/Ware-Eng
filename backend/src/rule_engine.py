@@ -406,6 +406,33 @@ class BaseRuleEvaluator:
             
         return code
     
+    def _extract_base_location_code(self, location_code: str) -> str:
+        """
+        Extract base location code by removing common prefixes and suffixes
+        Examples: 
+        - USER_02-01-042A -> 02-01-042A
+        - USER_01-01-014C_2 -> 01-01-014C  
+        - 02-02-003A_1 -> 02-02-003A
+        - 01-02-03A -> 01-02-03A (unchanged)
+        """
+        if not location_code:
+            return location_code
+            
+        code = str(location_code).strip().upper()
+        
+        # Remove common prefixes
+        prefixes_to_remove = ['USER_', 'WH01_', 'WH02_', 'WH03_', 'WH04_', 'WH_', 'DEFAULT_', 'ALICE_']
+        for prefix in prefixes_to_remove:
+            if code.startswith(prefix):
+                code = code[len(prefix):]
+                break
+        
+        # Remove numerical suffixes like _1, _2, _3
+        import re
+        code = re.sub(r'_\d+$', '', code)
+        
+        return code
+    
     def _find_location_by_code(self, location_code: str) -> 'Location':
         """
         Find location in database using smart matching (handles user prefixes)
@@ -967,17 +994,32 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             if loc.pattern:
                 valid_patterns.append(loc.pattern)
         
-        # Create a set of valid location codes for fast lookup (more efficient than repeated database calls)
+        # Create comprehensive lookup sets for all possible location formats
         valid_locations = set()
+        valid_base_codes = set()  # Base codes without prefixes/suffixes
+        
         for loc in locations:
+            # Add exact database code
             valid_locations.add(loc.code)
-            # Also add normalized version for flexibility
+            
+            # Extract base code patterns from database locations
+            base_code = self._extract_base_location_code(loc.code)
+            if base_code:
+                valid_base_codes.add(base_code)
+                valid_locations.add(base_code)  # Also add to main set
+            
+            # Add normalized version
             normalized = self._normalize_location_code(loc.code)
             if normalized != loc.code:
                 valid_locations.add(normalized)
+                # Also add base of normalized
+                base_normalized = self._extract_base_location_code(normalized)
+                if base_normalized:
+                    valid_base_codes.add(base_normalized)
         
         # Debug: Show what we're looking for vs what's available
         print(f"[INVALID_LOCATION_DEBUG] Sample valid locations: {list(valid_locations)[:10]}")
+        print(f"[INVALID_LOCATION_DEBUG] Sample base codes: {list(valid_base_codes)[:10]}")
         
         for _, pallet in inventory_df.iterrows():
             location = str(pallet['location']).strip()
@@ -986,20 +1028,30 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             if pd.isna(pallet['location']) or not location:
                 continue
             
-            # Check if location exists directly or via normalization
+            # Enhanced location validation with multiple matching strategies
             is_valid = False
             
             # 1. Direct lookup
             if location in valid_locations:
                 is_valid = True
             
-            # 2. Try normalized lookup
+            # 2. Try base code lookup (removes prefixes/suffixes from inventory location)
+            if not is_valid:
+                base_location = self._extract_base_location_code(location)
+                if base_location and base_location in valid_base_codes:
+                    is_valid = True
+            
+            # 3. Try normalized lookup
             if not is_valid:
                 normalized_location = self._normalize_location_code(location)
                 if normalized_location in valid_locations:
                     is_valid = True
+                # Also try base of normalized
+                base_normalized = self._extract_base_location_code(normalized_location)
+                if base_normalized and base_normalized in valid_base_codes:
+                    is_valid = True
             
-            # 3. Check against patterns if not directly valid
+            # 4. Check against patterns if not directly valid
             if not is_valid:
                 for pattern in valid_patterns:
                     if self._matches_pattern(location, pattern):
