@@ -349,13 +349,8 @@ class Location(db.Model):
         # Generate clean location code (Phase 1: Remove DEFAULT_ prefix)
         base_code = f"{aisle_num:02d}-{rack_num:02d}-{position_num:03d}{level}"
         
-        # For single warehouse or DEFAULT warehouse, use clean format
-        if warehouse_id == 'DEFAULT' or warehouse_id is None:
-            code = base_code
-        else:
-            # For multi-warehouse scenarios, keep the prefix with shorter format
-            warehouse_prefix = warehouse_id.replace('DEFAULT', 'WH')[:4]  # Max 4 chars
-            code = f"{warehouse_prefix}_{base_code}"
+        # Use clean format for all warehouses (no prefixes needed)
+        code = base_code
         
         # Check for conflicts and add suffix if needed
         attempt = 0

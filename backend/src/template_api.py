@@ -98,13 +98,8 @@ def generate_locations_from_template(template, warehouse_id, current_user):
                 for idx, area_data in enumerate(areas):
                     base_code = area_data.get('code', f'{loc_type}_{idx+1}')
                     
-                    # Generate warehouse-specific code to avoid global conflicts
-                    if warehouse_id != 'DEFAULT':
-                        # For user-specific warehouses, prefix the code to ensure uniqueness
-                        warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
-                        unique_code = f"{warehouse_prefix}_{base_code}"
-                    else:
-                        unique_code = base_code
+                    # Use clean location codes for special areas (no prefixes needed)
+                    unique_code = base_code  # Keep original code clean
                     
                     # Check for conflicts and add suffix if needed (using cached codes)
                     attempt = 0
