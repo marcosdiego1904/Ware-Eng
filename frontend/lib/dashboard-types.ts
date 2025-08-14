@@ -9,10 +9,18 @@ export interface OverviewStats {
   averageAnomaliesPerReport: number
   criticalLocations: number
   systemHealth: 'excellent' | 'good' | 'warning' | 'critical'
+  // Enhanced warehouse utilization metrics
+  warehouseUtilization?: number
+  totalPallets?: number
+  totalCapacity?: number
+  expectedOvercapacityCount?: number
+  actualOvercapacityCount?: number
+  systematicAnomaliesCount?: number
   trendsData: {
     reportsGrowth: number
     anomaliesGrowth: number
     resolutionGrowth: number
+    utilizationGrowth?: number
   }
 }
 

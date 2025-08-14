@@ -34,6 +34,16 @@ export interface Anomaly {
   pallet_id: string;
   details: string;
   history: AnomalyHistoryItem[];
+  // Enhanced overcapacity detection fields
+  utilization_rate?: number;
+  expected_overcapacity_count?: number;
+  actual_overcapacity_count?: number;
+  anomaly_severity_ratio?: number;
+  overcapacity_category?: 'Natural' | 'Elevated Natural' | 'Systematic';
+  warehouse_total_pallets?: number;
+  warehouse_total_capacity?: number;
+  statistical_model?: string;
+  excess_pallets?: number;
   [key: string]: unknown; // For additional anomaly details
 }
 
@@ -147,6 +157,19 @@ export const getStatusColor = (status: string): string => {
       return 'bg-orange-100 text-orange-800 border-orange-200';
     case 'Resolved':
       return 'bg-green-100 text-green-800 border-green-200';
+    default:
+      return 'bg-gray-100 text-gray-800 border-gray-200';
+  }
+};
+
+export const getOvercapacityCategoryColor = (category?: string): string => {
+  switch (category) {
+    case 'Natural':
+      return 'bg-green-100 text-green-800 border-green-200';
+    case 'Elevated Natural':
+      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    case 'Systematic':
+      return 'bg-red-100 text-red-800 border-red-200';
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200';
   }

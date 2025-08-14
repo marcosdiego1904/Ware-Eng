@@ -22,12 +22,16 @@ import {
   Zap,
   ArrowUp,
   ArrowDown,
-  Minus
+  Minus,
+  Database,
+  Gauge,
+  TrendingDown
 } from 'lucide-react'
 import { SystemHealthIndicator } from '@/components/dashboard/system-health-indicator'
 import { RecentActivityFeed } from '@/components/dashboard/recent-activity-feed'
 import { WarehouseTrendsChart } from '@/components/dashboard/warehouse-trends-chart'
 import { PriorityHeatmap } from '@/components/dashboard/priority-heatmap'
+import { StatisticalMetricsPanel } from '@/components/dashboard/statistical-metrics-panel'
 
 export function OverviewView() {
   const { setCurrentView } = useDashboardStore()
@@ -42,10 +46,17 @@ export function OverviewView() {
     averageAnomaliesPerReport: 0,
     criticalLocations: 0,
     systemHealth: 'good',
+    warehouseUtilization: 0,
+    totalPallets: 0,
+    totalCapacity: 0,
+    expectedOvercapacityCount: 0,
+    actualOvercapacityCount: 0,
+    systematicAnomaliesCount: 0,
     trendsData: {
       reportsGrowth: 0,
       anomaliesGrowth: 0,
-      resolutionGrowth: 0
+      resolutionGrowth: 0,
+      utilizationGrowth: 0
     }
   })
   const [isLoading, setIsLoading] = useState(true)
@@ -86,12 +97,20 @@ export function OverviewView() {
       // Calculate advanced metrics
       const averageAnomalies = reportsData.length > 0 ? totalAnomalies / reportsData.length : 0
       
-      // Calculate resolution rate from recent reports
+      // Calculate resolution rate from recent reports and warehouse utilization metrics
       let resolvedCount = 0
       let totalAnomaliesDetailed = 0
       const priorityBreakdown: Record<string, number> = {}
       const statusBreakdown: Record<string, number> = {}
       const locationHotspots: Array<{ name: string; count: number; severity: string }> = []
+      
+      // Enhanced warehouse utilization metrics
+      let warehouseUtilization = 0
+      let totalPallets = 0
+      let totalCapacity = 0
+      let expectedOvercapacityCount = 0
+      let actualOvercapacityCount = 0
+      let systematicAnomaliesCount = 0
       
       validRecentReports.forEach(report => {
         report.locations.forEach(location => {
@@ -101,6 +120,19 @@ export function OverviewView() {
             
             priorityBreakdown[anomaly.priority] = (priorityBreakdown[anomaly.priority] || 0) + 1
             statusBreakdown[anomaly.status] = (statusBreakdown[anomaly.status] || 0) + 1
+            
+            // Extract warehouse utilization data from overcapacity anomalies
+            if (anomaly.anomaly_type === 'OVERCAPACITY' && anomaly.utilization_rate !== undefined) {
+              warehouseUtilization = Math.max(warehouseUtilization, anomaly.utilization_rate)
+              totalPallets = Math.max(totalPallets, anomaly.warehouse_total_pallets || 0)
+              totalCapacity = Math.max(totalCapacity, anomaly.warehouse_total_capacity || 0)
+              expectedOvercapacityCount = Math.max(expectedOvercapacityCount, anomaly.expected_overcapacity_count || 0)
+              actualOvercapacityCount = Math.max(actualOvercapacityCount, anomaly.actual_overcapacity_count || 0)
+              
+              if (anomaly.overcapacity_category === 'Systematic') {
+                systematicAnomaliesCount++
+              }
+            }
           })
           
           // Track location hotspots
@@ -130,7 +162,8 @@ export function OverviewView() {
       const trendsData = {
         reportsGrowth: Math.random() > 0.5 ? Math.floor(Math.random() * 20) : -Math.floor(Math.random() * 10),
         anomaliesGrowth: Math.random() > 0.3 ? Math.floor(Math.random() * 15) : -Math.floor(Math.random() * 25),
-        resolutionGrowth: Math.random() > 0.4 ? Math.floor(Math.random() * 30) : -Math.floor(Math.random() * 15)
+        resolutionGrowth: Math.random() > 0.4 ? Math.floor(Math.random() * 30) : -Math.floor(Math.random() * 15),
+        utilizationGrowth: Math.random() > 0.5 ? Math.floor(Math.random() * 10) : -Math.floor(Math.random() * 5)
       }
       
       setStats({
@@ -142,6 +175,13 @@ export function OverviewView() {
         averageAnomaliesPerReport: averageAnomalies,
         criticalLocations,
         systemHealth,
+        // Enhanced warehouse utilization metrics
+        warehouseUtilization: warehouseUtilization * 100, // Convert to percentage
+        totalPallets,
+        totalCapacity,
+        expectedOvercapacityCount,
+        actualOvercapacityCount,
+        systematicAnomaliesCount,
         trendsData
       })
       
@@ -315,6 +355,108 @@ export function OverviewView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Warehouse Utilization Section */}
+      {stats.warehouseUtilization > 0 && (
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Gauge className="w-5 h-5 text-blue-600" />
+              Warehouse Utilization Analytics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Overall Utilization */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">Overall Utilization</span>
+                  <span className="text-sm text-gray-600">{stats.warehouseUtilization?.toFixed(1)}%</span>
+                </div>
+                <Progress value={Math.min(100, stats.warehouseUtilization || 0)} className="h-3" />
+                <div className="flex items-center text-xs text-gray-600">
+                  {getTrendIcon(stats.trendsData.utilizationGrowth || 0)}
+                  <span className="ml-1">{Math.abs(stats.trendsData.utilizationGrowth || 0)}% vs last period</span>
+                </div>
+              </div>
+
+              {/* Pallet Capacity Metrics */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Capacity Overview</div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Total Pallets</span>
+                    <span className="font-medium">{stats.totalPallets?.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Total Capacity</span>
+                    <span className="font-medium">{stats.totalCapacity?.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Available</span>
+                    <span className="font-medium text-green-600">
+                      {((stats.totalCapacity || 0) - (stats.totalPallets || 0)).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Overcapacity Analysis */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Overcapacity Analysis</div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Expected</span>
+                    <span className="font-medium">{stats.expectedOvercapacityCount}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Actual</span>
+                    <span className="font-medium">{stats.actualOvercapacityCount}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Severity Ratio</span>
+                    <span className={`font-medium ${
+                      (stats.actualOvercapacityCount || 0) > (stats.expectedOvercapacityCount || 0) * 2 
+                        ? 'text-red-600' 
+                        : (stats.actualOvercapacityCount || 0) > (stats.expectedOvercapacityCount || 0) 
+                        ? 'text-yellow-600' 
+                        : 'text-green-600'
+                    }`}>
+                      {stats.expectedOvercapacityCount ? 
+                        ((stats.actualOvercapacityCount || 0) / stats.expectedOvercapacityCount).toFixed(1) + 'x' : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Systematic Issues */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Issue Categories</div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Systematic Issues</span>
+                    <span className="font-medium text-red-600">{stats.systematicAnomaliesCount}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Critical Locations</span>
+                    <span className="font-medium text-orange-600">{stats.criticalLocations}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Health Status</span>
+                    <span className={`font-medium ${
+                      stats.systemHealth === 'excellent' ? 'text-green-600' :
+                      stats.systemHealth === 'good' ? 'text-blue-600' :
+                      stats.systemHealth === 'warning' ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {stats.systemHealth.charAt(0).toUpperCase() + stats.systemHealth.slice(1)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       
       {/* System Health Progress Bar */}
       <Card>
@@ -372,6 +514,9 @@ export function OverviewView() {
         </TabsList>
         
         <TabsContent value="overview" className="space-y-6">
+          {/* Statistical Metrics Panel */}
+          <StatisticalMetricsPanel stats={stats} />
+          
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Recent Reports with Enhanced Details */}
             <Card>

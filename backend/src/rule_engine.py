@@ -11,6 +11,7 @@ import time
 import re
 import fnmatch
 import pandas as pd
+import math
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
@@ -664,6 +665,7 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
         lots = inventory_df.groupby('receipt_number')
         
         for receipt_number, lot_df in lots:
+            # Count pallets that have reached final storage locations
             final_pallets = lot_df[lot_df['location_type'] == 'FINAL'].shape[0]
             total_pallets = lot_df.shape[0]
             completion_ratio = final_pallets / total_pallets if total_pallets > 0 else 0
@@ -682,11 +684,223 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
         return anomalies
 
 class OvercapacityEvaluator(BaseRuleEvaluator):
-    """Evaluator for overcapacity detection"""
+    """Evaluator for smart overcapacity detection with statistical analysis"""
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
+        parameters = self._parse_parameters(rule)
         
+        # Check if statistical analysis is enabled (default: True for new behavior)
+        use_statistical_analysis = parameters.get('use_statistical_analysis', True)
+        significance_threshold = parameters.get('significance_threshold', 2.0)  # Only flag if 2x expected
+        min_severity_ratio = parameters.get('min_severity_ratio', 1.5)  # Minimum severity to report
+        
+        if use_statistical_analysis:
+            return self._evaluate_with_statistical_analysis(
+                rule, inventory_df, significance_threshold, min_severity_ratio
+            )
+        else:
+            # Legacy behavior for backward compatibility
+            return self._evaluate_legacy(rule, inventory_df)
+    
+    def _evaluate_with_statistical_analysis(self, rule: Rule, inventory_df: pd.DataFrame, 
+                                          significance_threshold: float, min_severity_ratio: float) -> List[Dict[str, Any]]:
+        """Enhanced overcapacity detection with statistical analysis"""
+        anomalies = []
+        
+        # Calculate warehouse statistics
+        warehouse_stats = self._calculate_warehouse_statistics(inventory_df)
+        
+        # Calculate expected overcapacity using statistical model
+        expected_overcapacity = self._calculate_expected_overcapacity(inventory_df, warehouse_stats)
+        
+        # Count pallets per location
+        location_counts = inventory_df['location'].value_counts()
+        
+        # Find actual overcapacity locations
+        actual_overcapacity_locations = []
+        for location, count in location_counts.items():
+            location_obj = self._find_location_by_code(str(location))
+            capacity = self._get_location_capacity(location_obj, str(location))
+            
+            if count > capacity:
+                actual_overcapacity_locations.append({
+                    'location': location,
+                    'count': count,
+                    'capacity': capacity,
+                    'excess': count - capacity
+                })
+        
+        actual_overcapacity_count = len(actual_overcapacity_locations)
+        
+        # Calculate severity ratio
+        severity_ratio = (actual_overcapacity_count / expected_overcapacity['count']) if expected_overcapacity['count'] > 0 else float('inf')
+        
+        # Determine if this is a systematic issue or natural collision
+        overcapacity_category = self._categorize_overcapacity(
+            actual_overcapacity_count, expected_overcapacity, warehouse_stats, severity_ratio
+        )
+        
+        # Only create anomalies if severity exceeds thresholds
+        if severity_ratio >= min_severity_ratio and actual_overcapacity_count >= significance_threshold * expected_overcapacity['count']:
+            # Adjust priority based on severity
+            adjusted_priority = self._adjust_priority_by_severity(rule.priority, severity_ratio)
+            
+            for overcap_loc in actual_overcapacity_locations:
+                # Find all pallets in overcapacity location
+                pallets_in_loc = inventory_df[inventory_df['location'] == overcap_loc['location']]
+                for _, pallet in pallets_in_loc.iterrows():
+                    anomalies.append({
+                        'pallet_id': pallet['pallet_id'],
+                        'location': pallet['location'],
+                        'anomaly_type': 'Smart Overcapacity',
+                        'priority': adjusted_priority,
+                        'details': f"Location '{overcap_loc['location']}' has {overcap_loc['count']} pallets (capacity: {overcap_loc['capacity']})",
+                        'issue_description': f"Systematic overcapacity detected - {severity_ratio:.1f}x expected rate",
+                        # Enhanced statistical fields
+                        'utilization_rate': warehouse_stats['utilization_rate'],
+                        'expected_overcapacity_count': expected_overcapacity['count'],
+                        'actual_overcapacity_count': actual_overcapacity_count,
+                        'anomaly_severity_ratio': severity_ratio,
+                        'overcapacity_category': overcapacity_category,
+                        'warehouse_total_pallets': warehouse_stats['total_pallets'],
+                        'warehouse_total_capacity': warehouse_stats['total_capacity'],
+                        'statistical_model': expected_overcapacity['model_used'],
+                        'excess_pallets': overcap_loc['excess']
+                    })
+        
+        return anomalies
+    
+    def _calculate_warehouse_statistics(self, inventory_df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate warehouse utilization and capacity statistics"""
+        
+        # Get all unique locations and their capacities
+        unique_locations = inventory_df['location'].unique()
+        total_capacity = 0
+        valid_locations = 0
+        
+        for location in unique_locations:
+            location_obj = self._find_location_by_code(str(location))
+            capacity = self._get_location_capacity(location_obj, str(location))
+            total_capacity += capacity
+            valid_locations += 1
+        
+        total_pallets = len(inventory_df)
+        utilization_rate = total_pallets / total_capacity if total_capacity > 0 else 0
+        
+        # Calculate distribution metrics
+        location_counts = inventory_df['location'].value_counts()
+        avg_pallets_per_location = location_counts.mean()
+        std_pallets_per_location = location_counts.std()
+        
+        return {
+            'total_pallets': total_pallets,
+            'total_locations': valid_locations,
+            'total_capacity': total_capacity,
+            'utilization_rate': utilization_rate,
+            'avg_pallets_per_location': avg_pallets_per_location,
+            'std_pallets_per_location': std_pallets_per_location,
+            'occupied_locations': len(location_counts)
+        }
+    
+    def _calculate_expected_overcapacity(self, inventory_df: pd.DataFrame, 
+                                       warehouse_stats: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate expected random overcapacity using statistical models"""
+        
+        utilization_rate = warehouse_stats['utilization_rate']
+        total_pallets = warehouse_stats['total_pallets']
+        total_locations = warehouse_stats['total_locations']
+        
+        if utilization_rate <= 1.0:
+            # Low to moderate utilization: Use Poisson-like distribution
+            # Expected random collisions based on utilization rate
+            # Formula: For random distribution, probability of collision ≈ utilization_rate²
+            expected_count = total_locations * (utilization_rate ** 2) / 2
+            model_used = "Poisson-based random distribution"
+            
+            # For very low utilization, expect minimal random overcapacity
+            if utilization_rate < 0.3:
+                expected_count = max(1, expected_count * 0.5)
+                
+        else:
+            # High utilization: Most locations will be at or over capacity
+            # Expected overcapacity locations increases dramatically
+            if utilization_rate <= 1.5:
+                # Moderate overcapacity - linear increase
+                expected_count = total_locations * 0.3 * (utilization_rate - 1.0) + total_locations * 0.1
+            else:
+                # High overcapacity - most locations affected
+                expected_count = total_locations * 0.8
+            
+            model_used = "High utilization linear model"
+        
+        # Ensure minimum expected value for statistical comparison
+        expected_count = max(1.0, expected_count)
+        
+        return {
+            'count': expected_count,
+            'model_used': model_used,
+            'utilization_basis': utilization_rate,
+            'confidence_level': min(95, max(60, 100 - (abs(utilization_rate - 0.7) * 50)))
+        }
+    
+    def _categorize_overcapacity(self, actual_count: int, expected_overcapacity: Dict[str, Any], 
+                               warehouse_stats: Dict[str, Any], severity_ratio: float) -> str:
+        """Categorize overcapacity as Natural vs Systematic"""
+        
+        # Natural: Within expected statistical variance
+        if severity_ratio <= 1.5:
+            return "Natural"
+        
+        # Check utilization patterns
+        utilization_rate = warehouse_stats['utilization_rate']
+        
+        # Very high overcapacity or unusual distribution patterns suggest systematic issues
+        if severity_ratio >= 3.0:
+            return "Systematic"
+        
+        # Medium severity - depends on utilization context
+        if utilization_rate > 1.2 and severity_ratio >= 2.0:
+            return "Systematic"  # High utilization with significant excess suggests process issues
+        
+        return "Elevated Natural"  # Higher than expected but possibly still random
+    
+    def _adjust_priority_by_severity(self, base_priority: str, severity_ratio: float) -> str:
+        """Adjust priority based on severity ratio"""
+        priority_map = {"Low": 1, "Medium": 2, "High": 3, "Very High": 4}
+        reverse_map = {1: "Low", 2: "Medium", 3: "High", 4: "Very High"}
+        
+        current_level = priority_map.get(base_priority, 2)
+        
+        # Increase priority for high severity ratios
+        if severity_ratio >= 5.0:
+            adjusted_level = min(4, current_level + 2)
+        elif severity_ratio >= 3.0:
+            adjusted_level = min(4, current_level + 1)
+        else:
+            adjusted_level = current_level
+        
+        return reverse_map[adjusted_level]
+    
+    def _get_location_capacity(self, location_obj, location_str: str) -> int:
+        """Get location capacity with intelligent defaults"""
+        if location_obj and location_obj.capacity:
+            return location_obj.capacity
+        
+        # Intelligent defaults based on location naming patterns
+        location_upper = location_str.upper()
+        if any(x in location_upper for x in ['RECEIVING', 'STAGING', 'DOCK', 'LOADING']):
+            return 20  # Special handling areas
+        elif any(x in location_upper for x in ['AISLE', 'RACK', 'SHELF']):
+            return 5   # Standard storage
+        elif any(x in location_upper for x in ['BULK', 'FLOOR']):
+            return 15  # Floor storage areas
+        else:
+            return 5   # Default capacity
+    
+    def _evaluate_legacy(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Legacy overcapacity detection for backward compatibility"""
+        conditions = self._parse_conditions(rule)
         anomalies = []
         
         # Count pallets per location
@@ -695,16 +909,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         for location, count in location_counts.items():
             # Find location using smart matching to get capacity
             location_obj = self._find_location_by_code(str(location))
-            
-            if location_obj:
-                capacity = location_obj.capacity or 5  # Use DB capacity or default 5
-            else:
-                # For unknown locations, use intelligent defaults based on location type
-                location_str = str(location).upper()
-                if any(x in location_str for x in ['RECEIVING', 'STAGING', 'DOCK']):
-                    capacity = 20  # Special areas can hold more
-                else:
-                    capacity = 5   # Regular storage locations
+            capacity = self._get_location_capacity(location_obj, str(location))
             
             if count > capacity:
                 # Find all pallets in overcapacity location

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlertTriangle, CheckCircle2, Clock, Eye, MessageSquare, User, Calendar } from 'lucide-react'
-import { Anomaly, LocationSummary, reportsApi, getStatusColor, getPriorityColor } from '@/lib/reports'
+import { Anomaly, LocationSummary, reportsApi, getStatusColor, getPriorityColor, getOvercapacityCategoryColor } from '@/lib/reports'
 
 interface AnomalyStatusManagerProps {
   locations: LocationSummary[]
@@ -154,7 +154,7 @@ export function AnomalyStatusManager({ locations, onStatusUpdate }: AnomalyStatu
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <Badge className={getPriorityColor(anomaly.priority)}>
                         {anomaly.priority}
                       </Badge>
@@ -162,6 +162,11 @@ export function AnomalyStatusManager({ locations, onStatusUpdate }: AnomalyStatu
                         {getStatusIcon(anomaly.status)}
                         <span className="ml-1">{anomaly.status}</span>
                       </Badge>
+                      {anomaly.overcapacity_category && (
+                        <Badge className={getOvercapacityCategoryColor(anomaly.overcapacity_category)}>
+                          {anomaly.overcapacity_category}
+                        </Badge>
+                      )}
                     </div>
                     
                     <h4 className="font-semibold text-lg">{anomaly.anomaly_type}</h4>
@@ -171,6 +176,47 @@ export function AnomalyStatusManager({ locations, onStatusUpdate }: AnomalyStatu
                       <p className="text-sm text-gray-500 bg-gray-50 p-2 rounded">
                         {anomaly.details}
                       </p>
+                    )}
+
+                    {/* Enhanced Overcapacity Information */}
+                    {anomaly.anomaly_type === 'OVERCAPACITY' && (
+                      <div className="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+                        <div className="font-medium text-blue-900 text-sm">Overcapacity Analytics</div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          {anomaly.utilization_rate !== undefined && (
+                            <div>
+                              <span className="text-gray-600">Warehouse Utilization:</span>
+                              <span className="font-medium ml-1">{(anomaly.utilization_rate * 100).toFixed(1)}%</span>
+                            </div>
+                          )}
+                          {anomaly.anomaly_severity_ratio !== undefined && (
+                            <div>
+                              <span className="text-gray-600">Severity Ratio:</span>
+                              <span className="font-medium ml-1">{anomaly.anomaly_severity_ratio.toFixed(1)}x</span>
+                            </div>
+                          )}
+                          {anomaly.excess_pallets !== undefined && (
+                            <div>
+                              <span className="text-gray-600">Excess Pallets:</span>
+                              <span className="font-medium ml-1">{anomaly.excess_pallets}</span>
+                            </div>
+                          )}
+                          {anomaly.statistical_model && (
+                            <div className="col-span-2">
+                              <span className="text-gray-600">Model Used:</span>
+                              <span className="font-medium ml-1 text-xs">{anomaly.statistical_model}</span>
+                            </div>
+                          )}
+                        </div>
+                        {anomaly.expected_overcapacity_count !== undefined && anomaly.actual_overcapacity_count !== undefined && (
+                          <div className="pt-2 border-t border-blue-300">
+                            <div className="flex justify-between text-sm">
+                              <span>Expected Overcapacity: <strong>{anomaly.expected_overcapacity_count}</strong></span>
+                              <span>Actual Overcapacity: <strong>{anomaly.actual_overcapacity_count}</strong></span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   
@@ -257,6 +303,81 @@ export function AnomalyStatusManager({ locations, onStatusUpdate }: AnomalyStatu
                     <p className="text-gray-900 bg-gray-50 p-3 rounded mt-1">
                       {selectedAnomaly.details}
                     </p>
+                  </div>
+                )}
+
+                {/* Enhanced Overcapacity Analytics in Modal */}
+                {selectedAnomaly.anomaly_type === 'OVERCAPACITY' && (
+                  <div className="border-t pt-4">
+                    <label className="text-sm font-medium text-gray-500 mb-3 block">Overcapacity Analytics</label>
+                    <div className="bg-blue-50 border border-blue-200 rounded p-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        {selectedAnomaly.utilization_rate !== undefined && (
+                          <div>
+                            <span className="text-sm text-gray-600">Warehouse Utilization</span>
+                            <p className="font-semibold">{(selectedAnomaly.utilization_rate * 100).toFixed(1)}%</p>
+                          </div>
+                        )}
+                        {selectedAnomaly.anomaly_severity_ratio !== undefined && (
+                          <div>
+                            <span className="text-sm text-gray-600">Severity Ratio</span>
+                            <p className="font-semibold">{selectedAnomaly.anomaly_severity_ratio.toFixed(2)}x</p>
+                          </div>
+                        )}
+                        {selectedAnomaly.warehouse_total_pallets !== undefined && (
+                          <div>
+                            <span className="text-sm text-gray-600">Total Pallets</span>
+                            <p className="font-semibold">{selectedAnomaly.warehouse_total_pallets.toLocaleString()}</p>
+                          </div>
+                        )}
+                        {selectedAnomaly.warehouse_total_capacity !== undefined && (
+                          <div>
+                            <span className="text-sm text-gray-600">Total Capacity</span>
+                            <p className="font-semibold">{selectedAnomaly.warehouse_total_capacity.toLocaleString()}</p>
+                          </div>
+                        )}
+                        {selectedAnomaly.excess_pallets !== undefined && (
+                          <div>
+                            <span className="text-sm text-gray-600">Excess Pallets</span>
+                            <p className="font-semibold text-red-600">+{selectedAnomaly.excess_pallets}</p>
+                          </div>
+                        )}
+                        {selectedAnomaly.overcapacity_category && (
+                          <div>
+                            <span className="text-sm text-gray-600">Category</span>
+                            <Badge className={getOvercapacityCategoryColor(selectedAnomaly.overcapacity_category)}>
+                              {selectedAnomaly.overcapacity_category}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {selectedAnomaly.expected_overcapacity_count !== undefined && selectedAnomaly.actual_overcapacity_count !== undefined && (
+                        <div className="border-t border-blue-300 pt-3">
+                          <div className="text-sm font-medium text-blue-900 mb-2">Statistical Comparison</div>
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <span className="text-sm text-gray-600">Expected</span>
+                              <p className="font-semibold">{selectedAnomaly.expected_overcapacity_count}</p>
+                            </div>
+                            <div className="text-center">
+                              <span className="text-xs text-gray-500">vs</span>
+                            </div>
+                            <div>
+                              <span className="text-sm text-gray-600">Actual</span>
+                              <p className="font-semibold">{selectedAnomaly.actual_overcapacity_count}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {selectedAnomaly.statistical_model && (
+                        <div className="border-t border-blue-300 pt-3">
+                          <span className="text-sm text-gray-600">Statistical Model Used</span>
+                          <p className="text-sm font-medium">{selectedAnomaly.statistical_model}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </TabsContent>
