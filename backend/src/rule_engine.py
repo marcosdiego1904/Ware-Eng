@@ -695,7 +695,16 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         for location, count in location_counts.items():
             # Find location using smart matching to get capacity
             location_obj = self._find_location_by_code(str(location))
-            capacity = location_obj.capacity if location_obj else 1  # Default capacity 1
+            
+            if location_obj:
+                capacity = location_obj.capacity or 5  # Use DB capacity or default 5
+            else:
+                # For unknown locations, use intelligent defaults based on location type
+                location_str = str(location).upper()
+                if any(x in location_str for x in ['RECEIVING', 'STAGING', 'DOCK']):
+                    capacity = 20  # Special areas can hold more
+                else:
+                    capacity = 5   # Regular storage locations
             
             if count > capacity:
                 # Find all pallets in overcapacity location

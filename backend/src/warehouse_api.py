@@ -362,19 +362,14 @@ def setup_warehouse(current_user):
             
             # Create special areas (all existing locations were cleared above)
             for area in receiving_areas:
-                # Generate warehouse-specific code to avoid global conflicts
+                # Use clean location codes for special areas (no prefixes needed)
                 base_code = area['code']
-                if warehouse_id != 'DEFAULT':
-                    # For user-specific warehouses, prefix the code to ensure uniqueness
-                    warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
-                    unique_code = f"{warehouse_prefix}_{base_code}"
-                else:
-                    unique_code = base_code
+                unique_code = base_code  # Keep original code clean
                 
-                # Check for conflicts and add suffix if needed
+                # Only add suffix if there's a genuine conflict (rare for special areas)
                 attempt = 0
                 original_code = unique_code
-                while Location.query.filter_by(code=unique_code).first():
+                while Location.query.filter_by(code=unique_code, warehouse_id=warehouse_id).first():
                     attempt += 1
                     unique_code = f"{original_code}_{attempt}"
                 
@@ -396,19 +391,14 @@ def setup_warehouse(current_user):
             
             # Create staging areas (all existing locations were cleared above)
             for area in config.get_staging_areas():
-                # Generate warehouse-specific code to avoid global conflicts
+                # Use clean location codes for special areas (no prefixes needed)
                 base_code = area['code']
-                if warehouse_id != 'DEFAULT':
-                    # For user-specific warehouses, prefix the code to ensure uniqueness
-                    warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
-                    unique_code = f"{warehouse_prefix}_{base_code}"
-                else:
-                    unique_code = base_code
+                unique_code = base_code  # Keep original code clean
                 
-                # Check for conflicts and add suffix if needed
+                # Only add suffix if there's a genuine conflict (rare for special areas)
                 attempt = 0
                 original_code = unique_code
-                while Location.query.filter_by(code=unique_code).first():
+                while Location.query.filter_by(code=unique_code, warehouse_id=warehouse_id).first():
                     attempt += 1
                     unique_code = f"{original_code}_{attempt}"
                 
@@ -427,19 +417,14 @@ def setup_warehouse(current_user):
             
             # Create dock areas (FIX: This was missing entirely!)
             for area in config.get_dock_areas():
-                # Generate warehouse-specific code to avoid global conflicts
+                # Use clean location codes for special areas (no prefixes needed)
                 base_code = area['code']
-                if warehouse_id != 'DEFAULT':
-                    # For user-specific warehouses, prefix the code to ensure uniqueness
-                    warehouse_prefix = warehouse_id.replace('USER_', '')[:8]  # Max 8 chars
-                    unique_code = f"{warehouse_prefix}_{base_code}"
-                else:
-                    unique_code = base_code
+                unique_code = base_code  # Keep original code clean
                 
-                # Check for conflicts and add suffix if needed
+                # Only add suffix if there's a genuine conflict (rare for special areas)
                 attempt = 0
                 original_code = unique_code
-                while Location.query.filter_by(code=unique_code).first():
+                while Location.query.filter_by(code=unique_code, warehouse_id=warehouse_id).first():
                     attempt += 1
                     unique_code = f"{original_code}_{attempt}"
                 

@@ -39,6 +39,7 @@
       "Bash(git restore:*)",
       "Bash(del test_overcapacity_fix.py)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }
