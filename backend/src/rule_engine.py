@@ -793,6 +793,10 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                         break
             
             if not is_valid:
+                # Debug: Show what location failed validation
+                normalized = self._normalize_location_code(location)
+                print(f"[LOCATION_VALIDATION_FAILED] '{location}' -> Normalized: '{normalized}' -> NOT FOUND in valid set")
+                
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
