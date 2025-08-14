@@ -107,7 +107,7 @@ class RuleEngine:
             return self._evaluate_all_rules_internal(inventory_df, rule_ids)
     
     def _normalize_dataframe_columns(self, inventory_df: pd.DataFrame) -> pd.DataFrame:
-        """Normalize DataFrame column names to match expected format"""
+        """Normalize DataFrame column names and data types to match expected format"""
         df = inventory_df.copy()
         
         # Define column mapping from common variations to expected names
@@ -137,6 +137,16 @@ class RuleEngine:
         
         # Apply column mapping
         df = df.rename(columns=column_mapping)
+        
+        # CRITICAL FIX: Ensure creation_date is properly parsed as datetime
+        if 'creation_date' in df.columns:
+            # Convert to datetime if it's not already
+            if not pd.api.types.is_datetime64_any_dtype(df['creation_date']):
+                try:
+                    df['creation_date'] = pd.to_datetime(df['creation_date'])
+                    print(f"[RULE_ENGINE_DEBUG] Converted creation_date from {type(inventory_df['creation_date'].iloc[0] if len(inventory_df) > 0 else 'empty')} to datetime")
+                except Exception as e:
+                    print(f"[RULE_ENGINE_WARNING] Failed to convert creation_date to datetime: {e}")
         
         print(f"[RULE_ENGINE_DEBUG] Column normalization:")
         print(f"   Original columns: {list(inventory_df.columns)}")
