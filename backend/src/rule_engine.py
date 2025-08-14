@@ -760,10 +760,13 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         valid_locations = set()
         for loc in locations:
             valid_locations.add(loc.code)
-            # Also add normalized version
+            # Also add normalized version for flexibility
             normalized = self._normalize_location_code(loc.code)
             if normalized != loc.code:
                 valid_locations.add(normalized)
+        
+        # Debug: Show what we're looking for vs what's available
+        print(f"[INVALID_LOCATION_DEBUG] Sample valid locations: {list(valid_locations)[:10]}")
         
         for _, pallet in inventory_df.iterrows():
             location = str(pallet['location']).strip()
