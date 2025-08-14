@@ -71,9 +71,14 @@ production_origins = [
     'http://localhost:3002'
 ]
 
+# Always ensure production origins are included
 for origin in production_origins:
     if origin not in allowed_origins:
         allowed_origins.append(origin)
+
+# Force include the main production frontend URL
+if 'https://ware-eng.vercel.app' not in allowed_origins:
+    allowed_origins.append('https://ware-eng.vercel.app')
 
 print(f"CORS allowed origins: {allowed_origins}")
 
@@ -84,6 +89,16 @@ CORS(app,
      supports_credentials=True,
      expose_headers=["Authorization"],
      max_age=3600)
+
+# Global OPTIONS handler for preflight requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "*")
+        response.headers.add('Access-Control-Allow-Methods', "*")
+        return response
 
 # Create the API Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
