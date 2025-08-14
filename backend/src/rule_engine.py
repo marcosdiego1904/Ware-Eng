@@ -750,6 +750,21 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                 locations = []
         
         print(f"[INVALID_LOCATION_DEBUG] Found {len(locations)} valid locations in database")
+        
+        # Debug: Check what types of locations we have
+        location_types = {}
+        warehouse_ids = {}
+        sample_locations = []
+        for loc in locations:
+            location_types[loc.location_type] = location_types.get(loc.location_type, 0) + 1
+            warehouse_ids[loc.warehouse_id] = warehouse_ids.get(loc.warehouse_id, 0) + 1
+            if len(sample_locations) < 10:
+                sample_locations.append(f"{loc.code}({loc.warehouse_id})")
+        
+        print(f"[INVALID_LOCATION_DEBUG] Location types: {location_types}")
+        print(f"[INVALID_LOCATION_DEBUG] Warehouse IDs: {warehouse_ids}")
+        print(f"[INVALID_LOCATION_DEBUG] Sample locations: {sample_locations}")
+        
         valid_patterns = []
         
         for loc in locations:
@@ -765,6 +780,9 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             if normalized != loc.code:
                 valid_locations.add(normalized)
         
+        print(f"[INVALID_LOCATION_DEBUG] Created valid location set with {len(valid_locations)} entries")
+        print(f"[INVALID_LOCATION_DEBUG] Test locations - RECEIVING: {'RECEIVING' in valid_locations}, 001A: {'001A' in valid_locations}")
+        
         for _, pallet in inventory_df.iterrows():
             location = str(pallet['location']).strip()
             
@@ -774,23 +792,30 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             
             # Check if location exists directly or via normalization
             is_valid = False
+            validation_method = ""
             
             # 1. Direct lookup
             if location in valid_locations:
                 is_valid = True
+                validation_method = "direct"
             
             # 2. Try normalized lookup
             if not is_valid:
                 normalized_location = self._normalize_location_code(location)
                 if normalized_location in valid_locations:
                     is_valid = True
+                    validation_method = f"normalized({normalized_location})"
             
             # 3. Check against patterns if not directly valid
             if not is_valid:
                 for pattern in valid_patterns:
                     if self._matches_pattern(location, pattern):
                         is_valid = True
+                        validation_method = f"pattern({pattern})"
                         break
+            
+            # Debug each validation result
+            print(f"[LOCATION_VALIDATION] '{location}' -> Valid: {is_valid} ({validation_method if is_valid else 'INVALID'})")
             
             if not is_valid:
                 anomalies.append({
