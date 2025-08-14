@@ -378,28 +378,15 @@ class BaseRuleEvaluator:
     
     def _normalize_location_code(self, location_code: str) -> str:
         """
-        Normalize location codes by removing user prefixes and standardizing format
-        
-        Examples:
-        - "ALICE_A-01-01A" -> "A-01-01A"
-        - "USER_BOB_001A" -> "001A" 
-        - "WH01_RECEIVING" -> "RECEIVING"
-        - "A-01-01A" -> "A-01-01A" (unchanged)
+        Conservative normalization - keep database format intact
+        Based on debug output showing locations like: USER_02-01-042A, 01-01-017C
         """
         if not location_code:
             return location_code
             
         code = str(location_code).strip().upper()
         
-        # Remove common warehouse/user prefixes (simplified and faster)
-        # Handle USER_ prefixes specifically
-        if code.startswith('USER_'):
-            # Remove USER_USERNAME_ pattern
-            parts = code.split('_')
-            if len(parts) >= 3:  # USER_NAME_LOCATION
-                code = '_'.join(parts[2:])  # Keep everything after USER_NAME_
-        
-        # Handle other common prefixes with simple string operations (faster than regex)
+        # Only remove WH/DEFAULT prefixes, keep USER_ prefixes intact
         simple_prefixes = ['WH01_', 'WH02_', 'WH03_', 'WH04_', 'WH_', 'DEFAULT_']
         for prefix in simple_prefixes:
             if code.startswith(prefix):
