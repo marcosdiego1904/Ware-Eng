@@ -733,10 +733,23 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         anomalies = []
         
         # Get valid locations from database (include both is_active=True and NULL)
-        from sqlalchemy import or_
-        locations = Location.query.filter(
-            or_(Location.is_active == True, Location.is_active.is_(None))
-        ).all()
+        context = self._ensure_app_context()
+        if context:
+            with context:
+                from sqlalchemy import or_
+                locations = Location.query.filter(
+                    or_(Location.is_active == True, Location.is_active.is_(None))
+                ).all()
+        else:
+            try:
+                from sqlalchemy import or_
+                locations = Location.query.filter(
+                    or_(Location.is_active == True, Location.is_active.is_(None))
+                ).all()
+            except RuntimeError:
+                locations = []
+        
+        print(f"[INVALID_LOCATION_DEBUG] Found {len(locations)} valid locations in database")
         valid_locations = set()
         valid_patterns = []
         

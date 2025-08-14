@@ -1,60 +1,102 @@
 #!/usr/bin/env python3
 """
-Cleanup duplicate stagnant pallet rules to get the expected 2 anomalies
+Script to clean up duplicate rules in WareWise database
+
+This script identifies and removes duplicate rules, keeping only the essential 8 expected rules.
 """
+
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from app import app
-from database import db
-from models import Rule
+# Add backend src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-def cleanup_duplicate_rules():
-    """Deactivate duplicate/test stagnant pallet rules"""
-    print("=== CLEANING UP DUPLICATE STAGNANT PALLET RULES ===")
-    
+from app import app, db
+from models import Rule, RuleCategory
+
+def analyze_current_rules(app):
+    """Analyze current rule situation"""
     with app.app_context():
-        # Get all active STAGNANT_PALLETS rules
-        stagnant_rules = Rule.query.filter_by(rule_type='STAGNANT_PALLETS', is_active=True).all()
+        all_rules = Rule.query.all()
+        print(f"\n=== CURRENT RULE ANALYSIS ===")
+        print(f"Total rules in database: {len(all_rules)}")
         
-        print(f"Found {len(stagnant_rules)} active STAGNANT_PALLETS rules:")
-        for rule in stagnant_rules:
-            print(f"  - ID {rule.id}: {rule.name} (Priority: {rule.priority})")
+        # Group by rule type
+        rule_types = {}
+        for rule in all_rules:
+            rule_type = rule.rule_type
+            if rule_type not in rule_types:
+                rule_types[rule_type] = []
+            rule_types[rule_type].append(rule)
         
-        # Keep only the most important rule: "Forgotten Pallets Alert" (ID 1, VERY_HIGH)
-        # Deactivate test/debug rules that are duplicates
-        rules_to_deactivate = [
-            10, # "Test Rule Creation" 
-            11, # "Find Forgotten Pallets" (duplicate name with different ID)
-            12, # "Debug Test Rule"
-            14, # "Find Forgotten Pallets" (another duplicate)
-            # Keep 15,16,17 as they have different exclusion logic and currently produce 0 anomalies
-        ]
+        print(f"\nRules by type:")
+        for rule_type, rules in rule_types.items():
+            print(f"  {rule_type}: {len(rules)} rules")
+            for rule in rules:
+                status = "ACTIVE" if rule.is_active else "INACTIVE"
+                print(f"    - ID {rule.id}: '{rule.name}' ({status})")
         
-        print(f"\nDeactivating duplicate rules: {rules_to_deactivate}")
+        # Identify duplicates
+        duplicates = []
+        for rule_type, rules in rule_types.items():
+            if len(rules) > 1:
+                duplicates.extend(rules[1:])  # Keep first, mark others as duplicates
         
-        deactivated_count = 0
-        for rule_id in rules_to_deactivate:
-            rule = Rule.query.filter_by(id=rule_id).first()
-            if rule and rule.is_active:
-                rule.is_active = False
-                print(f"  OK Deactivated Rule ID {rule_id}: {rule.name}")
-                deactivated_count += 1
-            else:
-                print(f"  - Rule ID {rule_id} not found or already inactive")
-        
-        # Commit changes
-        db.session.commit()
-        
-        print(f"\nDeactivated {deactivated_count} duplicate rules")
-        
-        # Verify final state
-        remaining_active = Rule.query.filter_by(rule_type='STAGNANT_PALLETS', is_active=True).all()
-        print(f"\nRemaining active STAGNANT_PALLETS rules: {len(remaining_active)}")
-        for rule in remaining_active:
-            print(f"  - ID {rule.id}: {rule.name} (Priority: {rule.priority})")
-            print(f"    Conditions: {rule.conditions}")
+        print(f"\nDuplicate rules identified: {len(duplicates)}")
+        return all_rules, duplicates
 
-if __name__ == "__main__":
-    cleanup_duplicate_rules()
+def cleanup_rules(app, dry_run=True):
+    """Clean up duplicate rules"""
+    with app.app_context():
+        all_rules, duplicates = analyze_current_rules(app)
+        
+        if not duplicates:
+            print("No duplicate rules found!")
+            return
+        
+        print(f"\n=== CLEANUP PLAN ===")
+        print(f"Rules to remove: {len(duplicates)}")
+        
+        for rule in duplicates:
+            print(f"  - ID {rule.id}: '{rule.name}' ({rule.rule_type})")
+        
+        if dry_run:
+            print("\n[DRY RUN] No changes made. Use --execute to apply changes.")
+            return
+        
+        # Execute cleanup
+        print(f"\n=== EXECUTING CLEANUP ===")
+        for rule in duplicates:
+            print(f"Deleting rule ID {rule.id}: '{rule.name}'")
+            db.session.delete(rule)
+        
+        db.session.commit()
+        print(f"Successfully removed {len(duplicates)} duplicate rules!")
+        
+        # Verify cleanup
+        remaining_rules = Rule.query.all()
+        print(f"Remaining rules: {len(remaining_rules)}")
+
+def main():
+    """Main cleanup function"""
+    dry_run = '--execute' not in sys.argv
+    
+    print("WareWise Rule Cleanup Tool")
+    print("=" * 50)
+    
+    if dry_run:
+        print("Running in DRY RUN mode. Use --execute to apply changes.")
+    else:
+        print("EXECUTING CHANGES!")
+    
+    # Analyze and cleanup using existing app
+    cleanup_rules(app, dry_run)
+    
+    print(f"\n=== SUMMARY ===")
+    if dry_run:
+        print("Analysis complete. Run with --execute to apply changes.")
+    else:
+        print("Cleanup complete! Database now has clean rule set.")
+
+if __name__ == '__main__':
+    main()
