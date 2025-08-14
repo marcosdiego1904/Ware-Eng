@@ -23,9 +23,7 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
-  Database,
   Gauge,
-  TrendingDown
 } from 'lucide-react'
 import { SystemHealthIndicator } from '@/components/dashboard/system-health-indicator'
 import { RecentActivityFeed } from '@/components/dashboard/recent-activity-feed'
@@ -357,7 +355,7 @@ export function OverviewView() {
       </div>
 
       {/* Warehouse Utilization Section */}
-      {stats.warehouseUtilization > 0 && (
+      {(stats.warehouseUtilization ?? 0) > 0 && (
         <Card className="border-blue-200 bg-blue-50/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
