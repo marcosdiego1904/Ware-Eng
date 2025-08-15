@@ -746,32 +746,20 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
             total_pallets = lot_df.shape[0]
             completion_ratio = final_pallets / total_pallets if total_pallets > 0 else 0
             
-            # CRITICAL FIX: Backwards logic - should flag INCOMPLETE lots, not complete ones
-            if completion_ratio < completion_threshold:
-                # Special handling for single-pallet receipts (always considered incomplete)
-                if total_pallets == 1 or completion_ratio == 0:
-                    stragglers = lot_df[lot_df['location_type'].isin(location_types)]
-                    for _, pallet in stragglers.iterrows():
-                        anomalies.append({
-                            'pallet_id': pallet['pallet_id'],
-                            'location': pallet['location'],
-                            'anomaly_type': 'Incomplete Lot',
-                            'priority': rule.priority,
-                            'issue_description': f"Only {completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet still in {pallet['location_type']}",
-                            'details': f"{completion_ratio:.0%} of lot '{receipt_number}' stored, but this pallet still in {pallet['location_type']}"
-                        })
-                else:
-                    # Multi-pallet lots with some progress but still incomplete
-                    stragglers = lot_df[lot_df['location_type'].isin(location_types)]
-                    for _, pallet in stragglers.iterrows():
-                        anomalies.append({
-                            'pallet_id': pallet['pallet_id'],
-                            'location': pallet['location'],
-                            'anomaly_type': 'Lot Straggler',
-                            'priority': rule.priority,
-                            'issue_description': f"Only {completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet still in {pallet['location_type']}",
-                            'details': f"{completion_ratio:.0%} of lot '{receipt_number}' stored, but this pallet still in {pallet['location_type']}"
-                        })
+            # FIXED: Only flag stragglers from mostly-complete lots (>=80% completion)
+            if completion_ratio >= completion_threshold and total_pallets > 1:
+                # Only flag multi-pallet lots where most pallets have been moved to final storage
+                # but some stragglers remain in receiving/staging areas
+                stragglers = lot_df[lot_df['location_type'].isin(location_types)]
+                for _, pallet in stragglers.iterrows():
+                    anomalies.append({
+                        'pallet_id': pallet['pallet_id'],
+                        'location': pallet['location'],
+                        'anomaly_type': 'Lot Straggler',
+                        'priority': rule.priority,
+                        'issue_description': f"{completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet left behind in {pallet['location_type']}",
+                        'details': f"{completion_ratio:.0%} of lot '{receipt_number}' already stored, but this pallet still in {pallet['location_type']}"
+                    })
         
         return anomalies
 

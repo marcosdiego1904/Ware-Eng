@@ -44,5 +44,6 @@
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
-  }
+  },
+  "outputStyle": "Explanatory"
 }
