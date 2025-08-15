@@ -803,6 +803,16 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             location_obj = self._find_location_by_code(str(location))
             capacity = self._get_location_capacity(location_obj, str(location))
             
+            # DEBUG: Log capacity calculation details
+            if self.debug:
+                location_type = location_obj.location_type if location_obj else 'NOT_FOUND'
+                db_capacity = getattr(location_obj, 'capacity', None) if location_obj else None
+                db_pallet_capacity = getattr(location_obj, 'pallet_capacity', None) if location_obj else None
+                print(f"[OVERCAPACITY_DEBUG] Location '{location}': count={count}, "
+                      f"capacity={capacity}, type={location_type}, "
+                      f"db_capacity={db_capacity}, db_pallet_capacity={db_pallet_capacity}, "
+                      f"found_in_db={location_obj is not None}")
+            
             if count > capacity:
                 actual_overcapacity_locations.append({
                     'location': location,
@@ -984,19 +994,42 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
     
     def _get_location_capacity(self, location_obj, location_str: str) -> int:
         """Get location capacity with intelligent defaults"""
-        if location_obj and location_obj.capacity:
+        # First priority: Use database capacity if available
+        if location_obj and hasattr(location_obj, 'capacity') and location_obj.capacity:
             return location_obj.capacity
+        elif location_obj and hasattr(location_obj, 'pallet_capacity') and location_obj.pallet_capacity:
+            return location_obj.pallet_capacity
         
-        # Intelligent defaults based on location naming patterns
+        # Second priority: Use location type from database if available
+        if location_obj and hasattr(location_obj, 'location_type'):
+            location_type = location_obj.location_type
+            if location_type == 'RECEIVING':
+                return 10  # Standard receiving capacity
+            elif location_type == 'STAGING':
+                return 5   # Standard staging capacity
+            elif location_type == 'DOCK':
+                return 2   # Standard dock capacity
+            elif location_type == 'TRANSITIONAL':
+                return 10  # AISLE locations - fixed capacity
+            elif location_type == 'STORAGE':
+                return 1   # Storage locations typically hold 1 pallet
+        
+        # Fallback: Pattern-based intelligent defaults
         location_upper = location_str.upper()
-        if any(x in location_upper for x in ['RECEIVING', 'STAGING', 'DOCK', 'LOADING']):
-            return 20  # Special handling areas
-        elif any(x in location_upper for x in ['AISLE', 'RACK', 'SHELF']):
-            return 5   # Standard storage
+        if any(x in location_upper for x in ['RECEIVING', 'RECV']):
+            return 10  # Receiving areas
+        elif any(x in location_upper for x in ['STAGING', 'STAGE']):
+            return 5   # Staging areas
+        elif any(x in location_upper for x in ['DOCK']):
+            return 2   # Dock areas
+        elif any(x in location_upper for x in ['AISLE']):
+            return 10  # FIXED: AISLE locations should have 10 capacity (transitional)
         elif any(x in location_upper for x in ['BULK', 'FLOOR']):
             return 15  # Floor storage areas
+        elif location_str.startswith('USER_') or any(x in location_upper for x in ['-', 'RACK', 'SHELF']):
+            return 1   # Storage positions typically hold 1 pallet
         else:
-            return 5   # Default capacity
+            return 5   # Conservative default
     
     def _evaluate_legacy(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         """Legacy overcapacity detection for backward compatibility"""
