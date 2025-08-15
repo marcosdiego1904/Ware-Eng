@@ -766,6 +766,10 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
 class OvercapacityEvaluator(BaseRuleEvaluator):
     """Evaluator for smart overcapacity detection with statistical analysis"""
     
+    def __init__(self, app=None):
+        super().__init__(app)
+        self.debug = True  # Enable debug logging for capacity calculations
+    
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
         parameters = self._parse_parameters(rule)
