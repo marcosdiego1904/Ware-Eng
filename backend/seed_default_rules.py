@@ -82,15 +82,15 @@ def create_default_rules(categories):
             "name": "Forgotten Pallets Alert",
             "rule_type": "STAGNANT_PALLETS",
             "category": "FLOW_TIME",
-            "description": "Detects pallets that have been sitting in receiving or transitional areas for too long",
+            "description": "Detects pallets that have been in RECEIVING areas for more than 10 hours, indicating workflow inefficiencies or forgotten items.",
             "conditions": {
-                "location_types": ["RECEIVING", "TRANSITIONAL"],
-                "time_threshold_hours": 6
+                "location_types": ["RECEIVING"],
+                "time_threshold_hours": 10
             },
             "parameters": {
-                "time_threshold_hours": {"type": "integer", "min": 1, "max": 24, "default": 6}
+                "time_threshold_hours": {"type": "integer", "min": 1, "max": 24, "default": 10}
             },
-            "priority": "VERY_HIGH"
+            "priority": "HIGH"
         },
         {
             "name": "Incomplete Lots Alert", 
