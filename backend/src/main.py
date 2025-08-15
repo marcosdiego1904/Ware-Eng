@@ -255,10 +255,10 @@ def summarize_anomalies_by_location(anomalies):
     
     summary_list = []
     priority_map = {
-        'VERY_HIGH': 4, 'VERY HIGH': 4,  # Support both formats
-        'HIGH': 3, 
-        'MEDIUM': 2, 
-        'LOW': 1
+        'VERY_HIGH': 4, 'VERY HIGH': 4, 'Very High': 4, 'very high': 4,  # Support all formats
+        'HIGH': 3, 'High': 3, 'high': 3,
+        'MEDIUM': 2, 'Medium': 2, 'medium': 2,
+        'LOW': 1, 'Low': 1, 'low': 1
     }
     reverse_priority_map = {4: 'VERY_HIGH', 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW'}
 
