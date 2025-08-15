@@ -1053,6 +1053,18 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         print(f"[INVALID_LOCATION_DEBUG] Found {len(locations)} valid locations in database")
         valid_patterns = []
         
+        # DEBUG: Show warehouse distribution
+        warehouse_counts = {}
+        for loc in locations:
+            warehouse_counts[loc.warehouse_id] = warehouse_counts.get(loc.warehouse_id, 0) + 1
+        print(f"[INVALID_LOCATION_DEBUG] Warehouse distribution: {warehouse_counts}")
+        
+        # DEBUG: Check if AISLE locations are in the query result
+        aisle_in_query = [loc for loc in locations if 'AISLE' in loc.code]
+        print(f"[INVALID_LOCATION_DEBUG] AISLE locations in query result: {len(aisle_in_query)}")
+        for loc in aisle_in_query:
+            print(f"[INVALID_LOCATION_DEBUG]   - {loc.code} (warehouse: {loc.warehouse_id}, active: {loc.is_active})")
+        
         for loc in locations:
             if loc.pattern:
                 valid_patterns.append(loc.pattern)
@@ -1096,6 +1108,11 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         print(f"[INVALID_LOCATION_DEBUG] Sample base codes: {list(valid_base_codes)[:10]}")
         print(f"[INVALID_LOCATION_DEBUG] Sample position normalized: {list(valid_position_normalized)[:10]}")
         print(f"[INVALID_LOCATION_DEBUG] Total lookup sets - locations: {len(valid_locations)}, base: {len(valid_base_codes)}, position: {len(valid_position_normalized)}")
+        
+        # DEBUG: Check if AISLE locations made it into valid_locations set
+        aisle_locations_test = ['AISLE-A', 'AISLE-B', 'AISLETEST']
+        aisle_in_set = [loc for loc in aisle_locations_test if loc in valid_locations]
+        print(f"[INVALID_LOCATION_DEBUG] AISLE locations in final valid_locations set: {aisle_in_set}")
         
         for _, pallet in inventory_df.iterrows():
             location = str(pallet['location']).strip()
@@ -1187,18 +1204,26 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
             )
         ]
         
+        print(f"[AISLE_STAGNANT_DEBUG] Found {len(matching_pallets)} pallets matching pattern '{location_pattern}'")
+        print(f"[AISLE_STAGNANT_DEBUG] Time threshold: {time_threshold} hours")
+        
         for _, pallet in matching_pallets.iterrows():
             if pd.isna(pallet.get('creation_date')):
                 continue
                 
             time_diff = now - pallet['creation_date']
-            if time_diff > timedelta(hours=time_threshold):
+            time_diff_hours = time_diff.total_seconds() / 3600
+            exceeds_threshold = time_diff > timedelta(hours=time_threshold)
+            
+            print(f"[AISLE_STAGNANT_DEBUG] {pallet['pallet_id']} in {pallet['location']}: {time_diff_hours:.1f}h (threshold: {time_threshold}h) -> {'VIOLATION' if exceeds_threshold else 'OK'}")
+            
+            if exceeds_threshold:
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
                     'anomaly_type': 'Location-Specific Stagnant',
                     'priority': rule.priority,
-                    'details': f"Pallet stuck in {pallet['location']} for {time_diff.total_seconds()/3600:.1f}h"
+                    'details': f"Pallet stuck in {pallet['location']} for {time_diff_hours:.1f}h"
                 })
         
         return anomalies
