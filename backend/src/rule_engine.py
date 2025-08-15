@@ -998,11 +998,19 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
     
     def _get_location_capacity(self, location_obj, location_str: str) -> int:
         """Get location capacity with intelligent defaults"""
-        # First priority: Use database capacity if available
-        if location_obj and hasattr(location_obj, 'capacity') and location_obj.capacity:
-            return location_obj.capacity
-        elif location_obj and hasattr(location_obj, 'pallet_capacity') and location_obj.pallet_capacity:
-            return location_obj.pallet_capacity
+        # First priority: Use database capacity with type-specific preferences
+        if location_obj:
+            # For TRANSITIONAL locations, prefer pallet_capacity over capacity
+            if (hasattr(location_obj, 'location_type') and 
+                location_obj.location_type == 'TRANSITIONAL' and
+                hasattr(location_obj, 'pallet_capacity') and location_obj.pallet_capacity):
+                return location_obj.pallet_capacity
+            
+            # For other locations, prefer capacity first
+            if hasattr(location_obj, 'capacity') and location_obj.capacity:
+                return location_obj.capacity
+            elif hasattr(location_obj, 'pallet_capacity') and location_obj.pallet_capacity:
+                return location_obj.pallet_capacity
         
         # Second priority: Use location type from database if available
         if location_obj and hasattr(location_obj, 'location_type'):
