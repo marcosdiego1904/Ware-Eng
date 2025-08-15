@@ -746,16 +746,32 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
             total_pallets = lot_df.shape[0]
             completion_ratio = final_pallets / total_pallets if total_pallets > 0 else 0
             
-            if completion_ratio >= completion_threshold:
-                stragglers = lot_df[lot_df['location_type'].isin(location_types)]
-                for _, pallet in stragglers.iterrows():
-                    anomalies.append({
-                        'pallet_id': pallet['pallet_id'],
-                        'location': pallet['location'],
-                        'anomaly_type': 'Lot Straggler',
-                        'priority': rule.priority,
-                        'details': f"{completion_ratio:.0%} of lot '{receipt_number}' stored, but this pallet still in {pallet['location_type']}"
-                    })
+            # CRITICAL FIX: Backwards logic - should flag INCOMPLETE lots, not complete ones
+            if completion_ratio < completion_threshold:
+                # Special handling for single-pallet receipts (always considered incomplete)
+                if total_pallets == 1 or completion_ratio == 0:
+                    stragglers = lot_df[lot_df['location_type'].isin(location_types)]
+                    for _, pallet in stragglers.iterrows():
+                        anomalies.append({
+                            'pallet_id': pallet['pallet_id'],
+                            'location': pallet['location'],
+                            'anomaly_type': 'Incomplete Lot',
+                            'priority': rule.priority,
+                            'issue_description': f"Only {completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet still in {pallet['location_type']}",
+                            'details': f"{completion_ratio:.0%} of lot '{receipt_number}' stored, but this pallet still in {pallet['location_type']}"
+                        })
+                else:
+                    # Multi-pallet lots with some progress but still incomplete
+                    stragglers = lot_df[lot_df['location_type'].isin(location_types)]
+                    for _, pallet in stragglers.iterrows():
+                        anomalies.append({
+                            'pallet_id': pallet['pallet_id'],
+                            'location': pallet['location'],
+                            'anomaly_type': 'Lot Straggler',
+                            'priority': rule.priority,
+                            'issue_description': f"Only {completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet still in {pallet['location_type']}",
+                            'details': f"{completion_ratio:.0%} of lot '{receipt_number}' stored, but this pallet still in {pallet['location_type']}"
+                        })
         
         return anomalies
 
@@ -768,8 +784,8 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         
         # Check if statistical analysis is enabled (default: True for new behavior)
         use_statistical_analysis = parameters.get('use_statistical_analysis', True)
-        significance_threshold = parameters.get('significance_threshold', 2.0)  # Only flag if 2x expected
-        min_severity_ratio = parameters.get('min_severity_ratio', 1.5)  # Minimum severity to report
+        significance_threshold = parameters.get('significance_threshold', 1.0)  # LOWERED: Flag if 1x expected (was 2.0)
+        min_severity_ratio = parameters.get('min_severity_ratio', 1.2)  # LOWERED: Minimum severity to report (was 1.5)
         
         if use_statistical_analysis:
             return self._evaluate_with_statistical_analysis(
@@ -817,32 +833,52 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             actual_overcapacity_count, expected_overcapacity, warehouse_stats, severity_ratio
         )
         
-        # Only create anomalies if severity exceeds thresholds
-        if severity_ratio >= min_severity_ratio and actual_overcapacity_count >= significance_threshold * expected_overcapacity['count']:
+        # CRITICAL FIX: Add obvious violation bypass before statistical analysis
+        should_flag_anomalies = False
+        bypass_reason = None
+        
+        # 1. Obvious violations bypass (>2x capacity) - always flag these regardless of statistics
+        obvious_violations = [loc for loc in actual_overcapacity_locations if loc['count'] > loc['capacity'] * 2]
+        if obvious_violations:
+            should_flag_anomalies = True
+            bypass_reason = f"Obvious violations detected: {len(obvious_violations)} locations with >2x capacity"
+        
+        # 2. Statistical analysis for borderline cases
+        elif severity_ratio >= min_severity_ratio and actual_overcapacity_count >= significance_threshold * expected_overcapacity['count']:
+            should_flag_anomalies = True
+            bypass_reason = f"Statistical significance: {severity_ratio:.1f}x severity ratio"
+        
+        if should_flag_anomalies:
             # Adjust priority based on severity
             adjusted_priority = self._adjust_priority_by_severity(rule.priority, severity_ratio)
             
             for overcap_loc in actual_overcapacity_locations:
+                # Determine if this is an obvious violation
+                is_obvious = overcap_loc['count'] > overcap_loc['capacity'] * 2
+                violation_severity = overcap_loc['count'] / overcap_loc['capacity'] if overcap_loc['capacity'] > 0 else float('inf')
+                
                 # Find all pallets in overcapacity location
                 pallets_in_loc = inventory_df[inventory_df['location'] == overcap_loc['location']]
                 for _, pallet in pallets_in_loc.iterrows():
                     anomalies.append({
                         'pallet_id': pallet['pallet_id'],
                         'location': pallet['location'],
-                        'anomaly_type': 'Smart Overcapacity',
-                        'priority': adjusted_priority,
+                        'anomaly_type': 'Obvious Violation' if is_obvious else 'Smart Overcapacity',
+                        'priority': 'Very High' if is_obvious else adjusted_priority,
                         'details': f"Location '{overcap_loc['location']}' has {overcap_loc['count']} pallets (capacity: {overcap_loc['capacity']})",
-                        'issue_description': f"Systematic overcapacity detected - {severity_ratio:.1f}x expected rate",
+                        'issue_description': f"{'Obvious overcapacity violation' if is_obvious else 'Systematic overcapacity detected'} - {violation_severity:.1f}x capacity",
                         # Enhanced statistical fields
                         'utilization_rate': warehouse_stats['utilization_rate'],
                         'expected_overcapacity_count': expected_overcapacity['count'],
                         'actual_overcapacity_count': actual_overcapacity_count,
                         'anomaly_severity_ratio': severity_ratio,
-                        'overcapacity_category': overcapacity_category,
+                        'overcapacity_category': 'Obvious Violation' if is_obvious else overcapacity_category,
                         'warehouse_total_pallets': warehouse_stats['total_pallets'],
                         'warehouse_total_capacity': warehouse_stats['total_capacity'],
-                        'statistical_model': expected_overcapacity['model_used'],
-                        'excess_pallets': overcap_loc['excess']
+                        'statistical_model': 'Obvious violation bypass' if is_obvious else expected_overcapacity['model_used'],
+                        'excess_pallets': overcap_loc['excess'],
+                        'violation_severity': violation_severity,
+                        'bypass_reason': bypass_reason
                     })
         
         return anomalies
