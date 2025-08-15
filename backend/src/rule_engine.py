@@ -433,6 +433,45 @@ class BaseRuleEvaluator:
         
         return code
     
+    def _normalize_position_format(self, location_code: str) -> list:
+        """
+        Generate multiple normalized position formats for comprehensive matching
+        
+        Examples:
+        - 02-06-03A -> ['02-06-03A', '02-06-003A'] (2-digit to 3-digit)
+        - 02-06-003A -> ['02-06-003A', '02-06-03A'] (3-digit to 2-digit)
+        - FINAL-006 -> ['FINAL-006'] (special locations unchanged)
+        
+        Returns:
+            List of normalized location codes for matching
+        """
+        if not location_code:
+            return [location_code]
+            
+        code = str(location_code).strip().upper()
+        
+        # Import regex inside method to avoid top-level import issues
+        import re
+        
+        # Pattern for aisle-rack-position format: XX-XX-XXXA or XX-XX-XXXXA
+        aisle_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{2,3})([A-Z])$', code)
+        
+        if aisle_pattern:
+            aisle, rack, position, level = aisle_pattern.groups()
+            
+            # Generate both 2-digit and 3-digit position formats
+            position_2digit = position.lstrip('0').zfill(2) if len(position) > 2 else position
+            position_3digit = position.zfill(3)
+            
+            format_2digit = f"{aisle.zfill(2)}-{rack.zfill(2)}-{position_2digit}{level}"
+            format_3digit = f"{aisle.zfill(2)}-{rack.zfill(2)}-{position_3digit}{level}"
+            
+            # Return both formats, removing duplicates
+            return list(set([format_2digit, format_3digit]))
+        
+        # For non-standard formats, return as-is
+        return [code]
+    
     def _find_location_by_code(self, location_code: str) -> 'Location':
         """
         Find location in database using smart matching (handles user prefixes)
@@ -997,6 +1036,7 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         # Create comprehensive lookup sets for all possible location formats
         valid_locations = set()
         valid_base_codes = set()  # Base codes without prefixes/suffixes
+        valid_position_normalized = set()  # Position-normalized codes
         
         for loc in locations:
             # Add exact database code
@@ -1007,19 +1047,31 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             if base_code:
                 valid_base_codes.add(base_code)
                 valid_locations.add(base_code)  # Also add to main set
+                
+                # Generate position-normalized variants for database locations
+                position_variants = self._normalize_position_format(base_code)
+                for variant in position_variants:
+                    valid_position_normalized.add(variant)
+                    valid_locations.add(variant)
             
             # Add normalized version
             normalized = self._normalize_location_code(loc.code)
             if normalized != loc.code:
                 valid_locations.add(normalized)
-                # Also add base of normalized
+                # Also add base and position variants of normalized
                 base_normalized = self._extract_base_location_code(normalized)
                 if base_normalized:
                     valid_base_codes.add(base_normalized)
+                    position_variants = self._normalize_position_format(base_normalized)
+                    for variant in position_variants:
+                        valid_position_normalized.add(variant)
+                        valid_locations.add(variant)
         
         # Debug: Show what we're looking for vs what's available
         print(f"[INVALID_LOCATION_DEBUG] Sample valid locations: {list(valid_locations)[:10]}")
         print(f"[INVALID_LOCATION_DEBUG] Sample base codes: {list(valid_base_codes)[:10]}")
+        print(f"[INVALID_LOCATION_DEBUG] Sample position normalized: {list(valid_position_normalized)[:10]}")
+        print(f"[INVALID_LOCATION_DEBUG] Total lookup sets - locations: {len(valid_locations)}, base: {len(valid_base_codes)}, position: {len(valid_position_normalized)}")
         
         for _, pallet in inventory_df.iterrows():
             location = str(pallet['location']).strip()
@@ -1041,17 +1093,34 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                 if base_location and base_location in valid_base_codes:
                     is_valid = True
             
-            # 3. Try normalized lookup
+            # 3. Try position format normalization (CRITICAL FIX for 2-digit vs 3-digit position)
+            if not is_valid:
+                position_variants = self._normalize_position_format(location)
+                for variant in position_variants:
+                    if variant in valid_position_normalized:
+                        is_valid = True
+                        break
+                    # Also try base extraction on variants
+                    base_variant = self._extract_base_location_code(variant)
+                    if base_variant and base_variant in valid_base_codes:
+                        is_valid = True
+                        break
+            
+            # 4. Try normalized lookup
             if not is_valid:
                 normalized_location = self._normalize_location_code(location)
                 if normalized_location in valid_locations:
                     is_valid = True
-                # Also try base of normalized
+                # Also try base of normalized with position variants
                 base_normalized = self._extract_base_location_code(normalized_location)
-                if base_normalized and base_normalized in valid_base_codes:
-                    is_valid = True
+                if base_normalized:
+                    position_variants = self._normalize_position_format(base_normalized)
+                    for variant in position_variants:
+                        if variant in valid_position_normalized:
+                            is_valid = True
+                            break
             
-            # 4. Check against patterns if not directly valid
+            # 5. Check against patterns if not directly valid
             if not is_valid:
                 for pattern in valid_patterns:
                     if self._matches_pattern(location, pattern):
@@ -1059,9 +1128,11 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                         break
             
             if not is_valid:
-                # Debug: Show what location failed validation
+                # Enhanced debug: Show all transformation attempts
                 normalized = self._normalize_location_code(location)
-                print(f"[LOCATION_VALIDATION_FAILED] '{location}' -> Normalized: '{normalized}' -> NOT FOUND in valid set")
+                base_location = self._extract_base_location_code(location)
+                position_variants = self._normalize_position_format(location)
+                print(f"[LOCATION_VALIDATION_FAILED] '{location}' -> Normalized: '{normalized}' -> Base: '{base_location}' -> Position variants: {position_variants} -> NOT FOUND in valid set")
                 
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
