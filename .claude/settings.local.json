@@ -40,7 +40,10 @@
       "Bash(del test_overcapacity_fix.py)",
       "Bash(git checkout:*)",
       "Bash(sed:*)",
-      "Bash(set FLASK_SECRET_KEY=temp_key_for_analysis)"
+      "Bash(set FLASK_SECRET_KEY=temp_key_for_analysis)",
+      "Bash(echo:*)",
+      "Bash(sqlite3:*)",
+      "WebFetch(domain:ware-eng.vercel.app)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

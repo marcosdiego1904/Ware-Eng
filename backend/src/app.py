@@ -219,6 +219,142 @@ def debug_config():
         'environment_origins': os.environ.get('ALLOWED_ORIGINS', 'not set')
     })
 
+# Rule engine debugging endpoint for investigation  
+@api_bp.route('/debug/rule-engine-test', methods=['GET'])
+def rule_engine_test():
+    """EMERGENCY DEBUG ENDPOINT - Test rule engine loading"""
+    try:
+        # Load enhanced engine if not already loaded
+        load_enhanced_engine()
+        
+        if not HAS_ENHANCED_ENGINE:
+            return jsonify({'error': 'Enhanced engine not available'}), 500
+        
+        # Import rule engine directly
+        from rule_engine import RuleEngine
+        engine = RuleEngine(db_session=db.session, app=app)
+        
+        # Load rules directly through engine
+        loaded_rules = engine.load_active_rules()
+        
+        # Get Rule #1 specifically
+        rule_1 = next((r for r in loaded_rules if r.id == 1), None)
+        
+        rule_1_data = None
+        if rule_1:
+            import json
+            try:
+                conditions = json.loads(rule_1.conditions)
+                rule_1_data = {
+                    'id': rule_1.id,
+                    'name': rule_1.name,
+                    'conditions_raw': rule_1.conditions,
+                    'time_threshold_hours': conditions.get('time_threshold_hours'),
+                    'location_types': conditions.get('location_types'),
+                    'is_active': rule_1.is_active
+                }
+            except Exception as parse_error:
+                rule_1_data = {
+                    'id': rule_1.id,
+                    'name': rule_1.name,
+                    'conditions_raw': rule_1.conditions,
+                    'parse_error': str(parse_error)
+                }
+        
+        return jsonify({
+            'engine_test_timestamp': datetime.utcnow().isoformat(),
+            'enhanced_engine_available': HAS_ENHANCED_ENGINE,
+            'rule_engine_results': {
+                'total_rules_loaded': len(loaded_rules),
+                'rule_ids_loaded': [r.id for r in loaded_rules],
+                'rule_1_data': rule_1_data,
+                'rule_1_found': rule_1 is not None
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'engine_test_error': str(e),
+            'traceback': traceback.format_exc(),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+# Database debugging endpoint for investigation
+@api_bp.route('/debug/database-investigation', methods=['GET'])
+def database_investigation():
+    """EMERGENCY DEBUG ENDPOINT - Investigate database mystery"""
+    try:
+        import json
+        from models import Rule, RuleCategory, Location
+        
+        # Get the database URI being used
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set')
+        
+        # Check database connection  
+        from sqlalchemy import text
+        db.session.execute(text('SELECT 1'))
+        
+        # Get Rule #1 specifically
+        rule_1 = Rule.query.filter_by(id=1).first()
+        rule_1_data = None
+        if rule_1:
+            try:
+                conditions = json.loads(rule_1.conditions)
+                rule_1_data = {
+                    'id': rule_1.id,
+                    'name': rule_1.name,
+                    'conditions_raw': rule_1.conditions,
+                    'time_threshold_hours': conditions.get('time_threshold_hours'),
+                    'location_types': conditions.get('location_types'),
+                    'is_active': rule_1.is_active
+                }
+            except Exception as parse_error:
+                rule_1_data = {
+                    'id': rule_1.id,
+                    'name': rule_1.name,
+                    'conditions_raw': rule_1.conditions,
+                    'parse_error': str(parse_error)
+                }
+        
+        # Check all active rules
+        active_rules = Rule.query.filter_by(is_active=True).all()
+        active_rule_ids = [r.id for r in active_rules]
+        
+        # Get working directory info
+        import os
+        cwd = os.getcwd()
+        _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        instance_path = os.path.join(_project_root, 'instance')
+        db_path = os.path.join(instance_path, 'database.db')
+        
+        return jsonify({
+            'investigation_timestamp': datetime.utcnow().isoformat(),
+            'database_config': {
+                'uri': db_uri,
+                'calculated_db_path': db_path,
+                'db_file_exists': os.path.exists(db_path),
+                'current_working_directory': cwd,
+                'project_root': _project_root,
+                'instance_path': instance_path,
+                'app_py_location': __file__
+            },
+            'rule_investigation': {
+                'rule_1_data': rule_1_data,
+                'rule_1_exists': rule_1 is not None,
+                'total_active_rules': len(active_rules),
+                'active_rule_ids': active_rule_ids
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'investigation_error': str(e),
+            'traceback': traceback.format_exc(),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
 # Health check endpoint for database and rules
 @api_bp.route('/health', methods=['GET'])
 def health_check():
