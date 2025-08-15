@@ -1034,6 +1034,7 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         anomalies = []
         
         # Get valid locations from database (include both is_active=True and NULL)
+        # FIXED: Load ALL active locations across ALL warehouses for validation
         context = self._ensure_app_context()
         if context:
             with context:

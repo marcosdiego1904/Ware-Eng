@@ -82,6 +82,19 @@ def generate_locations_from_template(template, warehouse_id, current_user):
             (template.staging_areas_template, 'STAGING', 'STAGING', 5),
             (template.dock_areas_template, 'DOCK', 'DOCK', 2)
         ]
+        
+        # FIXED: Generate AISLE locations for Rule #5 (stuck pallets detection)
+        # Create one AISLE location per aisle for transitional pallet tracking
+        aisle_locations_data = []
+        for aisle_num in range(1, template.num_aisles + 1):
+            aisle_locations_data.append({
+                'code': f'AISLE-{aisle_num:02d}',
+                'capacity': 10,  # Temporary capacity for pallets in transit
+                'zone': 'GENERAL'
+            })
+        
+        # Add AISLE locations to special area configs
+        special_area_configs.append((json.dumps(aisle_locations_data), 'TRANSITIONAL', 'GENERAL', 10))
 
         special_locations_batch = []
         
