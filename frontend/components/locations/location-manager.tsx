@@ -271,7 +271,8 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     return locations.filter(location => 
       location.location_type === 'RECEIVING' || 
       location.location_type === 'STAGING' || 
-      location.location_type === 'DOCK'
+      location.location_type === 'DOCK' ||
+      location.location_type === 'TRANSITIONAL'
     );
   }, [locations]);
 

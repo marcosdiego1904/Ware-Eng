@@ -91,6 +91,12 @@ interface TemplateData {
     capacity: number;
     zone: string;
   }>;
+  aisle_areas: Array<{
+    code: string;
+    type: string;
+    capacity: number;
+    zone: string;
+  }>;
 }
 
 const INITIAL_TEMPLATE_DATA: TemplateData = {
@@ -112,7 +118,8 @@ const INITIAL_TEMPLATE_DATA: TemplateData = {
     { code: 'RECEIVING', type: 'RECEIVING', capacity: 10, zone: 'DOCK' }
   ],
   staging_areas: [],
-  dock_areas: []
+  dock_areas: [],
+  aisle_areas: []
 };
 
 const TEMPLATE_CATEGORIES = [
@@ -170,7 +177,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     const storageLocations = templateData.num_aisles * templateData.racks_per_aisle * 
                            templateData.positions_per_rack * templateData.levels_per_position;
     const storageCapacity = storageLocations * templateData.default_pallet_capacity;
-    const specialCapacity = [...templateData.receiving_areas, ...templateData.staging_areas, ...templateData.dock_areas]
+    const specialCapacity = [...templateData.receiving_areas, ...templateData.staging_areas, ...templateData.dock_areas, ...templateData.aisle_areas]
                           .reduce((sum, area) => sum + area.capacity, 0);
     
     return {
@@ -230,6 +237,19 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     updateTemplateData({
       dock_areas: [...templateData.dock_areas, newArea]
     });
+  };
+
+  const generateAisleAreas = () => {
+    const aisleAreas = [];
+    for (let i = 1; i <= templateData.num_aisles; i++) {
+      aisleAreas.push({
+        code: `AISLE-${String(i).padStart(2, '0')}`,
+        type: 'TRANSITIONAL',
+        capacity: 10,
+        zone: 'GENERAL'
+      });
+    }
+    updateTemplateData({ aisle_areas: aisleAreas });
   };
 
   const applyStarterTemplate = (starter: typeof STARTER_TEMPLATES[0]) => {
@@ -640,6 +660,30 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
           areaType="DOCK"
           onAreasChange={(areas) => updateTemplateData({ dock_areas: areas })}
         />
+        <SpecialAreaEditor
+          title="Aisle Areas"
+          description="Transitional areas for pallets in movement"
+          areas={templateData.aisle_areas}
+          areaType="TRANSITIONAL"
+          onAreasChange={(areas) => updateTemplateData({ aisle_areas: areas })}
+        />
+        
+        {templateData.aisle_areas.length === 0 && (
+          <Alert>
+            <Zap className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>Generate one aisle area per aisle ({templateData.num_aisles} aisles configured)</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={generateAisleAreas}
+                className="ml-4"
+              >
+                Auto-Generate
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     </div>
   );
@@ -739,7 +783,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
                 <div className="flex justify-between">
                   <span className="text-sm">Special Areas:</span>
                   <span className="font-medium">
-                    {templateData.receiving_areas.length + templateData.staging_areas.length + templateData.dock_areas.length}
+                    {templateData.receiving_areas.length + templateData.staging_areas.length + templateData.dock_areas.length + templateData.aisle_areas.length}
                   </span>
                 </div>
               </div>

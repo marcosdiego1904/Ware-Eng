@@ -6,7 +6,7 @@ export interface Location {
   id: number;
   code: string;
   pattern?: string;
-  location_type: 'RECEIVING' | 'STORAGE' | 'STAGING' | 'DOCK';
+  location_type: 'RECEIVING' | 'STORAGE' | 'STAGING' | 'DOCK' | 'TRANSITIONAL';
   capacity: number;
   allowed_products: string[];
   zone: string;

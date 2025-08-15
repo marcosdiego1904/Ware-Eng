@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Package, Building2, Truck } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, Building2, Truck, ArrowRightLeft } from 'lucide-react';
 
 interface SpecialArea {
   code: string;
@@ -33,7 +33,7 @@ interface SpecialAreaEditorProps {
   title: string;
   description: string;
   areas: SpecialArea[];
-  areaType: 'RECEIVING' | 'STAGING' | 'DOCK';
+  areaType: 'RECEIVING' | 'STAGING' | 'DOCK' | 'TRANSITIONAL';
   onAreasChange: (areas: SpecialArea[]) => void;
   icon?: React.ReactNode;
 }
@@ -60,12 +60,16 @@ export function SpecialAreaEditor({
       case 'RECEIVING': return 'DOCK';
       case 'STAGING': return 'STAGING';
       case 'DOCK': return 'DOCK';
+      case 'TRANSITIONAL': return 'GENERAL';
       default: return 'GENERAL';
     }
   }
 
   function getDefaultCode(type: string, count: number) {
-    const prefix = type === 'RECEIVING' ? 'RECV' : type === 'STAGING' ? 'STAGE' : 'DOCK';
+    const prefix = type === 'RECEIVING' ? 'RECV' : 
+                   type === 'STAGING' ? 'STAGE' : 
+                   type === 'DOCK' ? 'DOCK' : 
+                   type === 'TRANSITIONAL' ? 'AISLE' : 'AREA';
     return `${prefix}-${String(count + 1).padStart(2, '0')}`;
   }
 
@@ -73,7 +77,10 @@ export function SpecialAreaEditor({
     setEditForm({
       code: getDefaultCode(areaType, areas.length),
       type: areaType,
-      capacity: areaType === 'RECEIVING' ? 10 : areaType === 'STAGING' ? 5 : 2,
+      capacity: areaType === 'RECEIVING' ? 10 : 
+                areaType === 'STAGING' ? 5 : 
+                areaType === 'DOCK' ? 2 :
+                areaType === 'TRANSITIONAL' ? 10 : 5,
       zone: getDefaultZone(areaType)
     });
     setEditingIndex(null);
@@ -108,6 +115,7 @@ export function SpecialAreaEditor({
       case 'RECEIVING': return 'bg-blue-100 text-blue-700';
       case 'STAGING': return 'bg-yellow-100 text-yellow-700';
       case 'DOCK': return 'bg-green-100 text-green-700';
+      case 'TRANSITIONAL': return 'bg-purple-100 text-purple-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -118,6 +126,7 @@ export function SpecialAreaEditor({
       case 'RECEIVING': return <Package className="h-4 w-4" />;
       case 'STAGING': return <Building2 className="h-4 w-4" />;
       case 'DOCK': return <Truck className="h-4 w-4" />;
+      case 'TRANSITIONAL': return <ArrowRightLeft className="h-4 w-4" />;
       default: return <Package className="h-4 w-4" />;
     }
   };
@@ -180,7 +189,10 @@ export function SpecialAreaEditor({
               className="w-full"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add {areaType === 'RECEIVING' ? 'Receiving' : areaType === 'STAGING' ? 'Staging' : 'Dock'} Area
+              Add {areaType === 'RECEIVING' ? 'Receiving' : 
+                   areaType === 'STAGING' ? 'Staging' : 
+                   areaType === 'DOCK' ? 'Dock' :
+                   areaType === 'TRANSITIONAL' ? 'Aisle' : 'Area'} Area
             </Button>
           </div>
         </CardContent>
@@ -190,7 +202,10 @@ export function SpecialAreaEditor({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingIndex !== null ? 'Edit' : 'Add'} {areaType === 'RECEIVING' ? 'Receiving' : areaType === 'STAGING' ? 'Staging' : 'Dock'} Area
+              {editingIndex !== null ? 'Edit' : 'Add'} {areaType === 'RECEIVING' ? 'Receiving' : 
+                                                          areaType === 'STAGING' ? 'Staging' : 
+                                                          areaType === 'DOCK' ? 'Dock' :
+                                                          areaType === 'TRANSITIONAL' ? 'Aisle' : 'Area'} Area
             </DialogTitle>
             <DialogDescription>
               Configure the details for this special area

@@ -46,7 +46,7 @@ interface LocationFormProps {
 
 interface LocationFormData {
   code: string;
-  location_type: 'RECEIVING' | 'STORAGE' | 'STAGING' | 'DOCK';
+  location_type: 'RECEIVING' | 'STORAGE' | 'STAGING' | 'DOCK' | 'TRANSITIONAL';
   zone: string;
   capacity: number;
   pallet_capacity: number;
@@ -107,6 +107,8 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
       warnings.push('⚠️ High pallet capacity for storage location. Typical storage locations hold 1-2 pallets.');
     } else if (capacity > 50 && (locationType === 'RECEIVING' || locationType === 'STAGING')) {
       warnings.push('⚠️ Very high capacity for this location type. Please verify this is accurate.');
+    } else if (capacity > 25 && locationType === 'TRANSITIONAL') {
+      warnings.push('⚠️ High capacity for transitional location. Typical values are 5-15 pallets.');
     }
     
     // Check for suspicious values that might indicate typos
@@ -122,6 +124,8 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
       warnings.push('💡 High capacity for dock location. Typical dock areas hold 5-20 pallets.');
     } else if ((locationType === 'RECEIVING' || locationType === 'STAGING') && capacity > 30) {
       warnings.push('💡 High capacity for this area type. Typical values are 5-30 pallets.');
+    } else if (locationType === 'TRANSITIONAL' && capacity > 15) {
+      warnings.push('💡 High capacity for transitional area. Typical values are 5-15 pallets.');
     }
     
     // Helpful suggestions
@@ -357,6 +361,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
                           <SelectItem value="RECEIVING">Receiving</SelectItem>
                           <SelectItem value="STAGING">Staging</SelectItem>
                           <SelectItem value="DOCK">Dock</SelectItem>
+                          <SelectItem value="TRANSITIONAL">Transitional</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -397,6 +402,7 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
                         {locationType === 'RECEIVING' && 'Receiving: 5-30 pallets typical'}
                         {locationType === 'STAGING' && 'Staging: 5-30 pallets typical'}
                         {locationType === 'DOCK' && 'Dock: 5-20 pallets typical'}
+                        {locationType === 'TRANSITIONAL' && 'Transitional: 5-15 pallets typical (aisles, crossdocks)'}
                         {' • Validation active ✓'}
                       </p>
                       {palletWarnings.length > 0 && (
