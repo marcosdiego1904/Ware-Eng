@@ -2111,6 +2111,36 @@ def test_location_matching():
     except Exception as e:
         return jsonify({'error': f'Location matching test failed: {str(e)}'}), 500
 
+# ==================== PRODUCTION DATABASE FIX ENDPOINT ====================
+
+@app.route('/fix-production-rules/<secret_key>')
+def fix_production_rules_web(secret_key):
+    """
+    Web endpoint to fix production database rules.
+    Usage: https://your-render-app.onrender.com/fix-production-rules/YOUR_SECRET_KEY
+    """
+    try:
+        # Security check
+        expected_secret = os.environ.get('FLASK_SECRET_KEY', '')
+        if secret_key != expected_secret:
+            return jsonify({
+                'error': 'Unauthorized',
+                'message': 'Invalid secret key'
+            }), 403
+        
+        # Import the fix function
+        from fix_production_endpoint import fix_production_rules_endpoint
+        
+        # Execute the fix
+        return fix_production_rules_endpoint()
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'Endpoint error',
+            'message': str(e),
+            'success': False
+        }), 500
+
 # --- Entry Point to Run the Application ---
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

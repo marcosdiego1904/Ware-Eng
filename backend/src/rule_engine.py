@@ -550,7 +550,7 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         parameters = self._parse_parameters(rule)
         
         # Parse different condition formats
-        time_threshold_hours = conditions.get('time_threshold_hours', 6)
+        time_threshold_hours = conditions.get('time_threshold_hours', 10)
         max_days_in_location = conditions.get('max_days_in_location')
         location_types = conditions.get('location_types', ['RECEIVING'])
         excluded_locations = conditions.get('excluded_locations', [])
