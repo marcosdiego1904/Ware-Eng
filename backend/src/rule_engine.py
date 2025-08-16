@@ -176,7 +176,9 @@ class RuleEngine:
             print(f"   Type: {rule.rule_type}, Priority: {rule.priority}")
             print(f"   Conditions: {rule.conditions}")
             
-            result = self.evaluate_rule(rule, inventory_df)
+            # Auto-detect warehouse context from inventory data
+            warehouse_context = self._detect_warehouse_context(inventory_df)
+            result = self.evaluate_rule(rule, inventory_df, warehouse_context)
             results.append(result)
             
             if result.success:
@@ -193,13 +195,66 @@ class RuleEngine:
         print(f"\n[RULE_ENGINE_DEBUG] Total anomalies found: {total_anomalies}")
         return results
     
-    def evaluate_rule(self, rule: Rule, inventory_df: pd.DataFrame) -> RuleEvaluationResult:
+    def _detect_warehouse_context(self, inventory_df: pd.DataFrame) -> dict:
+        """
+        Auto-detect warehouse context from inventory data
+        
+        Args:
+            inventory_df: Inventory data to analyze
+            
+        Returns:
+            Dictionary with warehouse context information
+        """
+        context = {}
+        
+        if 'location' not in inventory_df.columns:
+            return context
+            
+        # Get unique locations from inventory
+        inventory_locations = set(inventory_df['location'].dropna().astype(str))
+        
+        # Try to find warehouse with best location match
+        from models import Location
+        from database import db
+        from sqlalchemy import func, or_
+        
+        # Query warehouses and their location counts
+        warehouse_matches = db.session.query(
+            Location.warehouse_id,
+            func.count(Location.id).label('total_locations'),
+            func.count(Location.id).filter(Location.code.in_(inventory_locations)).label('matching_locations')
+        ).filter(
+            or_(Location.is_active == True, Location.is_active.is_(None))
+        ).group_by(Location.warehouse_id).all()
+        
+        best_match = None
+        best_score = 0
+        
+        for warehouse_id, total_locations, matching_locations in warehouse_matches:
+            if matching_locations > 0:
+                # Calculate match score (percentage of inventory locations found)
+                score = matching_locations / len(inventory_locations) if inventory_locations else 0
+                if score > best_score:
+                    best_score = score
+                    best_match = warehouse_id
+        
+        if best_match:
+            context['warehouse_id'] = best_match
+            context['match_score'] = best_score
+            print(f"[WAREHOUSE_CONTEXT] Auto-detected warehouse: {best_match} (match score: {best_score:.2%})")
+        else:
+            print(f"[WAREHOUSE_CONTEXT] No warehouse match found for inventory locations")
+            
+        return context
+    
+    def evaluate_rule(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> RuleEvaluationResult:
         """
         Evaluate a single rule against inventory data
         
         Args:
             rule: Rule object to evaluate
             inventory_df: Inventory data to analyze
+            warehouse_context: Optional warehouse context for scoped validation
         
         Returns:
             RuleEvaluationResult with anomalies found
@@ -219,8 +274,12 @@ class RuleEngine:
                     error_message=f"No evaluator found for rule type: {rule.rule_type}"
                 )
             
-            # Evaluate the rule
-            anomalies = evaluator.evaluate(rule, inventory_df)
+            # Evaluate the rule with warehouse context
+            if hasattr(evaluator, 'evaluate') and 'warehouse_context' in evaluator.evaluate.__code__.co_varnames:
+                anomalies = evaluator.evaluate(rule, inventory_df, warehouse_context)
+            else:
+                # Fallback for evaluators that don't support warehouse context yet
+                anomalies = evaluator.evaluate(rule, inventory_df)
             
             # Add rule metadata to each anomaly
             for anomaly in anomalies:
@@ -1079,26 +1138,43 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
 class InvalidLocationEvaluator(BaseRuleEvaluator):
     """Evaluator for invalid location detection"""
     
-    def evaluate(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
+    def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
         
         anomalies = []
         
-        # Get valid locations from database (include both is_active=True and NULL)
-        # FIXED: Load ALL active locations across ALL warehouses for validation
+        # Get valid locations from database with warehouse scoping
+        warehouse_id = warehouse_context.get('warehouse_id') if warehouse_context else None
+        
         context = self._ensure_app_context()
         if context:
             with context:
                 from sqlalchemy import or_
-                locations = Location.query.filter(
-                    or_(Location.is_active == True, Location.is_active.is_(None))
-                ).all()
+                if warehouse_id:
+                    # FIXED: Query only current warehouse locations
+                    locations = Location.query.filter(
+                        Location.warehouse_id == warehouse_id,
+                        or_(Location.is_active == True, Location.is_active.is_(None))
+                    ).all()
+                    print(f"[INVALID_LOCATION_DEBUG] Warehouse-scoped validation: {warehouse_id}")
+                else:
+                    # Fallback: Load ALL active locations across ALL warehouses  
+                    locations = Location.query.filter(
+                        or_(Location.is_active == True, Location.is_active.is_(None))
+                    ).all()
+                    print(f"[INVALID_LOCATION_DEBUG] Global validation (no warehouse context)")
         else:
             try:
                 from sqlalchemy import or_
-                locations = Location.query.filter(
-                    or_(Location.is_active == True, Location.is_active.is_(None))
-                ).all()
+                if warehouse_id:
+                    locations = Location.query.filter(
+                        Location.warehouse_id == warehouse_id,
+                        or_(Location.is_active == True, Location.is_active.is_(None))
+                    ).all()
+                else:
+                    locations = Location.query.filter(
+                        or_(Location.is_active == True, Location.is_active.is_(None))
+                    ).all()
             except RuntimeError:
                 locations = []
         
