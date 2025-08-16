@@ -1153,14 +1153,10 @@ def create_analysis_report(current_user):
         else:
             print(f"[DEBUG] WARNING: 'creation_date' column not found after mapping!")
         
-        rules_df = pd.read_excel(rules_filepath)
-        
-        args = Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
-        
         # Load enhanced engine if not already loaded
         load_enhanced_engine()
         
-        # Use enhanced engine if available, otherwise fall back to original
+        # Use enhanced engine if available, prioritizing database rules
         if HAS_ENHANCED_ENGINE:
             # Check for rule_ids in form data (for custom rule selection)
             rule_ids_str = request.form.get('rule_ids')
@@ -1174,17 +1170,29 @@ def create_analysis_report(current_user):
             print(f"[DEBUG] Running enhanced engine with database rules...")
             anomalies = run_enhanced_engine(
                 inventory_df, 
-                rules_df, 
-                args, 
+                rules_df=None,  # No Excel rules when using database 
+                args=None,      # No legacy args when using database
                 use_database_rules=True,
                 rule_ids=rule_ids,
                 report_id=None  # Will be set after report creation
             )
             print(f"[DEBUG] Enhanced engine returned {len(anomalies)} anomalies")
         else:
-            print(f"[DEBUG] Running legacy engine...")
-            anomalies = run_enhanced_engine(inventory_df, rules_df, args)
-            print(f"[DEBUG] Legacy engine returned {len(anomalies)} anomalies")
+            print(f"[ERROR] Enhanced engine not available!")
+            # Check if Excel fallback is allowed
+            allow_excel_fallback = os.getenv('ALLOW_EXCEL_FALLBACK', 'false').lower() == 'true'
+            if allow_excel_fallback and rules_file:
+                print(f"[DEBUG] Running legacy engine with uploaded rules...")
+                rules_df = pd.read_excel(rules_filepath)
+                args = Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
+                from main import run_engine as legacy_run_engine
+                anomalies = legacy_run_engine(inventory_df, rules_df, args)
+                print(f"[DEBUG] Legacy engine returned {len(anomalies)} anomalies")
+            else:
+                return jsonify({
+                    'message': 'Database rules engine not available and Excel fallback is disabled. Please contact administrator.',
+                    'error': 'RULES_ENGINE_UNAVAILABLE'
+                }), 503
         
         # Generate and save the report
         location_summary = summarize_anomalies_by_location(anomalies)

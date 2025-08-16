@@ -103,28 +103,38 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
         
     except Exception as e:
         print(f"Error in database rules engine: {e}")
-        print("Falling back to legacy Excel-based engine...")
+        print(f"Database rules engine failed. Please ensure:")
+        print("1. Database is properly connected and migrated")
+        print("2. Rules are properly configured in the database")
+        print("3. All required environment variables are set")
         
-        # Fall back to legacy engine if database rules fail
-        try:
-            from main import run_engine as legacy_run_engine
-            # Try to load rules from Excel file if available
-            import pandas as pd
-            import os
-            
-            # Look for default rules file
-            rules_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'warehouse_rules.xlsx')
-            if os.path.exists(rules_path):
-                rules_df = pd.read_excel(rules_path)
-                import argparse
-                args = argparse.Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
-                return legacy_run_engine(inventory_df, rules_df, args)
-            else:
-                print("No fallback rules file found. Database migration required.")
-                return []
-        except Exception as fallback_error:
-            print(f"Legacy engine also failed: {fallback_error}")
-            return []
+        # Check if we have any fallback environment variable set
+        import os
+        allow_excel_fallback = os.getenv('ALLOW_EXCEL_FALLBACK', 'false').lower() == 'true'
+        
+        if allow_excel_fallback:
+            print("ALLOW_EXCEL_FALLBACK is enabled. Attempting Excel fallback...")
+            try:
+                from main import run_engine as legacy_run_engine
+                import pandas as pd
+                
+                # Look for fallback rules file
+                rules_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'warehouse_rules.xlsx.backup')
+                if os.path.exists(rules_path):
+                    print(f"Using Excel fallback rules from: {rules_path}")
+                    rules_df = pd.read_excel(rules_path)
+                    import argparse
+                    args = argparse.Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
+                    return legacy_run_engine(inventory_df, rules_df, args)
+                else:
+                    print("No Excel fallback file found.")
+                    raise Exception("No fallback rules available")
+            except Exception as fallback_error:
+                print(f"Excel fallback also failed: {fallback_error}")
+                raise Exception(f"Both database and Excel fallback failed: {e}, {fallback_error}")
+        else:
+            print("Excel fallback is disabled. Set ALLOW_EXCEL_FALLBACK=true to enable.")
+            raise Exception(f"Database rules engine failed and fallback is disabled: {e}")
 
 def _record_rule_performance(result, report_id: int):
     """Record rule performance metrics"""
