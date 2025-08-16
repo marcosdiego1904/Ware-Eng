@@ -33,66 +33,31 @@ def fix_production_rules_endpoint():
             'rules_updated': []
         }
         
-        # Find and fix Rule ID 1
-        rule1 = Rule.query.filter_by(id=1).first()
-        if not rule1:
-            return jsonify({
-                'error': 'Rule not found',
-                'message': 'Rule ID 1 (Forgotten Pallets Alert) not found in database',
-                **response_data
-            }), 404
+        # Fix Rule 1 (STAGNANT_PALLETS)
+        rule1_result = _fix_rule_1()
+        if rule1_result:
+            response_data['rules_updated'].append(rule1_result)
         
-        # Get current conditions
-        current_conditions = json.loads(rule1.conditions) if isinstance(rule1.conditions, str) else rule1.conditions
+        # Fix Rule 2 (UNCOORDINATED_LOTS)  
+        rule2_result = _fix_rule_2()
+        if rule2_result:
+            response_data['rules_updated'].append(rule2_result)
         
-        # Check if fix is needed
-        current_threshold = current_conditions.get('time_threshold_hours', 0)
-        
-        if current_threshold == 10:
+        # Determine overall success
+        if response_data['rules_updated']:
             return jsonify({
                 'success': True,
-                'message': 'Rule already has correct configuration',
-                'rule_id': rule1.id,
-                'rule_name': rule1.name,
-                'current_threshold': current_threshold,
+                'message': f'Production database rules fixed successfully! Updated {len(response_data["rules_updated"])} rules.',
+                'fixes_applied': response_data['rules_updated'],
+                **response_data
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': 'All rules already have correct configuration',
                 'no_changes_needed': True,
                 **response_data
             })
-        
-        # Apply the fix
-        new_conditions = {
-            "time_threshold_hours": 10,
-            "location_types": ["RECEIVING"]
-        }
-        
-        # Store old conditions for reporting
-        old_conditions = current_conditions.copy()
-        
-        # Update the rule
-        rule1.conditions = json.dumps(new_conditions)
-        db.session.commit()
-        
-        # Verify the update
-        updated_rule = Rule.query.filter_by(id=1).first()
-        updated_conditions = json.loads(updated_rule.conditions) if isinstance(updated_rule.conditions, str) else updated_rule.conditions
-        
-        return jsonify({
-            'success': True,
-            'message': 'Production database rules fixed successfully!',
-            'rule_id': rule1.id,
-            'rule_name': rule1.name,
-            'changes': {
-                'old_conditions': old_conditions,
-                'new_conditions': updated_conditions,
-                'threshold_changed': f"{current_threshold}h → 10h"
-            },
-            'next_steps': [
-                'Test with a new inventory analysis',
-                'Verify debug output shows 10-hour threshold',
-                'Confirm pallets are only flagged after 10 hours in RECEIVING'
-            ],
-            **response_data
-        })
         
     except Exception as e:
         return jsonify({
@@ -100,3 +65,78 @@ def fix_production_rules_endpoint():
             'message': str(e),
             'success': False
         }), 500
+
+def _fix_rule_1():
+    """Fix Rule 1 (STAGNANT_PALLETS) threshold issue"""
+    try:
+        rule1 = Rule.query.filter_by(id=1).first()
+        if not rule1:
+            return {'error': 'Rule 1 not found'}
+        
+        current_conditions = json.loads(rule1.conditions) if isinstance(rule1.conditions, str) else rule1.conditions
+        current_threshold = current_conditions.get('time_threshold_hours', 0)
+        
+        if current_threshold == 10:
+            return None  # Already correct
+        
+        # Apply the fix
+        new_conditions = {
+            "time_threshold_hours": 10,
+            "location_types": ["RECEIVING"]
+        }
+        
+        old_conditions = current_conditions.copy()
+        rule1.conditions = json.dumps(new_conditions)
+        db.session.commit()
+        
+        return {
+            'rule_id': 1,
+            'rule_name': 'Forgotten Pallets Alert',
+            'rule_type': 'STAGNANT_PALLETS',
+            'changes': {
+                'old_conditions': old_conditions,
+                'new_conditions': new_conditions,
+                'threshold_changed': f"{current_threshold}h → 10h"
+            }
+        }
+        
+    except Exception as e:
+        return {'error': f'Rule 1 fix failed: {str(e)}'}
+
+def _fix_rule_2():
+    """Fix Rule 2 (UNCOORDINATED_LOTS) final location types issue"""
+    try:
+        rule2 = Rule.query.filter_by(id=2).first()
+        if not rule2:
+            return {'error': 'Rule 2 not found'}
+        
+        current_conditions = json.loads(rule2.conditions) if isinstance(rule2.conditions, str) else rule2.conditions
+        
+        # Check if fix is needed
+        has_final_location_types = 'final_location_types' in current_conditions
+        
+        if has_final_location_types:
+            return None  # Already correct
+        
+        # Apply the fix
+        old_conditions = current_conditions.copy()
+        new_conditions = current_conditions.copy()
+        new_conditions['final_location_types'] = ['FINAL', 'STORAGE']
+        new_conditions['location_types'] = ['RECEIVING']  # Only check RECEIVING for stragglers
+        
+        rule2.conditions = json.dumps(new_conditions)
+        db.session.commit()
+        
+        return {
+            'rule_id': 2,
+            'rule_name': 'Incomplete Lots Alert',
+            'rule_type': 'UNCOORDINATED_LOTS',
+            'changes': {
+                'old_conditions': old_conditions,
+                'new_conditions': new_conditions,
+                'added_parameter': 'final_location_types = ["FINAL", "STORAGE"]'
+            }
+        }
+        
+    except Exception as e:
+        return {'error': f'Rule 2 fix failed: {str(e)}'}

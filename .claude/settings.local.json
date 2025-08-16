@@ -43,7 +43,8 @@
       "Bash(set FLASK_SECRET_KEY=temp_key_for_analysis)",
       "Bash(echo:*)",
       "Bash(sqlite3:*)",
-      "WebFetch(domain:ware-eng.vercel.app)"
+      "WebFetch(domain:ware-eng.vercel.app)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

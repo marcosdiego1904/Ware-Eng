@@ -731,6 +731,8 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
         
         completion_threshold = conditions.get('completion_threshold', 0.8)
         location_types = conditions.get('location_types', ['RECEIVING'])
+        # FIXED: Make final location types configurable instead of hardcoded 'FINAL'
+        final_location_types = conditions.get('final_location_types', ['FINAL', 'STORAGE'])
         
         anomalies = []
         
@@ -741,16 +743,20 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
         lots = inventory_df.groupby('receipt_number')
         
         for receipt_number, lot_df in lots:
-            # Count pallets that have reached final storage locations
-            final_pallets = lot_df[lot_df['location_type'] == 'FINAL'].shape[0]
+            # Count pallets that have reached final storage locations (now configurable)
+            final_pallets = lot_df[lot_df['location_type'].isin(final_location_types)].shape[0]
             total_pallets = lot_df.shape[0]
             completion_ratio = final_pallets / total_pallets if total_pallets > 0 else 0
             
-            # FIXED: Only flag stragglers from mostly-complete lots (>=80% completion)
+            print(f"[UNCOORDINATED_LOTS_DEBUG] Lot '{receipt_number}': {final_pallets}/{total_pallets} pallets in final locations {final_location_types} = {completion_ratio:.1%} completion")
+            
+            # Only flag stragglers from mostly-complete lots (>=threshold completion)
             if completion_ratio >= completion_threshold and total_pallets > 1:
+                print(f"[UNCOORDINATED_LOTS_DEBUG] Lot '{receipt_number}' exceeds {completion_threshold:.0%} threshold - checking for stragglers in {location_types}")
                 # Only flag multi-pallet lots where most pallets have been moved to final storage
                 # but some stragglers remain in receiving/staging areas
                 stragglers = lot_df[lot_df['location_type'].isin(location_types)]
+                print(f"[UNCOORDINATED_LOTS_DEBUG] Found {len(stragglers)} stragglers in {location_types}")
                 for _, pallet in stragglers.iterrows():
                     anomalies.append({
                         'pallet_id': pallet['pallet_id'],
