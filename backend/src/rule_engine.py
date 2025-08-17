@@ -197,13 +197,13 @@ class RuleEngine:
     
     def _detect_warehouse_context(self, inventory_df: pd.DataFrame) -> dict:
         """
-        Auto-detect warehouse context from inventory data
+        Enhanced auto-detect warehouse context with fuzzy matching
         
         Args:
             inventory_df: Inventory data to analyze
             
         Returns:
-            Dictionary with warehouse context information
+            Dictionary with warehouse context information and confidence metrics
         """
         context = {}
         
@@ -211,20 +211,39 @@ class RuleEngine:
             return context
             
         # Get unique locations from inventory
-        inventory_locations = set(inventory_df['location'].dropna().astype(str))
+        inventory_locations = list(set(inventory_df['location'].dropna().astype(str)))
+        
+        if not inventory_locations:
+            return context
+        
+        print(f"[WAREHOUSE_DETECTION] Analyzing {len(inventory_locations)} unique inventory locations")
+        
+        # Generate normalized variants for ALL inventory locations
+        all_location_variants = set()
+        location_variant_map = {}  # Maps variant -> original location
+        
+        for location in inventory_locations:
+            variants = self._normalize_position_format(location)
+            for variant in variants:
+                all_location_variants.add(variant)
+                if variant not in location_variant_map:
+                    location_variant_map[variant] = []
+                location_variant_map[variant].append(location)
+        
+        print(f"[WAREHOUSE_DETECTION] Generated {len(all_location_variants)} location variants for matching")
         
         # Try to find warehouse with best location match
         from models import Location
         from database import db
         from sqlalchemy import func, or_, case
         
-        # Query warehouses and their location counts (Fixed SQLite/PostgreSQL compatibility)
+        # Enhanced query with normalized location matching
         warehouse_matches = db.session.query(
             Location.warehouse_id,
             func.count(Location.id).label('total_locations'),
             func.sum(
                 case(
-                    (Location.code.in_(inventory_locations), 1),
+                    (Location.code.in_(all_location_variants), 1),
                     else_=0
                 )
             ).label('matching_locations')
@@ -232,23 +251,93 @@ class RuleEngine:
             or_(Location.is_active == True, Location.is_active.is_(None))
         ).group_by(Location.warehouse_id).all()
         
+        # Enhanced scoring with confidence calculation
+        return self._calculate_warehouse_confidence_scores(warehouse_matches, inventory_locations, all_location_variants)
+    
+    def _calculate_warehouse_confidence_scores(self, warehouse_matches, inventory_locations, all_variants):
+        """
+        Calculate confidence scores for warehouse detection using multiple criteria
+        
+        Args:
+            warehouse_matches: SQL query results with warehouse statistics
+            inventory_locations: Original inventory location list
+            all_variants: All normalized variants generated
+            
+        Returns:
+            Dictionary with warehouse context and confidence metrics
+        """
         best_match = None
         best_score = 0
+        best_confidence = 'NONE'
+        detailed_scores = []
+        
+        print(f"[WAREHOUSE_SCORING] Evaluating {len(warehouse_matches)} warehouses")
         
         for warehouse_id, total_locations, matching_locations in warehouse_matches:
-            if matching_locations > 0:
-                # Calculate match score (percentage of inventory locations found)
-                score = matching_locations / len(inventory_locations) if inventory_locations else 0
-                if score > best_score:
-                    best_score = score
+            if matching_locations and matching_locations > 0:
+                # Multi-factor scoring system
+                coverage_score = matching_locations / len(inventory_locations)  # % of inventory covered
+                density_score = matching_locations / total_locations if total_locations > 0 else 0  # Match density
+                absolute_matches = int(matching_locations)
+                
+                # Weighted confidence score (coverage is most important)
+                confidence_score = (coverage_score * 0.75) + (density_score * 0.25)
+                
+                # Confidence classification
+                if coverage_score >= 0.8 and absolute_matches >= 5:
+                    confidence_level = 'VERY_HIGH'
+                elif coverage_score >= 0.6 and absolute_matches >= 3:
+                    confidence_level = 'HIGH'
+                elif coverage_score >= 0.3 and absolute_matches >= 2:
+                    confidence_level = 'MEDIUM'
+                elif coverage_score >= 0.1:
+                    confidence_level = 'LOW'
+                else:
+                    confidence_level = 'VERY_LOW'
+                
+                detailed_scores.append({
+                    'warehouse_id': warehouse_id,
+                    'coverage_score': coverage_score,
+                    'density_score': density_score,
+                    'confidence_score': confidence_score,
+                    'confidence_level': confidence_level,
+                    'absolute_matches': absolute_matches,
+                    'total_locations': total_locations
+                })
+                
+                print(f"[WAREHOUSE_SCORING] {warehouse_id}: {absolute_matches}/{len(inventory_locations)} locations = {coverage_score:.1%} coverage, confidence: {confidence_level}")
+                
+                # Select best match (require minimum thresholds)
+                if confidence_score > best_score and coverage_score >= 0.1:  # Minimum 10% coverage
+                    best_score = confidence_score
                     best_match = warehouse_id
+                    best_confidence = confidence_level
+            else:
+                print(f"[WAREHOUSE_SCORING] {warehouse_id}: 0/{len(inventory_locations)} locations = 0% coverage")
+        
+        # Build comprehensive context
+        context = {
+            'total_inventory_locations': len(inventory_locations),
+            'total_variants_generated': len(all_variants),
+            'detailed_scores': detailed_scores
+        }
         
         if best_match:
-            context['warehouse_id'] = best_match
-            context['match_score'] = best_score
-            print(f"[WAREHOUSE_CONTEXT] Auto-detected warehouse: {best_match} (match score: {best_score:.2%})")
+            context.update({
+                'warehouse_id': best_match,
+                'match_score': best_score,
+                'confidence_level': best_confidence,
+                'matching_locations': next((s['absolute_matches'] for s in detailed_scores if s['warehouse_id'] == best_match), 0)
+            })
+            print(f"[WAREHOUSE_DETECTION] Auto-detected warehouse: {best_match} (score: {best_score:.1%}, confidence: {best_confidence})")
         else:
-            print(f"[WAREHOUSE_CONTEXT] No warehouse match found for inventory locations")
+            context.update({
+                'warehouse_id': None,
+                'match_score': 0,
+                'confidence_level': 'NONE',
+                'matching_locations': 0
+            })
+            print(f"[WAREHOUSE_DETECTION] No reliable warehouse match found (all scores below threshold)")
             
         return context
     
@@ -402,6 +491,72 @@ class RuleEngine:
         else:
             return "No detections - check rule conditions or data compatibility"
 
+    def _normalize_position_format(self, location_code: str) -> list:
+        """
+        Generate multiple normalized position formats for comprehensive matching
+        
+        Enhanced to handle various format variations:
+        - 02-1-11B -> ['02-01-011B', '02-1-11B', '02-01-11B'] (comprehensive padding)
+        - 01-01-001A -> ['01-01-001A', '01-1-1A', '01-1-001A']
+        - RECV-01 -> ['RECV-01', 'RECV-001'] (special location formats)
+        - STAGE-1 -> ['STAGE-1', 'STAGE-01', 'STAGE-001']
+        
+        Returns:
+            List of normalized location codes for matching (sorted by likelihood)
+        """
+        if not location_code:
+            return [location_code]
+            
+        code = str(location_code).strip().upper()
+        variants = [code]  # Always include original
+        
+        # Import regex inside method to avoid top-level import issues
+        import re
+        
+        # Pattern 1: Standard aisle-rack-position format (XX-XX-XXXA)
+        standard_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$', code)
+        if standard_pattern:
+            aisle, rack, position, level = standard_pattern.groups()
+            
+            # Generate comprehensive format variations
+            variants.extend([
+                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.zfill(3)}{level}",  # Full padding: 01-01-001A
+                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.zfill(3)}{level}",  # Mixed: 01-1-001A
+                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.lstrip('0').zfill(2)}{level}",  # 2-digit pos: 01-01-01A
+                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.lstrip('0').zfill(2)}{level}",  # Minimal: 01-1-01A
+                f"{aisle.lstrip('0') or '0'}-{rack.lstrip('0') or '0'}-{position.lstrip('0') or '0'}{level}",  # No padding: 1-1-1A
+            ])
+        
+        # Pattern 2: Special location formats (RECV-XX, STAGE-XX, AISLE-XX)
+        special_pattern = re.match(r'^([A-Z]+)-(\d{1,3})$', code)
+        if special_pattern:
+            prefix, number = special_pattern.groups()
+            variants.extend([
+                f"{prefix}-{number.zfill(3)}",  # RECV-001
+                f"{prefix}-{number.zfill(2)}",  # RECV-01
+                f"{prefix}-{number.lstrip('0') or '0'}",  # RECV-1
+            ])
+        
+        # Pattern 3: Simple numeric suffixes (DOCK1, FINAL2)
+        simple_pattern = re.match(r'^([A-Z]+)(\d{1,3})$', code)
+        if simple_pattern:
+            prefix, number = simple_pattern.groups()
+            variants.extend([
+                f"{prefix}-{number}",  # Add dash separator
+                f"{prefix}-{number.zfill(2)}",  # DOCK-01
+                f"{prefix}-{number.zfill(3)}",  # DOCK-001
+            ])
+        
+        # Remove duplicates while preserving order (most likely matches first)
+        seen = set()
+        unique_variants = []
+        for variant in variants:
+            if variant not in seen:
+                seen.add(variant)
+                unique_variants.append(variant)
+        
+        return unique_variants
+
 # ==================== RULE EVALUATORS ====================
 
 class BaseRuleEvaluator:
@@ -496,45 +651,6 @@ class BaseRuleEvaluator:
         code = re.sub(r'_\d+$', '', code)
         
         return code
-    
-    def _normalize_position_format(self, location_code: str) -> list:
-        """
-        Generate multiple normalized position formats for comprehensive matching
-        
-        Examples:
-        - 02-06-03A -> ['02-06-03A', '02-06-003A'] (2-digit to 3-digit)
-        - 02-06-003A -> ['02-06-003A', '02-06-03A'] (3-digit to 2-digit)
-        - FINAL-006 -> ['FINAL-006'] (special locations unchanged)
-        
-        Returns:
-            List of normalized location codes for matching
-        """
-        if not location_code:
-            return [location_code]
-            
-        code = str(location_code).strip().upper()
-        
-        # Import regex inside method to avoid top-level import issues
-        import re
-        
-        # Pattern for aisle-rack-position format: XX-XX-XXXA or XX-XX-XXXXA
-        aisle_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{2,3})([A-Z])$', code)
-        
-        if aisle_pattern:
-            aisle, rack, position, level = aisle_pattern.groups()
-            
-            # Generate both 2-digit and 3-digit position formats
-            position_2digit = position.lstrip('0').zfill(2) if len(position) > 2 else position
-            position_3digit = position.zfill(3)
-            
-            format_2digit = f"{aisle.zfill(2)}-{rack.zfill(2)}-{position_2digit}{level}"
-            format_3digit = f"{aisle.zfill(2)}-{rack.zfill(2)}-{position_3digit}{level}"
-            
-            # Return both formats, removing duplicates
-            return list(set([format_2digit, format_3digit]))
-        
-        # For non-standard formats, return as-is
-        return [code]
     
     def _find_location_by_code(self, location_code: str) -> 'Location':
         """
