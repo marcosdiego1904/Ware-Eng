@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix DEFAULT Warehouse</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        button { background: #ff4444; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #cc3333; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; margin: 15px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Fix DEFAULT Warehouse Issue</h1>
+    
+    <div class="warning">
+        <strong>⚠️ WARNING:</strong> This will permanently delete 1,734 DEFAULT warehouse locations from your production database. This action cannot be undone. Make sure you have a database backup if needed.
+    </div>
+    
+    <p><strong>Current Issue:</strong> Your production database has a DEFAULT warehouse with 1,734 locations that's interfering with USER_TESTF warehouse detection.</p>
+    
+    <p><strong>What this will do:</strong></p>
+    <ul>
+        <li>Delete all DEFAULT warehouse locations (1,734 locations)</li>
+        <li>Remove DEFAULT warehouse configuration</li>
+        <li>Test warehouse detection after cleanup</li>
+        <li>Show results immediately</li>
+    </ul>
+    
+    <label for="domain">Your Production Domain:</label>
+    <input type="text" id="domain" placeholder="ware-eng.vercel.app" style="width: 300px; padding: 8px; margin: 10px 0;">
+    
+    <br><br>
+    
+    <button onclick="fixWarehouse()">🔧 Fix DEFAULT Warehouse Issue</button>
+    
+    <div id="result"></div>
+
+    <script>
+        async function fixWarehouse() {
+            const domain = document.getElementById('domain').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!domain) {
+                resultDiv.innerHTML = '<div class="error">Please enter your production domain</div>';
+                return;
+            }
+            
+            const url = `https://${domain}/api/v1/fix/remove-default-warehouse`;
+            
+            resultDiv.innerHTML = '<div>🔄 Applying fix... This may take a few seconds...</div>';
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({confirm: true})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `<div class="success">✅ SUCCESS!\n\n${JSON.stringify(data, null, 2)}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ ERROR:\n\n${JSON.stringify(data, null, 2)}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ NETWORK ERROR:\n\n${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

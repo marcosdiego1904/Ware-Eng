@@ -491,72 +491,6 @@ class RuleEngine:
         else:
             return "No detections - check rule conditions or data compatibility"
 
-    def _normalize_position_format(self, location_code: str) -> list:
-        """
-        Generate multiple normalized position formats for comprehensive matching
-        
-        Enhanced to handle various format variations:
-        - 02-1-11B -> ['02-01-011B', '02-1-11B', '02-01-11B'] (comprehensive padding)
-        - 01-01-001A -> ['01-01-001A', '01-1-1A', '01-1-001A']
-        - RECV-01 -> ['RECV-01', 'RECV-001'] (special location formats)
-        - STAGE-1 -> ['STAGE-1', 'STAGE-01', 'STAGE-001']
-        
-        Returns:
-            List of normalized location codes for matching (sorted by likelihood)
-        """
-        if not location_code:
-            return [location_code]
-            
-        code = str(location_code).strip().upper()
-        variants = [code]  # Always include original
-        
-        # Import regex inside method to avoid top-level import issues
-        import re
-        
-        # Pattern 1: Standard aisle-rack-position format (XX-XX-XXXA)
-        standard_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$', code)
-        if standard_pattern:
-            aisle, rack, position, level = standard_pattern.groups()
-            
-            # Generate comprehensive format variations
-            variants.extend([
-                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.zfill(3)}{level}",  # Full padding: 01-01-001A
-                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.zfill(3)}{level}",  # Mixed: 01-1-001A
-                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.lstrip('0').zfill(2)}{level}",  # 2-digit pos: 01-01-01A
-                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.lstrip('0').zfill(2)}{level}",  # Minimal: 01-1-01A
-                f"{aisle.lstrip('0') or '0'}-{rack.lstrip('0') or '0'}-{position.lstrip('0') or '0'}{level}",  # No padding: 1-1-1A
-            ])
-        
-        # Pattern 2: Special location formats (RECV-XX, STAGE-XX, AISLE-XX)
-        special_pattern = re.match(r'^([A-Z]+)-(\d{1,3})$', code)
-        if special_pattern:
-            prefix, number = special_pattern.groups()
-            variants.extend([
-                f"{prefix}-{number.zfill(3)}",  # RECV-001
-                f"{prefix}-{number.zfill(2)}",  # RECV-01
-                f"{prefix}-{number.lstrip('0') or '0'}",  # RECV-1
-            ])
-        
-        # Pattern 3: Simple numeric suffixes (DOCK1, FINAL2)
-        simple_pattern = re.match(r'^([A-Z]+)(\d{1,3})$', code)
-        if simple_pattern:
-            prefix, number = simple_pattern.groups()
-            variants.extend([
-                f"{prefix}-{number}",  # Add dash separator
-                f"{prefix}-{number.zfill(2)}",  # DOCK-01
-                f"{prefix}-{number.zfill(3)}",  # DOCK-001
-            ])
-        
-        # Remove duplicates while preserving order (most likely matches first)
-        seen = set()
-        unique_variants = []
-        for variant in variants:
-            if variant not in seen:
-                seen.add(variant)
-                unique_variants.append(variant)
-        
-        return unique_variants
-
 # ==================== RULE EVALUATORS ====================
 
 class BaseRuleEvaluator:
@@ -651,6 +585,72 @@ class BaseRuleEvaluator:
         code = re.sub(r'_\d+$', '', code)
         
         return code
+    
+    def _normalize_position_format(self, location_code: str) -> list:
+        """
+        Generate multiple normalized position formats for comprehensive matching
+        
+        Enhanced to handle various format variations:
+        - 02-1-11B -> ['02-01-011B', '02-1-11B', '02-01-11B'] (comprehensive padding)
+        - 01-01-001A -> ['01-01-001A', '01-1-1A', '01-1-001A']
+        - RECV-01 -> ['RECV-01', 'RECV-001'] (special location formats)
+        - STAGE-1 -> ['STAGE-1', 'STAGE-01', 'STAGE-001']
+        
+        Returns:
+            List of normalized location codes for matching (sorted by likelihood)
+        """
+        if not location_code:
+            return [location_code]
+            
+        code = str(location_code).strip().upper()
+        variants = [code]  # Always include original
+        
+        # Import regex inside method to avoid top-level import issues
+        import re
+        
+        # Pattern 1: Standard aisle-rack-position format (XX-XX-XXXA)
+        standard_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$', code)
+        if standard_pattern:
+            aisle, rack, position, level = standard_pattern.groups()
+            
+            # Generate comprehensive format variations
+            variants.extend([
+                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.zfill(3)}{level}",  # Full padding: 01-01-001A
+                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.zfill(3)}{level}",  # Mixed: 01-1-001A
+                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.lstrip('0').zfill(2)}{level}",  # 2-digit pos: 01-01-01A
+                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.lstrip('0').zfill(2)}{level}",  # Minimal: 01-1-01A
+                f"{aisle.lstrip('0') or '0'}-{rack.lstrip('0') or '0'}-{position.lstrip('0') or '0'}{level}",  # No padding: 1-1-1A
+            ])
+        
+        # Pattern 2: Special location formats (RECV-XX, STAGE-XX, AISLE-XX)
+        special_pattern = re.match(r'^([A-Z]+)-(\d{1,3})$', code)
+        if special_pattern:
+            prefix, number = special_pattern.groups()
+            variants.extend([
+                f"{prefix}-{number.zfill(3)}",  # RECV-001
+                f"{prefix}-{number.zfill(2)}",  # RECV-01
+                f"{prefix}-{number.lstrip('0') or '0'}",  # RECV-1
+            ])
+        
+        # Pattern 3: Simple numeric suffixes (DOCK1, FINAL2)
+        simple_pattern = re.match(r'^([A-Z]+)(\d{1,3})$', code)
+        if simple_pattern:
+            prefix, number = simple_pattern.groups()
+            variants.extend([
+                f"{prefix}-{number}",  # Add dash separator
+                f"{prefix}-{number.zfill(2)}",  # DOCK-01
+                f"{prefix}-{number.zfill(3)}",  # DOCK-001
+            ])
+        
+        # Remove duplicates while preserving order (most likely matches first)
+        seen = set()
+        unique_variants = []
+        for variant in variants:
+            if variant not in seen:
+                seen.add(variant)
+                unique_variants.append(variant)
+        
+        return unique_variants
     
     def _find_location_by_code(self, location_code: str) -> 'Location':
         """

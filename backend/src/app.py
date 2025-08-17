@@ -1538,8 +1538,54 @@ def fix_remove_default_warehouse():
             'message': 'Failed to remove DEFAULT warehouse'
         }), 500
 
+@app.route('/api/v1/debug/user-testf-locations', methods=['GET'])
+def debug_user_testf_locations():
+    """Check what locations exist in USER_TESTF warehouse"""
+    try:
+        from models import Location
+        from database import db
+        
+        # Get all USER_TESTF locations
+        locations = db.session.query(Location).filter_by(warehouse_id='USER_TESTF').all()
+        
+        by_type = {}
+        sample_storage = []
+        
+        for location in locations:
+            location_type = location.location_type or 'UNKNOWN'
+            if location_type not in by_type:
+                by_type[location_type] = []
+            by_type[location_type].append(location.code)
+            
+            # Collect storage location samples
+            if location_type == 'STORAGE' and len(sample_storage) < 20:
+                sample_storage.append(location.code)
+        
+        # Test if inventory locations should exist
+        inventory_sample = ["02-1-011B", "01-1-007B", "01-1-019A", "02-1-003B", "01-1-004C"]
+        missing_locations = []
+        
+        for inv_loc in inventory_sample:
+            exists = db.session.query(Location).filter_by(warehouse_id='USER_TESTF', code=inv_loc).first()
+            if not exists:
+                missing_locations.append(inv_loc)
+        
+        return jsonify({
+            'warehouse_id': 'USER_TESTF',
+            'total_locations': len(locations),
+            'by_type': {k: len(v) for k, v in by_type.items()},
+            'sample_storage_locations': sample_storage,
+            'missing_inventory_locations': missing_locations,
+            'issue_detected': len(missing_locations) > 0,
+            'recommendation': 'Populate USER_TESTF with missing storage locations' if missing_locations else 'Warehouse structure looks complete'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 print("Production database diagnostic endpoint added: /api/v1/test/warehouse-check")
 print("Production database fix endpoint added: /api/v1/fix/remove-default-warehouse")
+print("USER_TESTF debug endpoint added: /api/v1/debug/user-testf-locations")
 
 # ==================== DEBUGGING AND MONITORING SETUP ====================
 
