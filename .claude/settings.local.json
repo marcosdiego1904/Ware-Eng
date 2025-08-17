@@ -44,7 +44,8 @@
       "Bash(echo:*)",
       "Bash(sqlite3:*)",
       "WebFetch(domain:ware-eng.vercel.app)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(del nul)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
