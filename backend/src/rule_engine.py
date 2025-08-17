@@ -216,13 +216,18 @@ class RuleEngine:
         # Try to find warehouse with best location match
         from models import Location
         from database import db
-        from sqlalchemy import func, or_
+        from sqlalchemy import func, or_, case
         
-        # Query warehouses and their location counts
+        # Query warehouses and their location counts (Fixed SQLite/PostgreSQL compatibility)
         warehouse_matches = db.session.query(
             Location.warehouse_id,
             func.count(Location.id).label('total_locations'),
-            func.count(Location.id).filter(Location.code.in_(inventory_locations)).label('matching_locations')
+            func.sum(
+                case(
+                    (Location.code.in_(inventory_locations), 1),
+                    else_=0
+                )
+            ).label('matching_locations')
         ).filter(
             or_(Location.is_active == True, Location.is_active.is_(None))
         ).group_by(Location.warehouse_id).all()

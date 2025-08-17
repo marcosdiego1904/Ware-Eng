@@ -1,0 +1,5 @@
+Things to do in the app.
+
+Mobile first improvement
+rules shared through accounts
+be able to delete analysys or template.
