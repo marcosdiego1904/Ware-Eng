@@ -46,7 +46,9 @@
       "WebFetch(domain:ware-eng.vercel.app)",
       "Bash(timeout:*)",
       "Bash(del nul)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:ware-eng.onrender.com)",
+      "WebFetch(domain:localhost)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",

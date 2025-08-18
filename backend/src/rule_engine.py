@@ -590,9 +590,13 @@ class BaseRuleEvaluator:
         """
         Generate multiple normalized position formats for comprehensive matching
         
+        CRITICAL FIX: Handle cross-format translation between different location coding systems:
+        - Inventory format: 02-1-011B (zone-section-position-level)  
+        - Database format: 01-01-001A_1 (aisle-rack-position-level_slot)
+        
         Enhanced to handle various format variations:
-        - 02-1-11B -> ['02-01-011B', '02-1-11B', '02-01-11B'] (comprehensive padding)
-        - 01-01-001A -> ['01-01-001A', '01-1-1A', '01-1-001A']
+        - 02-1-011B -> ['02-01-011B', '02-1-011B', '02-01-011B_1', '02-01-011B_2'] 
+        - 01-01-001A -> ['01-01-001A', '01-1-1A', '01-1-001A_1']
         - RECV-01 -> ['RECV-01', 'RECV-001'] (special location formats)
         - STAGE-1 -> ['STAGE-1', 'STAGE-01', 'STAGE-001']
         
@@ -608,19 +612,53 @@ class BaseRuleEvaluator:
         # Import regex inside method to avoid top-level import issues
         import re
         
-        # Pattern 1: Standard aisle-rack-position format (XX-XX-XXXA)
+        # Pattern 1: Standard aisle-rack-position format (XX-X-XXXA or XX-XX-XXXA)
+        # ENHANCED: Handle both single and double digit rack formats
         standard_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$', code)
         if standard_pattern:
             aisle, rack, position, level = standard_pattern.groups()
             
-            # Generate comprehensive format variations
-            variants.extend([
+            # Generate comprehensive format variations with cross-format translation
+            base_variants = [
+                # Standard padding variations
                 f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.zfill(3)}{level}",  # Full padding: 01-01-001A
                 f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.zfill(3)}{level}",  # Mixed: 01-1-001A
                 f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.lstrip('0').zfill(2)}{level}",  # 2-digit pos: 01-01-01A
                 f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.lstrip('0').zfill(2)}{level}",  # Minimal: 01-1-01A
                 f"{aisle.lstrip('0') or '0'}-{rack.lstrip('0') or '0'}-{position.lstrip('0') or '0'}{level}",  # No padding: 1-1-1A
-            ])
+                
+                # CROSS-FORMAT TRANSLATION: Try translating between coding systems
+                # If input is zone-section-position (02-1-011B), try aisle-rack equivalents
+                f"{aisle.zfill(2)}-{aisle.zfill(2)}-{position.zfill(3)}{level}",  # Map zone to aisle: 02-02-011B  
+                f"{aisle.zfill(2)}-01-{position.zfill(3)}{level}",  # Force rack=01: 02-01-011B
+                f"01-{rack.zfill(2)}-{position.zfill(3)}{level}",  # Force aisle=01: 01-01-011B
+                f"01-01-{position.zfill(3)}{level}",  # Force aisle=01,rack=01: 01-01-011B
+            ]
+            variants.extend(base_variants)
+            
+            # CRITICAL FIX: Add suffix variants for database format (XX-XX-XXXA_N)
+            for base_variant in base_variants:
+                variants.extend([
+                    f"{base_variant}_1",  # Add _1 suffix
+                    f"{base_variant}_2",  # Add _2 suffix  
+                    f"{base_variant}_3",  # Add _3 suffix
+                    f"{base_variant}_4",  # Add _4 suffix
+                    f"{base_variant}_5",  # Add _5 suffix
+                ])
+            
+            # POSITION MAPPING: Try different position interpretations
+            # If position is 3-digit like 011, also try as 1-digit like 1 or 11
+            if len(position) == 3:
+                alt_position_1 = position.lstrip('0') or '0'  # 011 -> 11 or 1
+                alt_position_2 = position[1:].lstrip('0') or '0'  # 011 -> 11 or 1  
+                alt_variants = [
+                    f"{aisle.zfill(2)}-{rack.zfill(2)}-{alt_position_1.zfill(3)}{level}",
+                    f"{aisle.zfill(2)}-{rack.zfill(2)}-{alt_position_2.zfill(3)}{level}",
+                ]
+                variants.extend(alt_variants)
+                # Add suffixed versions
+                for alt_var in alt_variants:
+                    variants.extend([f"{alt_var}_1", f"{alt_var}_2", f"{alt_var}_3"])
         
         # Pattern 2: Special location formats (RECV-XX, STAGE-XX, AISLE-XX)
         special_pattern = re.match(r'^([A-Z]+)-(\d{1,3})$', code)
