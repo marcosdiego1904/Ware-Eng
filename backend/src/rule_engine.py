@@ -1507,8 +1507,10 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
     - Provides detailed debugging and validation metrics
     """
     
-    def __init__(self):
+    def __init__(self, app=None):
         super().__init__()
+        self.app = app  # Maintain compatibility with existing RuleEngine initialization
+        
         # Initialize canonical location services
         try:
             from location_service import get_canonical_service, get_location_matcher, get_inventory_validator
@@ -1519,6 +1521,9 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             print("[INVALID_LOCATION_DEBUG] Initialized with canonical location service")
         except ImportError as e:
             print(f"[INVALID_LOCATION_DEBUG] Canonical service not available, using legacy mode: {e}")
+            self.use_canonical = False
+        except Exception as e:
+            print(f"[INVALID_LOCATION_DEBUG] Canonical service initialization failed, using legacy mode: {e}")
             self.use_canonical = False
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
