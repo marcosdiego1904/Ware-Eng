@@ -761,36 +761,54 @@ class BaseRuleEvaluator:
                 return None
     
     def _find_location_by_code_internal(self, location_str: str) -> 'Location':
-        """Internal method to find location"""
+        """Internal method to find location using enhanced cross-format matching"""
         # 1. Direct exact match
         location = Location.query.filter_by(code=location_str).first()
         if location:
             return location
         
-        # 2. Try normalized matching
-        normalized_input = self._normalize_location_code(location_str)
+        # 2. ENHANCED: Use comprehensive position format normalization
+        # Generate all possible variants of the input location code
+        input_variants = self._normalize_position_format(location_str)
         
-        # 3. If normalization didn't change anything, skip expensive search
-        if normalized_input == location_str:
-            return None
+        # 3. Search all locations and check if any variant matches
+        all_locations = Location.query.all()
         
-        # 4. Search all locations and check if normalized versions match
-        all_locations = Location.query.all()  # Search all locations for comprehensive matching
+        # Create lookup set for database location codes and their variants
+        db_location_lookup = set()
+        db_location_map = {}  # Maps variant -> Location object
+        
         for loc in all_locations:
+            # Add original database code
+            db_location_lookup.add(loc.code)
+            db_location_map[loc.code] = loc
+            
+            # Generate variants for each database location
             try:
-                # Check if normalized database code matches input
-                normalized_db_code = self._normalize_location_code(loc.code)
-                if normalized_db_code == location_str:
-                    return loc
-                # Check if input normalized matches database code
-                if normalized_input == loc.code:
-                    return loc
-                # Check if both normalized versions match
-                if normalized_db_code == normalized_input:
-                    return loc
+                db_variants = self._normalize_position_format(loc.code)
+                for variant in db_variants:
+                    db_location_lookup.add(variant)
+                    if variant not in db_location_map:  # Don't overwrite exact matches
+                        db_location_map[variant] = loc
             except Exception:
                 # Skip problematic location codes
                 continue
+        
+        # 4. Check if any input variant matches any database variant
+        for input_variant in input_variants:
+            if input_variant in db_location_lookup:
+                return db_location_map[input_variant]
+        
+        # 5. Fallback: Legacy normalization for backward compatibility
+        normalized_input = self._normalize_location_code(location_str)
+        if normalized_input != location_str:
+            for loc in all_locations:
+                try:
+                    normalized_db_code = self._normalize_location_code(loc.code)
+                    if normalized_db_code == location_str or normalized_input == loc.code or normalized_db_code == normalized_input:
+                        return loc
+                except Exception:
+                    continue
         
         return None
     
