@@ -1168,15 +1168,46 @@ def create_analysis_report(current_user):
                     pass
             
             print(f"[DEBUG] Running enhanced engine with database rules...")
-            anomalies = run_enhanced_engine(
-                inventory_df, 
-                rules_df=None,  # No Excel rules when using database 
-                args=None,      # No legacy args when using database
-                use_database_rules=True,
-                rule_ids=rule_ids,
-                report_id=None  # Will be set after report creation
-            )
-            print(f"[DEBUG] Enhanced engine returned {len(anomalies)} anomalies")
+            
+            # Add timeout protection for production
+            import signal
+            import time
+            start_time = time.time()
+            
+            try:
+                # Set maximum execution time to prevent worker timeout
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Rule execution exceeded maximum time limit")
+                
+                # Set 120 second timeout (less than gunicorn worker timeout)
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(120)
+                
+                anomalies = run_enhanced_engine(
+                    inventory_df, 
+                    rules_df=None,  # No Excel rules when using database 
+                    args=None,      # No legacy args when using database
+                    use_database_rules=True,
+                    rule_ids=rule_ids,
+                    report_id=None  # Will be set after report creation
+                )
+                
+                # Clear timeout
+                signal.alarm(0)
+                execution_time = time.time() - start_time
+                print(f"[DEBUG] Enhanced engine returned {len(anomalies)} anomalies in {execution_time:.2f}s")
+                
+            except TimeoutError:
+                signal.alarm(0)  # Clear timeout
+                print(f"[ERROR] Rule execution timed out after 120 seconds")
+                return jsonify({
+                    'error': 'Rule execution timed out. Please try with a smaller dataset or fewer rules.',
+                    'status': 'timeout'
+                }), 408
+            except Exception as e:
+                signal.alarm(0)  # Clear timeout
+                print(f"[ERROR] Rule execution failed: {str(e)}")
+                raise
         else:
             print(f"[ERROR] Enhanced engine not available!")
             # Check if Excel fallback is allowed

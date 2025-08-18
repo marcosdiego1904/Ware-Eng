@@ -14,7 +14,7 @@ from functools import wraps
 
 # Import the token_required decorator and database models
 from database import db
-from app import token_required
+# CIRCULAR IMPORT FIX: Import token_required at function level to avoid circular dependency
 from core_models import User, AnalysisReport
 from models import (
     Rule, RuleCategory, RuleHistory, RuleTemplate, 
@@ -22,6 +22,11 @@ from models import (
 )
 from rule_engine import RuleEngine
 # from rule_validator import RuleValidator, RulePerformanceEstimator, RuleDebugger  # TODO: Implement these
+
+def get_token_required():
+    """Get token_required decorator - fixes circular import"""
+    from app import token_required
+    return token_required
 
 # Create the rules API blueprint
 rules_api = Blueprint('rules_api', __name__, url_prefix='/api/v1')
@@ -44,7 +49,7 @@ def init_rule_system():
 # ==================== RULE CRUD ENDPOINTS ====================
 
 @rules_api.route('/rules', methods=['GET'])
-@token_required
+@get_token_required()
 def get_rules(current_user):
     """Get all rules with optional filtering"""
     try:
@@ -86,7 +91,7 @@ def get_rules(current_user):
         }), 500
 
 @rules_api.route('/rules/<int:rule_id>', methods=['GET'])
-@token_required
+@get_token_required()
 def get_rule(current_user, rule_id):
     """Get specific rule by ID"""
     try:
@@ -108,7 +113,7 @@ def get_rule(current_user, rule_id):
         }), 500
 
 @rules_api.route('/rules', methods=['POST'])
-@token_required
+@get_token_required()
 def create_rule(current_user):
     """Create new rule"""
     try:
@@ -194,7 +199,7 @@ def create_rule(current_user):
         }), 500
 
 @rules_api.route('/rules/<int:rule_id>', methods=['PUT'])
-@token_required
+@get_token_required()
 def update_rule(current_user, rule_id):
     """Update existing rule"""
     try:
@@ -281,7 +286,7 @@ def update_rule(current_user, rule_id):
         }), 500
 
 @rules_api.route('/rules/<int:rule_id>', methods=['DELETE'])
-@token_required
+@get_token_required()
 def delete_rule(current_user, rule_id):
     """Delete rule"""
     try:
@@ -339,7 +344,7 @@ def delete_rule(current_user, rule_id):
         }), 500
 
 @rules_api.route('/rules/<int:rule_id>/activate', methods=['POST'])
-@token_required
+@get_token_required()
 def toggle_rule_activation(current_user, rule_id):
     """Activate or deactivate rule"""
     try:
@@ -385,7 +390,7 @@ def toggle_rule_activation(current_user, rule_id):
 # ==================== RULE CATEGORIES ====================
 
 @rules_api.route('/categories', methods=['GET'])
-@token_required
+@get_token_required()
 def get_categories(current_user):
     """Get all rule categories"""
     try:
@@ -407,7 +412,7 @@ def get_categories(current_user):
 # ==================== RULE TESTING & VALIDATION ====================
 
 @rules_api.route('/rules/test', methods=['POST'])
-@token_required
+@get_token_required()
 def test_rules(current_user):
     """Test rules against uploaded data"""
     try:
@@ -483,7 +488,7 @@ def test_rules(current_user):
         }), 500
 
 @rules_api.route('/rules/preview', methods=['POST'])
-@token_required
+@get_token_required()
 def preview_rule(current_user):
     """Preview rule results without saving"""
     try:
@@ -553,7 +558,7 @@ def preview_rule(current_user):
         }), 500
 
 @rules_api.route('/rules/validate', methods=['POST'])
-@token_required
+@get_token_required()
 def validate_rule_conditions(current_user):
     """Validate rule conditions"""
     try:
@@ -605,7 +610,7 @@ def validate_rule_conditions(current_user):
 # ==================== RULE DEBUGGING ====================
 
 @rules_api.route('/rules/<int:rule_id>/debug', methods=['POST'])
-@token_required
+@get_token_required()
 def debug_rule(current_user, rule_id):
     """Debug rule execution"""
     try:
@@ -655,7 +660,7 @@ def debug_rule(current_user, rule_id):
 # ==================== RULE PERFORMANCE ====================
 
 @rules_api.route('/rules/<int:rule_id>/performance', methods=['GET'])
-@token_required
+@get_token_required()
 def get_rule_performance(current_user, rule_id):
     """Get rule performance metrics"""
     try:
@@ -693,7 +698,7 @@ def get_rule_performance(current_user, rule_id):
         }), 500
 
 @rules_api.route('/rules/analytics', methods=['GET'])
-@token_required
+@get_token_required()
 def get_rules_analytics(current_user):
     """Get overall rules analytics"""
     try:

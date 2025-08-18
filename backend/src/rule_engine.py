@@ -602,6 +602,7 @@ class BaseRuleEvaluator:
     
     def __init__(self, app=None):
         self.app = app
+        self._location_cache = None  # Cache for location lookup optimization
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
@@ -760,55 +761,90 @@ class BaseRuleEvaluator:
                 # No database context available
                 return None
     
-    def _find_location_by_code_internal(self, location_str: str) -> 'Location':
-        """Internal method to find location using enhanced cross-format matching"""
-        # 1. Direct exact match
-        location = Location.query.filter_by(code=location_str).first()
-        if location:
-            return location
+    def _build_location_cache(self) -> tuple:
+        """Build optimized location lookup cache - called once per evaluator instance"""
+        if self._location_cache is not None:
+            return self._location_cache
+            
+        from models import Location
         
-        # 2. ENHANCED: Use comprehensive position format normalization
-        # Generate all possible variants of the input location code
-        input_variants = self._normalize_position_format(location_str)
-        
-        # 3. Search all locations and check if any variant matches
+        # Get all locations once
         all_locations = Location.query.all()
         
-        # Create lookup set for database location codes and their variants
-        db_location_lookup = set()
-        db_location_map = {}  # Maps variant -> Location object
+        # Build efficient lookup structures
+        exact_lookup = {}  # code -> Location
+        variant_lookup = {}  # variant -> Location  
         
         for loc in all_locations:
-            # Add original database code
-            db_location_lookup.add(loc.code)
-            db_location_map[loc.code] = loc
+            # Store exact match
+            exact_lookup[loc.code] = loc
             
-            # Generate variants for each database location
+            # Generate limited variants to prevent memory explosion
             try:
-                db_variants = self._normalize_position_format(loc.code)
-                for variant in db_variants:
-                    db_location_lookup.add(variant)
-                    if variant not in db_location_map:  # Don't overwrite exact matches
-                        db_location_map[variant] = loc
+                # Use simplified variant generation for performance
+                variants = self._get_essential_variants(loc.code)
+                for variant in variants:
+                    if variant not in variant_lookup:  # First match wins
+                        variant_lookup[variant] = loc
             except Exception:
-                # Skip problematic location codes
                 continue
         
-        # 4. Check if any input variant matches any database variant
-        for input_variant in input_variants:
-            if input_variant in db_location_lookup:
-                return db_location_map[input_variant]
+        self._location_cache = (exact_lookup, variant_lookup)
+        return self._location_cache
+    
+    def _get_essential_variants(self, location_code: str) -> list:
+        """Generate essential variants only - optimized for performance"""
+        if not location_code:
+            return [location_code]
+            
+        code = str(location_code).strip().upper()
+        variants = [code]  # Always include original
         
-        # 5. Fallback: Legacy normalization for backward compatibility
+        import re
+        
+        # Only generate essential variants to prevent memory explosion
+        standard_pattern = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$', code)
+        if standard_pattern:
+            aisle, rack, position, level = standard_pattern.groups()
+            
+            # Generate only the most likely matches
+            essential_variants = [
+                f"{aisle.zfill(2)}-{rack.zfill(2)}-{position.zfill(3)}{level}",  # 02-01-011B
+                f"{aisle.zfill(2)}-{rack.lstrip('0') or '0'}-{position.zfill(3)}{level}",  # 02-1-011B  
+                f"01-01-{position.zfill(3)}{level}",  # Force common warehouse format
+            ]
+            
+            variants.extend(essential_variants)
+            
+            # Add only _1 suffix (most common)
+            for variant in essential_variants:
+                variants.append(f"{variant}_1")
+        
+        return list(set(variants))  # Remove duplicates
+    
+    def _find_location_by_code_internal(self, location_str: str) -> 'Location':
+        """OPTIMIZED: Internal method using cached lookup for performance"""
+        # Build cache once per evaluator instance
+        exact_lookup, variant_lookup = self._build_location_cache()
+        
+        # 1. Direct exact match (fastest)
+        if location_str in exact_lookup:
+            return exact_lookup[location_str]
+        
+        # 2. Generate essential variants for input (limited set)
+        input_variants = self._get_essential_variants(location_str)
+        
+        # 3. Check variants against pre-built cache (fast lookup)
+        for variant in input_variants:
+            if variant in exact_lookup:
+                return exact_lookup[variant]
+            if variant in variant_lookup:
+                return variant_lookup[variant]
+        
+        # 4. Legacy fallback (only if essential variants fail)
         normalized_input = self._normalize_location_code(location_str)
-        if normalized_input != location_str:
-            for loc in all_locations:
-                try:
-                    normalized_db_code = self._normalize_location_code(loc.code)
-                    if normalized_db_code == location_str or normalized_input == loc.code or normalized_db_code == normalized_input:
-                        return loc
-                except Exception:
-                    continue
+        if normalized_input != location_str and normalized_input in exact_lookup:
+            return exact_lookup[normalized_input]
         
         return None
     
