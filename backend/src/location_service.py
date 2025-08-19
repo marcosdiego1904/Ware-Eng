@@ -50,6 +50,7 @@ class CanonicalLocationService:
             self._parse_standard,      # Standard format with variable padding
             self._parse_compact,       # Compact format (01A01A)
             self._parse_mixed,         # Mixed separators (01-1-01A)
+            self._parse_user_common,   # Common user formats (001A01, A1-001, etc.)
         ]
         self.special_locations = {
             'RECV-01', 'RECV-02', 'RECV-001', 'RECV-002',
@@ -182,6 +183,61 @@ class CanonicalLocationService:
         """
         # This is handled by _parse_standard since it already supports variable padding
         return self._parse_standard(code)
+    
+    def _parse_user_common(self, code: str) -> Optional[str]:
+        """
+        Parse common user formats that don't fit other patterns.
+        
+        This handles formats commonly used by warehouse operations:
+        
+        Examples:
+            "001A01" -> "01-01-001A" (position + level + rack format)
+            "001B02" -> "01-02-001B" 
+            "A1-001" -> "01-01-001A" (level + rack - position)
+            "B2-015" -> "02-01-015B"
+            "5A10"   -> "01-01-005A" (compact: position + level + rack)
+        """
+        
+        # Pattern 1: PPP{L}RR (position + level + rack) - e.g., "001A01" -> "01-01-001A"  
+        pattern1 = r'^(\d{1,3})([A-Z])(\d{1,2})$'
+        match1 = re.match(pattern1, code)
+        if match1:
+            position, level, rack = match1.groups()
+            aisle = 1  # Default aisle for this format
+            return self.CANONICAL_FORMAT.format(
+                aisle=int(aisle),
+                rack=int(rack), 
+                position=int(position),
+                level=level
+            )
+        
+        # Pattern 2: {L}R-PPP (level + rack - position) - e.g., "A1-001" -> "01-01-001A"
+        pattern2 = r'^([A-Z])(\d{1,2})-(\d{1,3})$'
+        match2 = re.match(pattern2, code)
+        if match2:
+            level, rack, position = match2.groups()
+            aisle = 1  # Default aisle for this format
+            return self.CANONICAL_FORMAT.format(
+                aisle=int(aisle),
+                rack=int(rack),
+                position=int(position), 
+                level=level
+            )
+            
+        # Pattern 3: PP{L}R (compact: position + level + rack) - e.g., "5A10" -> "01-10-005A"
+        pattern3 = r'^(\d{1,2})([A-Z])(\d{1,2})$'
+        match3 = re.match(pattern3, code)
+        if match3:
+            position, level, rack = match3.groups()
+            aisle = 1  # Default aisle for this format
+            return self.CANONICAL_FORMAT.format(
+                aisle=int(aisle),
+                rack=int(rack),
+                position=int(position),
+                level=level
+            )
+        
+        return None
     
     def generate_search_variants(self, canonical_code: str) -> List[str]:
         """
