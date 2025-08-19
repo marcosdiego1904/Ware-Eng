@@ -388,8 +388,21 @@ class LocationMatcher:
             self.global_cache[canonical_code] = location
             if warehouse_id and warehouse_id in self.warehouse_caches:
                 self.warehouse_caches[warehouse_id][canonical_code] = location
+            return location
         
-        return location
+        # Step 5: ARCHITECTURAL FIX - Dynamic Location Auto-Creation
+        # If location format is valid but doesn't exist, create it dynamically
+        if warehouse_id and self._is_auto_creatable_location(canonical_code):
+            location = self._auto_create_location(canonical_code, warehouse_id)
+            if location:
+                # Cache the newly created location
+                self.global_cache[canonical_code] = location
+                if warehouse_id in self.warehouse_caches:
+                    self.warehouse_caches[warehouse_id][canonical_code] = location
+                logger.info(f"Auto-created missing location: {canonical_code} for warehouse {warehouse_id}")
+                return location
+        
+        return None
     
     def _ensure_session_bound(self, location: Location) -> Location:
         """
@@ -544,6 +557,120 @@ class LocationMatcher:
             # But for now, the individual lookups benefit from caching
         
         return results
+    
+    def _is_auto_creatable_location(self, canonical_code: str) -> bool:
+        """
+        Determine if a location can be auto-created based on format validation.
+        
+        Only auto-create storage locations that follow standard pattern XX-XX-XXXL
+        Do NOT auto-create special areas (RECV-01, etc.) as they need careful configuration
+        
+        Args:
+            canonical_code: Location code in canonical format
+            
+        Returns:
+            True if location can be safely auto-created
+        """
+        # Only auto-create standard storage locations (not special areas)
+        storage_pattern = r'^(\d{2})-(\d{2})-(\d{3})([A-Z])$'
+        match = re.match(storage_pattern, canonical_code)
+        
+        if not match:
+            logger.debug(f"Location {canonical_code} is not auto-creatable (not standard storage format)")
+            return False
+        
+        aisle, rack, position, level = match.groups()
+        
+        # Set reasonable limits to prevent abuse (can be made configurable)
+        if int(aisle) > 50:  # Max 50 aisles
+            logger.warning(f"Location {canonical_code} exceeds aisle limit (50)")
+            return False
+            
+        if int(rack) > 50:   # Max 50 racks per aisle  
+            logger.warning(f"Location {canonical_code} exceeds rack limit (50)")
+            return False
+            
+        if int(position) > 999:  # Max 999 positions (already handled by format)
+            logger.warning(f"Location {canonical_code} exceeds position limit (999)")
+            return False
+        
+        # Valid level check (A-Z)
+        if not level.isalpha() or len(level) != 1:
+            logger.warning(f"Location {canonical_code} has invalid level: {level}")
+            return False
+        
+        logger.debug(f"Location {canonical_code} is auto-creatable")
+        return True
+    
+    def _auto_create_location(self, canonical_code: str, warehouse_id: str) -> Optional[Location]:
+        """
+        Auto-create a missing storage location based on canonical format.
+        
+        This implements dynamic template expansion - when users reference locations
+        that don't exist but follow valid patterns, create them automatically
+        with sensible defaults based on warehouse configuration.
+        
+        Args:
+            canonical_code: Location code in canonical format (XX-XX-XXXL)
+            warehouse_id: Target warehouse ID
+            
+        Returns:
+            Created Location object or None if creation failed
+        """
+        try:
+            from models import Location, WarehouseConfig
+            
+            # Get warehouse configuration for defaults
+            config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+            default_capacity = config.default_pallet_capacity if config else 1
+            
+            # Parse location components
+            storage_pattern = r'^(\d{2})-(\d{2})-(\d{3})([A-Z])$'
+            match = re.match(storage_pattern, canonical_code)
+            
+            if not match:
+                logger.error(f"Cannot auto-create non-storage location: {canonical_code}")
+                return None
+            
+            aisle, rack, position, level = match.groups()
+            
+            # WORKAROUND: Create location with warehouse-prefixed code to avoid global conflicts
+            # Long-term: Database schema needs compound unique key (warehouse_id, code)
+            prefixed_code = f"{warehouse_id}_{canonical_code}"
+            
+            location = Location(
+                warehouse_id=warehouse_id,
+                code=prefixed_code,  # Use prefixed code for global uniqueness
+                location_type='STORAGE',
+                zone='STORAGE',  # Default zone for auto-created storage
+                pallet_capacity=default_capacity,
+                is_active=True,
+                created_by=1  # System user - could be made configurable
+            )
+            
+            # Check if location already exists (race condition safety)
+            existing = Location.query.filter(
+                Location.warehouse_id == warehouse_id,
+                Location.code == canonical_code
+            ).first()
+            
+            if existing:
+                logger.info(f"Location {canonical_code} already exists, returning existing")
+                return existing
+            
+            # Save to database
+            db.session.add(location)
+            db.session.commit()
+            
+            logger.info(f"Successfully auto-created location: {canonical_code} "
+                       f"in warehouse {warehouse_id} with capacity {default_capacity}")
+            
+            return location
+            
+        except Exception as e:
+            logger.error(f"Failed to auto-create location {canonical_code}: {e}")
+            db.session.rollback()
+            return None
     
     def clear_caches(self):
         """
