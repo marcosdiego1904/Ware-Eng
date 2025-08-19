@@ -315,13 +315,15 @@ class LocationMatcher:
                 location = self.warehouse_caches[warehouse_id].get(canonical_code)
                 if location:
                     logger.debug(f"Location found in warehouse cache: {canonical_code}")
-                    return location
+                    # FIX: Ensure location object is bound to current session
+                    return self._ensure_session_bound(location)
         
         # Step 3: Try global cache
         location = self.global_cache.get(canonical_code)
         if location:
             logger.debug(f"Location found in global cache: {canonical_code}")
-            return location
+            # FIX: Ensure location object is bound to current session
+            return self._ensure_session_bound(location)
         
         # Step 4: Database lookup with variants
         location = self._database_lookup_with_variants(canonical_code, warehouse_id)
@@ -332,6 +334,62 @@ class LocationMatcher:
                 self.warehouse_caches[warehouse_id][canonical_code] = location
         
         return location
+    
+    def _ensure_session_bound(self, location: Location) -> Location:
+        """
+        Ensure Location object is bound to current SQLAlchemy session.
+        
+        This fixes the session binding corruption issue that occurs when:
+        1. Location objects are cached
+        2. Database session changes (e.g., after template operations)
+        3. Cached objects become detached from new session
+        
+        Returns:
+            Location object bound to current session
+        """
+        try:
+            # Try to access a property - this will fail if object is detached
+            _ = location.id
+            # If we get here, object is still bound to session
+            return location
+        except Exception as e:
+            # Object is detached - need to merge it with current session
+            logger.warning(f"Location object detached from session, merging: {location.code}")
+            try:
+                # Merge object with current session
+                merged_location = db.session.merge(location)
+                # Update cache with merged object
+                canonical_code = self.canonical.to_canonical(location.code)
+                self.global_cache[canonical_code] = merged_location
+                # Update warehouse caches as well
+                for warehouse_id, cache in self.warehouse_caches.items():
+                    if canonical_code in cache:
+                        cache[canonical_code] = merged_location
+                return merged_location
+            except Exception as merge_error:
+                logger.error(f"Failed to merge detached location {location.code}: {merge_error}")
+                # As a last resort, try to find fresh from database
+                return self._fresh_database_lookup(location.code, getattr(location, 'warehouse_id', None))
+    
+    def _fresh_database_lookup(self, location_code: str, warehouse_id: str = None) -> Optional[Location]:
+        """
+        Fresh database lookup as fallback when session binding fails.
+        This bypasses all caches and queries database directly.
+        """
+        try:
+            query = Location.query.filter(
+                Location.code == location_code,
+                or_(Location.is_active == True, Location.is_active.is_(None))
+            )
+            if warehouse_id:
+                query = query.filter(Location.warehouse_id == warehouse_id)
+            
+            fresh_location = query.first()
+            logger.info(f"Fresh database lookup for {location_code}: {'found' if fresh_location else 'not found'}")
+            return fresh_location
+        except Exception as e:
+            logger.error(f"Fresh database lookup failed for {location_code}: {e}")
+            return None
     
     def _ensure_warehouse_cache(self, warehouse_id: str):
         """Build warehouse cache if not already built"""
@@ -430,6 +488,20 @@ class LocationMatcher:
             # But for now, the individual lookups benefit from caching
         
         return results
+    
+    def clear_caches(self):
+        """
+        Clear all location caches to force fresh database lookups.
+        
+        This should be called after:
+        - Warehouse template operations
+        - Location data changes
+        - Database session issues
+        """
+        self.warehouse_caches.clear()
+        self.global_cache.clear()
+        self.cache_built.clear()
+        logger.info("All location caches cleared - fresh lookups will occur")
     
     def get_cache_stats(self) -> Dict[str, any]:
         """Return cache statistics for monitoring and debugging"""
@@ -625,3 +697,7 @@ def find_location(location_code: str, warehouse_id: str = None) -> Optional[Loca
 def validate_inventory_locations(inventory_df, warehouse_id: str = None) -> Dict[str, any]:
     """Validate all locations in inventory DataFrame"""
     return get_inventory_validator().validate_inventory_locations(inventory_df, warehouse_id)
+
+def clear_location_caches():
+    """Clear all location caches - call after template operations or database changes"""
+    get_location_matcher().clear_caches()
