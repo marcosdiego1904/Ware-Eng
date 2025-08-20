@@ -1288,11 +1288,11 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         should_flag_anomalies = False
         bypass_reason = None
         
-        # 1. Obvious violations bypass (>2x capacity) - always flag these regardless of statistics
-        obvious_violations = [loc for loc in actual_overcapacity_locations if loc['count'] > loc['capacity'] * 2]
+        # 1. Obvious violations bypass (>=2x capacity) - always flag these regardless of statistics
+        obvious_violations = [loc for loc in actual_overcapacity_locations if loc['count'] >= loc['capacity'] * 2]
         if obvious_violations:
             should_flag_anomalies = True
-            bypass_reason = f"Obvious violations detected: {len(obvious_violations)} locations with >2x capacity"
+            bypass_reason = f"Obvious violations detected: {len(obvious_violations)} locations with >=2x capacity"
         
         # 2. Statistical analysis for borderline cases
         elif severity_ratio >= min_severity_ratio and actual_overcapacity_count >= significance_threshold * expected_overcapacity['count']:
