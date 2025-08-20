@@ -1189,7 +1189,8 @@ def create_analysis_report(current_user):
                     args=None,      # No legacy args when using database
                     use_database_rules=True,
                     rule_ids=rule_ids,
-                    report_id=None  # Will be set after report creation
+                    report_id=None,  # Will be set after report creation
+                    user_context=current_user  # SECURITY: Pass user context for warehouse filtering
                 )
                 
                 # Clear timeout

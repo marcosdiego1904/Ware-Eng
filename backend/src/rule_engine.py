@@ -34,9 +34,10 @@ class RuleEngine:
     Dynamic rule engine that evaluates database-stored rules against inventory data
     """
     
-    def __init__(self, db_session, app=None):
+    def __init__(self, db_session, app=None, user_context=None):
         self.db = db_session
         self.app = app
+        self.user_context = user_context  # SECURITY: Store user context for warehouse filtering
         self.evaluators = self._initialize_evaluators()
     
     def _ensure_app_context(self):
@@ -178,7 +179,7 @@ class RuleEngine:
             print(f"   Conditions: {rule.conditions}")
             
             # Auto-detect warehouse context from inventory data
-            warehouse_context = self._detect_warehouse_context(inventory_df)
+            warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
             result = self.evaluate_rule(rule, inventory_df, warehouse_context)
             results.append(result)
             
@@ -196,7 +197,7 @@ class RuleEngine:
         print(f"\n[RULE_ENGINE_DEBUG] Total anomalies found: {total_anomalies}")
         return results
     
-    def _detect_warehouse_context(self, inventory_df: pd.DataFrame) -> dict:
+    def _detect_warehouse_context(self, inventory_df: pd.DataFrame, user_context=None) -> dict:
         """
         Enhanced warehouse detection using canonical location service.
         
@@ -232,14 +233,14 @@ class RuleEngine:
             
             print("[WAREHOUSE_DETECTION] Using canonical location service for smart detection")
             return self._detect_warehouse_with_canonical_service(
-                inventory_df, inventory_locations, canonical_service, inventory_validator
+                inventory_df, inventory_locations, canonical_service, inventory_validator, user_context
             )
             
         except ImportError:
             print("[WAREHOUSE_DETECTION] Canonical service not available, using legacy detection")
             return self._detect_warehouse_legacy(inventory_df, inventory_locations)
     
-    def _detect_warehouse_with_canonical_service(self, inventory_df, inventory_locations, canonical_service, inventory_validator):
+    def _detect_warehouse_with_canonical_service(self, inventory_df, inventory_locations, canonical_service, inventory_validator, user_context=None):
         """
         NEW: Intelligent warehouse detection using canonical location service.
         
@@ -247,14 +248,35 @@ class RuleEngine:
         - 10x faster than variant explosion approach
         - More accurate location matching through canonical normalization
         - Comprehensive validation metrics for debugging
+        - SECURITY: User-scoped warehouse filtering to prevent cross-tenant access
         """
         print("[WAREHOUSE_DETECTION_CANONICAL] Starting intelligent warehouse detection")
         
-        # Get all warehouse IDs to test
+        # SECURITY FIX: Get warehouse IDs filtered by user context
         from models import Location, db
         from sqlalchemy import func, or_
         
-        warehouse_ids = db.session.query(Location.warehouse_id).distinct().all()
+        query = db.session.query(Location.warehouse_id).distinct()
+        
+        # CRITICAL SECURITY FIX: Filter warehouses by user context
+        if user_context and hasattr(user_context, 'username'):
+            print(f"[WAREHOUSE_DETECTION_CANONICAL] Filtering warehouses for user: {user_context.username}")
+            # Filter warehouses that match user pattern (quick fix for current naming scheme)
+            # This handles warehouse IDs like USER_MARCOS9, USER_TESTF, etc.
+            username_upper = user_context.username.upper()
+            query = query.filter(
+                or_(
+                    Location.warehouse_id.like(f'%{username_upper}%'),
+                    Location.warehouse_id.like(f'%{user_context.username}%'),
+                    Location.warehouse_id == user_context.username,
+                    Location.warehouse_id == f'USER_{username_upper}',
+                    Location.warehouse_id == f'USER_{user_context.username}'
+                )
+            )
+        else:
+            print("[WAREHOUSE_DETECTION_CANONICAL] WARNING: No user context provided - using all warehouses (SECURITY RISK)")
+        
+        warehouse_ids = query.all()
         warehouse_ids = [wid[0] for wid in warehouse_ids if wid[0]]
         
         print(f"[WAREHOUSE_DETECTION_CANONICAL] Testing {len(warehouse_ids)} warehouses")

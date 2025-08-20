@@ -25,7 +25,8 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
                        args: argparse.Namespace = None,
                        use_database_rules: bool = True,
                        rule_ids: List[int] = None,
-                       report_id: int = None) -> List[Dict[str, Any]]:
+                       report_id: int = None,
+                       user_context=None) -> List[Dict[str, Any]]:
     """
     Enhanced warehouse intelligence engine that supports both Excel rules (legacy)
     and database rules (new dynamic system).
@@ -44,7 +45,7 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
     print("\nRunning enhanced warehouse intelligence engine...")
     
     if use_database_rules:
-        return _run_database_rules_engine(inventory_df, rule_ids, report_id)
+        return _run_database_rules_engine(inventory_df, rule_ids, report_id, user_context)
     else:
         # Fall back to legacy Excel-based engine
         from main import run_engine as legacy_run_engine
@@ -52,7 +53,8 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
 
 def _run_database_rules_engine(inventory_df: pd.DataFrame, 
                              rule_ids: List[int] = None,
-                             report_id: int = None) -> List[Dict[str, Any]]:
+                             report_id: int = None,
+                             user_context=None) -> List[Dict[str, Any]]:
     """
     Execute analysis using database-stored rules with enhanced session management
     """
@@ -67,8 +69,8 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
         # Get current session using the session manager
         current_session = RequestScopedSessionManager.get_current_session()
         
-        # Initialize rule engine with request-scoped session
-        rule_engine = RuleEngine(current_session)
+        # Initialize rule engine with request-scoped session and user context
+        rule_engine = RuleEngine(current_session, user_context=user_context)
         
         # Load and evaluate rules
         print(f"Loading rules from database...")
