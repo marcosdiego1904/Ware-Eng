@@ -23,6 +23,8 @@ from typing import Optional, Dict, List, Set, Tuple
 from functools import lru_cache
 from sqlalchemy import or_, and_
 from models import Location, db
+from session_manager import RequestScopedSessionManager, ensure_session_bound, ensure_locations_bound
+from session_safe_cache import get_session_safe_cache
 
 logger = logging.getLogger(__name__)
 
@@ -335,11 +337,19 @@ class LocationMatcher:
     
     def __init__(self, canonical_service: CanonicalLocationService):
         self.canonical = canonical_service
-        self.warehouse_caches = {}  # warehouse_id -> {canonical_code -> Location}
-        self.global_cache = {}      # canonical_code -> Location (for cross-warehouse lookup)
+        
+        # ENHANCED: Use session-safe caching instead of object caching
+        self.session_safe_cache = get_session_safe_cache()
+        
+        # Legacy cache structures (deprecated - keeping for compatibility)
+        self.warehouse_caches = {}  # warehouse_id -> {canonical_code -> Location} - DEPRECATED
+        self.global_cache = {}      # canonical_code -> Location - DEPRECATED  
         self.cache_built = set()    # Track which warehouse caches are built
         
-        logger.info("LocationMatcher initialized")
+        # Enable session-safe caching by default
+        self.use_session_safe_cache = True
+        
+        logger.info("LocationMatcher initialized with session-safe caching")
     
     def find_location(self, location_code: str, warehouse_id: str = None) -> Optional[Location]:
         """
@@ -364,30 +374,41 @@ class LocationMatcher:
         # Step 1: Normalize to canonical format
         canonical_code = self.canonical.to_canonical(location_code)
         
-        # Step 2: Try warehouse-specific cache
-        if warehouse_id:
-            self._ensure_warehouse_cache(warehouse_id)
-            if warehouse_id in self.warehouse_caches:
-                location = self.warehouse_caches[warehouse_id].get(canonical_code)
-                if location:
-                    logger.debug(f"Location found in warehouse cache: {canonical_code}")
-                    # FIX: Ensure location object is bound to current session
-                    return self._ensure_session_bound(location)
+        # Step 2: Try session-safe cache first
+        if self.use_session_safe_cache:
+            cached_location = self.session_safe_cache.get_location(canonical_code, warehouse_id)
+            if cached_location:
+                logger.debug(f"Session-safe cache hit: {canonical_code}")
+                return cached_location
+        else:
+            # FALLBACK: Use legacy cache with session binding protection
+            # Try warehouse-specific cache
+            if warehouse_id:
+                self._ensure_warehouse_cache(warehouse_id)
+                if warehouse_id in self.warehouse_caches:
+                    location = self.warehouse_caches[warehouse_id].get(canonical_code)
+                    if location:
+                        logger.debug(f"Location found in warehouse cache: {canonical_code}")
+                        return self._ensure_session_bound(location)
+            
+            # Try global cache
+            location = self.global_cache.get(canonical_code)
+            if location:
+                logger.debug(f"Location found in global cache: {canonical_code}")
+                return self._ensure_session_bound(location)
         
-        # Step 3: Try global cache
-        location = self.global_cache.get(canonical_code)
-        if location:
-            logger.debug(f"Location found in global cache: {canonical_code}")
-            # FIX: Ensure location object is bound to current session
-            return self._ensure_session_bound(location)
-        
-        # Step 4: Database lookup with variants
+        # Step 3: Database lookup with variants
         location = self._database_lookup_with_variants(canonical_code, warehouse_id)
         if location:
-            # Cache the result
-            self.global_cache[canonical_code] = location
-            if warehouse_id and warehouse_id in self.warehouse_caches:
-                self.warehouse_caches[warehouse_id][canonical_code] = location
+            # Cache the result in session-safe cache
+            if self.use_session_safe_cache:
+                self.session_safe_cache.put_location(canonical_code, location, warehouse_id)
+                logger.debug(f"Stored in session-safe cache: {canonical_code}")
+            else:
+                # Store in legacy cache
+                self.global_cache[canonical_code] = location
+                if warehouse_id and warehouse_id in self.warehouse_caches:
+                    self.warehouse_caches[warehouse_id][canonical_code] = location
             return location
         
         # Step 5: ARCHITECTURAL FIX - Dynamic Location Auto-Creation
@@ -406,82 +427,36 @@ class LocationMatcher:
     
     def _ensure_session_bound(self, location: Location) -> Optional[Location]:
         """
-        CRITICAL FIX: Ensure Location object is bound to current SQLAlchemy session.
+        ENHANCED SESSION BINDING: Use RequestScopedSessionManager for robust session handling.
         
-        This fixes the session binding corruption issue that occurs when:
-        1. Location objects are cached
-        2. Database session changes (e.g., after template operations)
-        3. Cached objects become detached from new session
-        
-        Enhanced error handling to prevent warehouse detection failures.
+        This leverages the new session manager that's specifically designed for
+        web request contexts and handles all the complex session binding scenarios.
         
         Returns:
-            Location object bound to current session, or None if all recovery attempts fail
+            Location object bound to current session, or None if binding fails
         """
         if location is None:
             return None
             
-        try:
-            # Try to access multiple properties to ensure object is fully bound
-            _ = location.id
-            _ = location.code  
-            _ = location.warehouse_id
-            # If we get here, object is still bound to session
-            logger.debug(f"Location {location.code} is properly session-bound")
-            return location
-            
-        except Exception as e:
-            # Object is detached - attempt recovery strategies
-            logger.warning(f"Location object detached from session: {getattr(location, 'code', 'UNKNOWN')} - Error: {e}")
-            
-            # Strategy 1: Try to merge object with current session
+        # Use the enhanced session manager
+        bound_location = ensure_session_bound(location)
+        
+        if bound_location and bound_location != location:
+            # Location was rebound - update our caches with the new bound object
             try:
-                logger.info(f"Attempting session merge for location: {getattr(location, 'code', 'UNKNOWN')}")
-                merged_location = db.session.merge(location)
+                canonical_code = self.canonical.to_canonical(bound_location.code)
+                self.global_cache[canonical_code] = bound_location
                 
-                # Update caches with merged object
-                if hasattr(location, 'code'):
-                    canonical_code = self.canonical.to_canonical(location.code)
-                    self.global_cache[canonical_code] = merged_location
-                    # Update warehouse caches as well
-                    for warehouse_id, cache in self.warehouse_caches.items():
-                        if canonical_code in cache:
-                            cache[canonical_code] = merged_location
-                
-                logger.info(f"Successfully merged location: {merged_location.code}")
-                return merged_location
-                
-            except Exception as merge_error:
-                logger.error(f"Session merge failed for location: {merge_error}")
-                
-                # Strategy 2: Fresh database lookup as last resort
-                try:
-                    location_code = getattr(location, 'code', None)
-                    warehouse_id = getattr(location, 'warehouse_id', None)
+                # Update warehouse caches as well
+                warehouse_id = getattr(bound_location, 'warehouse_id', None)
+                if warehouse_id and warehouse_id in self.warehouse_caches:
+                    self.warehouse_caches[warehouse_id][canonical_code] = bound_location
                     
-                    if location_code:
-                        logger.info(f"Attempting fresh database lookup for: {location_code}")
-                        fresh_location = self._fresh_database_lookup(location_code, warehouse_id)
-                        
-                        if fresh_location:
-                            # Update caches with fresh object
-                            canonical_code = self.canonical.to_canonical(location_code)
-                            self.global_cache[canonical_code] = fresh_location
-                            if warehouse_id and warehouse_id in self.warehouse_caches:
-                                self.warehouse_caches[warehouse_id][canonical_code] = fresh_location
-                            logger.info(f"Fresh lookup successful for: {location_code}")
-                            return fresh_location
-                        else:
-                            logger.error(f"Fresh lookup failed - location not found: {location_code}")
-                    else:
-                        logger.error("Cannot perform fresh lookup - location code unavailable")
-                        
-                except Exception as fresh_error:
-                    logger.error(f"Fresh database lookup failed: {fresh_error}")
-            
-            # All recovery strategies failed
-            logger.error(f"All session recovery strategies failed for location")
-            return None
+                logger.debug(f"Updated caches with rebound location: {bound_location.code}")
+            except Exception as cache_update_error:
+                logger.warning(f"Failed to update caches after session rebinding: {cache_update_error}")
+        
+        return bound_location
     
     def _fresh_database_lookup(self, location_code: str, warehouse_id: str = None) -> Optional[Location]:
         """
@@ -577,34 +552,49 @@ class LocationMatcher:
     
     def batch_find_locations(self, location_codes: List[str], warehouse_id: str = None) -> Dict[str, Optional[Location]]:
         """
-        Efficient batch location lookup with session binding protection.
+        Efficient batch location lookup with enhanced session binding protection.
         
         Optimized for processing many locations at once (e.g., during inventory analysis).
         Uses single database query for all missing locations after cache lookup.
         
-        CRITICAL FIX: Ensures all returned Location objects are properly bound to current session.
+        ENHANCED: Uses RequestScopedSessionManager for web request context safety.
         """
         results = {}
-        missing_codes = []
+        found_locations = []
         
         # Step 1: Try to resolve as many as possible from cache
         for location_code in location_codes:
             location = self.find_location(location_code, warehouse_id)
             
-            # CRITICAL FIX: Ensure session binding for all returned locations
             if location is not None:
-                location = self._ensure_session_bound(location)
-            
-            results[location_code] = location
-            
-            if location is None:
-                missing_codes.append(location_code)
+                found_locations.append(location)
+                results[location_code] = location
+            else:
+                results[location_code] = None
         
-        # Step 2: Batch lookup for remaining missing codes
-        if missing_codes:
-            logger.info(f"Batch lookup for {len(missing_codes)} missing locations")
-            # This could be further optimized with a single query for all variants
-            # But for now, the individual lookups benefit from caching
+        # Step 2: Ensure all found locations are session-bound using batch processing
+        if found_locations:
+            bound_locations = ensure_locations_bound(found_locations)
+            
+            # Update results with bound locations
+            for i, location_code in enumerate(location_codes):
+                if results[location_code] is not None:
+                    # Find the corresponding bound location
+                    original_location = results[location_code]
+                    bound_location = None
+                    
+                    for bound_loc in bound_locations:
+                        if (hasattr(bound_loc, 'code') and hasattr(original_location, 'code') 
+                            and bound_loc.code == original_location.code):
+                            bound_location = bound_loc
+                            break
+                    
+                    results[location_code] = bound_location
+        
+        # Step 3: Log summary
+        successful_bindings = sum(1 for loc in results.values() if loc is not None)
+        if successful_bindings < len(location_codes):
+            logger.info(f"Batch lookup: {successful_bindings}/{len(location_codes)} locations successfully bound to session")
         
         return results
     

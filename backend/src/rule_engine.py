@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 # Import models (will be imported from app context)
 from models import Rule, RuleCategory, RulePerformance, Location
+from session_manager import RequestScopedSessionManager, ensure_session_bound
 
 @dataclass
 class RuleEvaluationResult:
@@ -1546,20 +1547,29 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
     
     def _evaluate_with_canonical_service(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_id: str = None) -> List[Dict[str, Any]]:
         """
-        NEW: Evaluate using canonical location service with intelligent matching.
+        ENHANCED: Evaluate using canonical location service with robust error handling.
         
         Benefits:
         - 95%+ accuracy vs 60% with old system
         - 10x faster than 40-variant generation approach
         - Comprehensive validation metrics and debugging
-        - Handles all location format variations intelligently
+        - ENHANCED: Graceful fallback when session binding fails
         """
         print(f"[INVALID_LOCATION_CANONICAL] Starting validation with warehouse_id: {warehouse_id}")
         
-        # Use batch validation for all locations at once
-        validation_results = self.inventory_validator.validate_inventory_locations(
-            inventory_df, warehouse_id
-        )
+        try:
+            # ENHANCED: Use batch validation with error recovery
+            validation_results = self._safe_validate_inventory_locations(inventory_df, warehouse_id)
+            
+            if validation_results is None:
+                # Validation failed completely - use emergency fallback
+                print("[INVALID_LOCATION_CANONICAL] Batch validation failed, using emergency fallback")
+                return self._emergency_invalid_location_detection(inventory_df, rule)
+                
+        except Exception as validation_error:
+            print(f"[INVALID_LOCATION_CANONICAL] Canonical validation failed: {validation_error}")
+            print("[INVALID_LOCATION_CANONICAL] Falling back to emergency detection")
+            return self._emergency_invalid_location_detection(inventory_df, rule)
         
         # Log comprehensive validation metrics
         print(f"[INVALID_LOCATION_CANONICAL] Validation Results:")
@@ -1691,6 +1701,142 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
                     'details': f"Location '{location}' not found in warehouse database (legacy validation)"
                 })
         
+        return anomalies
+    
+    def _safe_validate_inventory_locations(self, inventory_df: pd.DataFrame, warehouse_id: str = None) -> Optional[Dict[str, Any]]:
+        """
+        ENHANCED: Safely validate inventory locations with session binding protection.
+        
+        This method wraps the inventory validator call with comprehensive error handling
+        to prevent Rule #4 from crashing when session binding issues occur.
+        
+        Returns:
+            Validation results dictionary, or None if validation completely fails
+        """
+        try:
+            print("[INVALID_LOCATION_CANONICAL] Attempting safe inventory validation...")
+            
+            # Attempt the inventory validation with error recovery
+            validation_results = self.inventory_validator.validate_inventory_locations(
+                inventory_df, warehouse_id
+            )
+            
+            # Verify we got valid results
+            if validation_results and isinstance(validation_results, dict):
+                required_keys = ['total_unique_locations', 'valid_locations', 'invalid_locations', 'warehouse_coverage']
+                if all(key in validation_results for key in required_keys):
+                    print("[INVALID_LOCATION_CANONICAL] Validation successful")
+                    return validation_results
+                else:
+                    print(f"[INVALID_LOCATION_CANONICAL] Validation returned incomplete results: {list(validation_results.keys())}")
+                    return None
+            else:
+                print(f"[INVALID_LOCATION_CANONICAL] Validation returned invalid result type: {type(validation_results)}")
+                return None
+                
+        except Exception as e:
+            print(f"[INVALID_LOCATION_CANONICAL] Safe validation failed: {e}")
+            
+            # Check if it's specifically a session binding error
+            if "not bound to a Session" in str(e):
+                print("[INVALID_LOCATION_CANONICAL] Detected session binding error - attempting recovery")
+                
+                try:
+                    # Force session refresh and retry once
+                    current_session = RequestScopedSessionManager.get_current_session()
+                    
+                    # Reinitialize the inventory validator with fresh session context
+                    from location_service import get_inventory_validator
+                    fresh_validator = get_inventory_validator()
+                    
+                    retry_results = fresh_validator.validate_inventory_locations(inventory_df, warehouse_id)
+                    
+                    if retry_results:
+                        print("[INVALID_LOCATION_CANONICAL] Session recovery successful")
+                        return retry_results
+                    else:
+                        print("[INVALID_LOCATION_CANONICAL] Session recovery failed - results still invalid")
+                        return None
+                        
+                except Exception as retry_error:
+                    print(f"[INVALID_LOCATION_CANONICAL] Session recovery attempt failed: {retry_error}")
+                    return None
+            else:
+                # Non-session related error
+                print(f"[INVALID_LOCATION_CANONICAL] Non-session error: {e}")
+                return None
+    
+    def _emergency_invalid_location_detection(self, inventory_df: pd.DataFrame, rule: Rule) -> List[Dict[str, Any]]:
+        """
+        EMERGENCY FALLBACK: Basic invalid location detection when all else fails.
+        
+        This method provides a simple but functional fallback when the canonical
+        location service fails completely. It uses basic pattern matching to identify
+        obviously invalid locations.
+        
+        Returns:
+            List of anomalies for clearly invalid locations
+        """
+        print("[INVALID_LOCATION_EMERGENCY] Using emergency invalid location detection")
+        
+        anomalies = []
+        emergency_invalid_patterns = [
+            # Patterns that are clearly invalid
+            r'^$',                    # Empty strings
+            r'^\s*$',                # Whitespace only
+            r'.*[@#$%^&*()!~`].*',   # Contains special characters
+            r'^.{50,}$',             # Extremely long location codes (50+ chars)
+            r'^[0-9]+$',             # Numbers only
+            r'INVALID',              # Contains "INVALID"
+            r'ERROR',                # Contains "ERROR"
+            r'NULL',                 # Contains "NULL" 
+            r'UNKNOWN',              # Contains "UNKNOWN"
+            r'TEMP.*INVALID',        # Temporary invalid patterns
+        ]
+        
+        compiled_patterns = []
+        for pattern in emergency_invalid_patterns:
+            try:
+                compiled_patterns.append(re.compile(pattern, re.IGNORECASE))
+            except re.error as e:
+                print(f"[INVALID_LOCATION_EMERGENCY] Invalid regex pattern '{pattern}': {e}")
+        
+        invalid_count = 0
+        processed_locations = set()
+        
+        for _, pallet in inventory_df.iterrows():
+            location = str(pallet.get('location', '')).strip()
+            
+            # Skip empty/null locations and already processed ones
+            if pd.isna(pallet.get('location')) or not location or location in processed_locations:
+                continue
+                
+            processed_locations.add(location)
+            
+            # Check against emergency invalid patterns
+            is_invalid = False
+            matched_pattern = None
+            
+            for pattern in compiled_patterns:
+                if pattern.search(location):
+                    is_invalid = True
+                    matched_pattern = pattern.pattern
+                    break
+            
+            if is_invalid:
+                invalid_count += 1
+                
+                anomalies.append({
+                    'pallet_id': pallet['pallet_id'],
+                    'location': pallet['location'],
+                    'anomaly_type': 'Invalid Location',
+                    'priority': rule.priority,
+                    'issue_description': f"Location '{location}' appears invalid (pattern: {matched_pattern})",
+                    'canonical_form': location,
+                    'validation_method': 'emergency_fallback'
+                })
+        
+        print(f"[INVALID_LOCATION_EMERGENCY] Emergency detection found {invalid_count} invalid locations")
         return anomalies
 
 class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):

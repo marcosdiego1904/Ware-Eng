@@ -17,6 +17,8 @@ from rule_engine import RuleEngine
 from models import Rule, RuleCategory, RulePerformance
 from database import db
 from app import AnalysisReport
+from session_manager import RequestScopedSessionManager, invalidate_cache
+from session_safe_cache import get_session_safe_cache
 
 def run_enhanced_engine(inventory_df: pd.DataFrame, 
                        rules_df: pd.DataFrame = None, 
@@ -52,11 +54,21 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
                              rule_ids: List[int] = None,
                              report_id: int = None) -> List[Dict[str, Any]]:
     """
-    Execute analysis using database-stored rules
+    Execute analysis using database-stored rules with enhanced session management
     """
     try:
-        # Initialize rule engine
-        rule_engine = RuleEngine(db.session)
+        # ENHANCED: Invalidate request-scoped caches to prevent cross-request contamination
+        invalidate_cache()
+        
+        # Invalidate session-safe cache for this request
+        cache = get_session_safe_cache()
+        cache.invalidate_request_cache()
+        
+        # Get current session using the session manager
+        current_session = RequestScopedSessionManager.get_current_session()
+        
+        # Initialize rule engine with request-scoped session
+        rule_engine = RuleEngine(current_session)
         
         # Load and evaluate rules
         print(f"Loading rules from database...")
