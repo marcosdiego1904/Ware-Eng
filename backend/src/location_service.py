@@ -404,41 +404,84 @@ class LocationMatcher:
         
         return None
     
-    def _ensure_session_bound(self, location: Location) -> Location:
+    def _ensure_session_bound(self, location: Location) -> Optional[Location]:
         """
-        Ensure Location object is bound to current SQLAlchemy session.
+        CRITICAL FIX: Ensure Location object is bound to current SQLAlchemy session.
         
         This fixes the session binding corruption issue that occurs when:
         1. Location objects are cached
         2. Database session changes (e.g., after template operations)
         3. Cached objects become detached from new session
         
+        Enhanced error handling to prevent warehouse detection failures.
+        
         Returns:
-            Location object bound to current session
+            Location object bound to current session, or None if all recovery attempts fail
         """
+        if location is None:
+            return None
+            
         try:
-            # Try to access a property - this will fail if object is detached
+            # Try to access multiple properties to ensure object is fully bound
             _ = location.id
+            _ = location.code  
+            _ = location.warehouse_id
             # If we get here, object is still bound to session
+            logger.debug(f"Location {location.code} is properly session-bound")
             return location
+            
         except Exception as e:
-            # Object is detached - need to merge it with current session
-            logger.warning(f"Location object detached from session, merging: {location.code}")
+            # Object is detached - attempt recovery strategies
+            logger.warning(f"Location object detached from session: {getattr(location, 'code', 'UNKNOWN')} - Error: {e}")
+            
+            # Strategy 1: Try to merge object with current session
             try:
-                # Merge object with current session
+                logger.info(f"Attempting session merge for location: {getattr(location, 'code', 'UNKNOWN')}")
                 merged_location = db.session.merge(location)
-                # Update cache with merged object
-                canonical_code = self.canonical.to_canonical(location.code)
-                self.global_cache[canonical_code] = merged_location
-                # Update warehouse caches as well
-                for warehouse_id, cache in self.warehouse_caches.items():
-                    if canonical_code in cache:
-                        cache[canonical_code] = merged_location
+                
+                # Update caches with merged object
+                if hasattr(location, 'code'):
+                    canonical_code = self.canonical.to_canonical(location.code)
+                    self.global_cache[canonical_code] = merged_location
+                    # Update warehouse caches as well
+                    for warehouse_id, cache in self.warehouse_caches.items():
+                        if canonical_code in cache:
+                            cache[canonical_code] = merged_location
+                
+                logger.info(f"Successfully merged location: {merged_location.code}")
                 return merged_location
+                
             except Exception as merge_error:
-                logger.error(f"Failed to merge detached location {location.code}: {merge_error}")
-                # As a last resort, try to find fresh from database
-                return self._fresh_database_lookup(location.code, getattr(location, 'warehouse_id', None))
+                logger.error(f"Session merge failed for location: {merge_error}")
+                
+                # Strategy 2: Fresh database lookup as last resort
+                try:
+                    location_code = getattr(location, 'code', None)
+                    warehouse_id = getattr(location, 'warehouse_id', None)
+                    
+                    if location_code:
+                        logger.info(f"Attempting fresh database lookup for: {location_code}")
+                        fresh_location = self._fresh_database_lookup(location_code, warehouse_id)
+                        
+                        if fresh_location:
+                            # Update caches with fresh object
+                            canonical_code = self.canonical.to_canonical(location_code)
+                            self.global_cache[canonical_code] = fresh_location
+                            if warehouse_id and warehouse_id in self.warehouse_caches:
+                                self.warehouse_caches[warehouse_id][canonical_code] = fresh_location
+                            logger.info(f"Fresh lookup successful for: {location_code}")
+                            return fresh_location
+                        else:
+                            logger.error(f"Fresh lookup failed - location not found: {location_code}")
+                    else:
+                        logger.error("Cannot perform fresh lookup - location code unavailable")
+                        
+                except Exception as fresh_error:
+                    logger.error(f"Fresh database lookup failed: {fresh_error}")
+            
+            # All recovery strategies failed
+            logger.error(f"All session recovery strategies failed for location")
+            return None
     
     def _fresh_database_lookup(self, location_code: str, warehouse_id: str = None) -> Optional[Location]:
         """
@@ -534,10 +577,12 @@ class LocationMatcher:
     
     def batch_find_locations(self, location_codes: List[str], warehouse_id: str = None) -> Dict[str, Optional[Location]]:
         """
-        Efficient batch location lookup.
+        Efficient batch location lookup with session binding protection.
         
         Optimized for processing many locations at once (e.g., during inventory analysis).
         Uses single database query for all missing locations after cache lookup.
+        
+        CRITICAL FIX: Ensures all returned Location objects are properly bound to current session.
         """
         results = {}
         missing_codes = []
@@ -545,6 +590,11 @@ class LocationMatcher:
         # Step 1: Try to resolve as many as possible from cache
         for location_code in location_codes:
             location = self.find_location(location_code, warehouse_id)
+            
+            # CRITICAL FIX: Ensure session binding for all returned locations
+            if location is not None:
+                location = self._ensure_session_bound(location)
+            
             results[location_code] = location
             
             if location is None:
