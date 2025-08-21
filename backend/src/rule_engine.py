@@ -1248,8 +1248,27 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         # Try to use virtual location engine for enhanced classification
         virtual_engine = None
         try:
-            from .virtual_location_engine import get_virtual_engine
-            virtual_engine = get_virtual_engine(warehouse_context['warehouse_id'])
+            from virtual_template_integration import get_virtual_engine_for_warehouse
+            virtual_engine = get_virtual_engine_for_warehouse(warehouse_context['warehouse_id'])
+            
+            # If template integration fails, try to create virtual engine directly (like VirtualInvalidLocationEvaluator)
+            if not virtual_engine:
+                print(f"[STAGNANT_PALLETS_DEBUG] No template config found, creating virtual engine directly...")
+                from virtual_location_engine import VirtualLocationEngine
+                # Create with default USER_TESTF configuration like the working evaluator
+                warehouse_config = {
+                    'warehouse_id': warehouse_context['warehouse_id'],
+                    'num_aisles': 2,
+                    'racks_per_aisle': 1,
+                    'positions_per_rack': 22,
+                    'levels_per_position': 4,
+                    'level_names': 'ABCD',
+                    'special_areas': ['RECV-01', 'RECV-02', 'STAGE-01', 'DOCK-01', 'AISLE-01', 'AISLE-02'],
+                    'default_capacity': 1,
+                    'default_zone': 'GENERAL'
+                }
+                virtual_engine = VirtualLocationEngine(warehouse_config)
+                
             print(f"[STAGNANT_PALLETS_DEBUG] ✅ Virtual engine loaded for location type assignment")
         except Exception as e:
             print(f"[STAGNANT_PALLETS_DEBUG] Could not load virtual engine: {e}")
