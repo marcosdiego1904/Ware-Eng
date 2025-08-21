@@ -1095,6 +1095,10 @@ def create_analysis_report(current_user):
     rules_file = request.files.get('rules_file')  # Optional
     column_mapping_str = request.form.get('column_mapping')
     
+    # NEW: Get warehouse_id from form data (from applied template)
+    warehouse_id = request.form.get('warehouse_id')
+    print(f"[DEBUG] Received warehouse_id from frontend: {warehouse_id}")
+    
     # Validate inventory file
     is_valid, error_msg = validate_file_upload(inventory_file)
     if not is_valid:
@@ -1190,7 +1194,8 @@ def create_analysis_report(current_user):
                     use_database_rules=True,
                     rule_ids=rule_ids,
                     report_id=None,  # Will be set after report creation
-                    user_context=current_user  # SECURITY: Pass user context for warehouse filtering
+                    user_context=current_user,  # SECURITY: Pass user context for warehouse filtering
+                    warehouse_id=warehouse_id  # NEW: Pass explicit warehouse_id from applied template
                 )
                 
                 # Clear timeout

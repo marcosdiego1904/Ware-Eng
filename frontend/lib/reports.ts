@@ -59,6 +59,7 @@ export interface CreateReportRequest {
   inventory_file: File;
   rules_file?: File;
   column_mapping: Record<string, string>;
+  warehouse_id?: string;  // NEW: Add warehouse_id support
 }
 
 export const reportsApi = {
@@ -86,11 +87,18 @@ export const reportsApi = {
       formData.append('rules_file', data.rules_file);
     }
     formData.append('column_mapping', JSON.stringify(data.column_mapping));
+    
+    // NEW: Include warehouse_id if provided (from applied template)
+    if (data.warehouse_id) {
+      formData.append('warehouse_id', data.warehouse_id);
+      console.log('Including warehouse_id from applied template:', data.warehouse_id);
+    }
 
     console.log('Sending FormData with:', {
       inventory_file: data.inventory_file.name,
       rules_file: data.rules_file?.name,
-      column_mapping: data.column_mapping
+      column_mapping: data.column_mapping,
+      warehouse_id: data.warehouse_id  // NEW: Log warehouse context
     });
 
     // Log FormData contents for debugging

@@ -178,8 +178,13 @@ class RuleEngine:
             print(f"   Type: {rule.rule_type}, Priority: {rule.priority}")
             print(f"   Conditions: {rule.conditions}")
             
-            # Auto-detect warehouse context from inventory data
-            warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
+            # Check if explicit warehouse context is set (from applied template)
+            if hasattr(self, '_warehouse_context') and self._warehouse_context:
+                warehouse_context = self._warehouse_context
+                print(f"[APPLY_TEMPLATE_FIX] Using explicit warehouse context: {warehouse_context}")
+            else:
+                # Auto-detect warehouse context from inventory data
+                warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
             result = self.evaluate_rule(rule, inventory_df, warehouse_context)
             results.append(result)
             

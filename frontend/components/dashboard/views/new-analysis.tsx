@@ -4,8 +4,12 @@ import { useState } from 'react'
 import { FileUpload } from '@/components/analysis/file-upload'
 import { ColumnMapping } from '@/components/analysis/column-mapping'
 import { ProcessingStatus } from '@/components/analysis/processing-status'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Building2 } from 'lucide-react'
 import { reportsApi } from '@/lib/reports'
 import { useDashboardStore } from '@/lib/store'
+import useLocationStore from '@/lib/location-store'
 
 type AnalysisStep = 'upload' | 'mapping' | 'processing' | 'complete'
 
@@ -17,6 +21,9 @@ export function NewAnalysisView() {
   })
   const [error, setError] = useState<string | null>(null)
   const { setCurrentView } = useDashboardStore()
+  
+  // NEW: Get current warehouse configuration from applied template
+  const { currentWarehouseConfig } = useLocationStore()
 
   const handleFilesSelected = (files: { inventory: File | null; rules: File | null }) => {
     setSelectedFiles(files)
@@ -33,17 +40,22 @@ export function NewAnalysisView() {
     setCurrentStep('processing')
 
     try {
+      // NEW: Include warehouse_id from applied template
+      const warehouseId = currentWarehouseConfig?.warehouse_id
+      
       console.log('Starting analysis with:', {
         inventory_file: selectedFiles.inventory?.name,
         rules_file: selectedFiles.rules?.name,
-        column_mapping: mapping
+        column_mapping: mapping,
+        warehouse_id: warehouseId  // NEW: Show warehouse context
       })
 
       // Submit to backend API
       const response = await reportsApi.createReport({
         inventory_file: selectedFiles.inventory!,
         rules_file: selectedFiles.rules || undefined,
-        column_mapping: mapping
+        column_mapping: mapping,
+        warehouse_id: warehouseId  // NEW: Pass warehouse context from applied template
       })
 
       console.log('Analysis response:', response)
@@ -91,6 +103,34 @@ export function NewAnalysisView() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {/* NEW: Warehouse Context Display */}
+      {currentWarehouseConfig && (
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-blue-700">
+              <Building2 className="h-5 w-5" />
+              Analysis Warehouse Configuration
+            </CardTitle>
+            <CardDescription className="text-blue-600">
+              Analysis will use the currently applied warehouse template
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex items-center gap-3">
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                {currentWarehouseConfig.warehouse_name}
+              </Badge>
+              <span className="text-sm text-gray-600">
+                ID: {currentWarehouseConfig.warehouse_id}
+              </span>
+              <span className="text-sm text-gray-600">
+                • {currentWarehouseConfig.total_storage_locations?.toLocaleString() || 'N/A'} locations
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-between">

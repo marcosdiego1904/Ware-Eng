@@ -26,7 +26,8 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
                        use_database_rules: bool = True,
                        rule_ids: List[int] = None,
                        report_id: int = None,
-                       user_context=None) -> List[Dict[str, Any]]:
+                       user_context=None,
+                       warehouse_id: str = None) -> List[Dict[str, Any]]:
     """
     Enhanced warehouse intelligence engine that supports both Excel rules (legacy)
     and database rules (new dynamic system).
@@ -45,7 +46,7 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
     print("\nRunning enhanced warehouse intelligence engine...")
     
     if use_database_rules:
-        return _run_database_rules_engine(inventory_df, rule_ids, report_id, user_context)
+        return _run_database_rules_engine(inventory_df, rule_ids, report_id, user_context, warehouse_id)
     else:
         # Fall back to legacy Excel-based engine
         from main import run_engine as legacy_run_engine
@@ -54,7 +55,8 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
 def _run_database_rules_engine(inventory_df: pd.DataFrame, 
                              rule_ids: List[int] = None,
                              report_id: int = None,
-                             user_context=None) -> List[Dict[str, Any]]:
+                             user_context=None,
+                             warehouse_id: str = None) -> List[Dict[str, Any]]:
     """
     Execute analysis using database-stored rules with enhanced session management
     """
@@ -71,6 +73,17 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
         
         # Initialize rule engine with request-scoped session and user context
         rule_engine = RuleEngine(current_session, user_context=user_context)
+        
+        # NEW: If warehouse_id is provided, use it directly for analysis
+        if warehouse_id:
+            print(f"[APPLY_TEMPLATE_FIX] Using explicit warehouse_id: {warehouse_id}")
+            # Override warehouse detection with applied template warehouse
+            rule_engine._warehouse_context = {
+                'warehouse_id': warehouse_id,
+                'detection_method': 'explicit_template',
+                'confidence': 'EXPLICIT',
+                'coverage': 100.0
+            }
         
         # Load and evaluate rules
         print(f"Loading rules from database...")
