@@ -167,20 +167,28 @@ class RuleEngine:
         
         print(f"\n[RULE_ENGINE_DEBUG] ==================== RULE EVALUATION START ====================")
         print(f"[RULE_ENGINE_DEBUG] Evaluating {len(rules)} rules on {inventory_df.shape[0]:,} records")
-        print(f"[RULE_ENGINE_DEBUG] Warehouse context: {warehouse_context}")
         print(f"[RULE_ENGINE_DEBUG] Available columns: {list(inventory_df.columns)}")
         print(f"[RULE_ENGINE_DEBUG] Sample locations: {list(inventory_df['location'].dropna().unique()[:10])}")
         
         results = []
         total_anomalies = 0
         
+        # Initialize warehouse_context before using it
+        warehouse_context = None
+        
         # Check if explicit warehouse context is set (from applied template) - show once
         if hasattr(self, '_warehouse_context') and self._warehouse_context:
             warehouse_context = self._warehouse_context
-            print(f"[APPLY_TEMPLATE_FIX] Using explicit warehouse context: {warehouse_context}")
+            print(f"[RULE_ENGINE_DEBUG] Using explicit warehouse context: {warehouse_context}")
         else:
             # Auto-detect warehouse context from inventory data
-            warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
+            try:
+                warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
+                print(f"[RULE_ENGINE_DEBUG] Auto-detected warehouse context: {warehouse_context}")
+            except Exception as e:
+                print(f"[RULE_ENGINE_DEBUG] WARNING: Warehouse context detection failed: {e}")
+                warehouse_context = {'warehouse_id': None, 'confidence': 'NONE', 'coverage': 0.0}
+                print(f"[RULE_ENGINE_DEBUG] Using fallback warehouse context: {warehouse_context}")
         
         for i, rule in enumerate(rules, 1):
             print(f"\n[RULE_ENGINE_DEBUG] -------------------- RULE {i}/{len(rules)} --------------------")
@@ -626,11 +634,18 @@ class RuleEngine:
                     error_message=f"No evaluator found for rule type: {rule.rule_type}"
                 )
             
-            # Evaluate the rule with warehouse context
+            print(f"[RULE_ENGINE_DEBUG] Using evaluator: {type(evaluator).__name__}")
+            print(f"[RULE_ENGINE_DEBUG] Warehouse context passed: {warehouse_context}")
+            
+            # Evaluate the rule with warehouse context (with safety check)
+            if warehouse_context is None:
+                warehouse_context = {'warehouse_id': None, 'confidence': 'NONE', 'coverage': 0.0}
+                
             if hasattr(evaluator, 'evaluate') and 'warehouse_context' in evaluator.evaluate.__code__.co_varnames:
+                print(f"[RULE_ENGINE_DEBUG] Calling evaluator with warehouse_context")
                 anomalies = evaluator.evaluate(rule, inventory_df, warehouse_context)
             else:
-                # Fallback for evaluators that don't support warehouse context yet
+                print(f"[RULE_ENGINE_DEBUG] Calling evaluator without warehouse_context (legacy)")
                 anomalies = evaluator.evaluate(rule, inventory_df)
             
             # Add rule metadata to each anomaly
