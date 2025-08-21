@@ -5,30 +5,21 @@ Replaces the traditional database-heavy InvalidLocationEvaluator with algorithmi
 
 import pandas as pd
 from typing import List, Dict, Any, Optional
+from rule_engine import BaseRuleEvaluator, Rule
 from virtual_template_integration import get_virtual_engine_for_warehouse
 
 
-class VirtualInvalidLocationEvaluator:
+class VirtualInvalidLocationEvaluator(BaseRuleEvaluator):
     """
     ENHANCED: Invalid location evaluator using virtual location engine
     """
     
     def __init__(self, app=None):
-        self.app = app
+        super().__init__(app)
         self.name = "VirtualInvalidLocationEvaluator"
         print(f"[{self.name}] Initialized with virtual location validation")
     
-    def _parse_conditions(self, rule):
-        """Parse rule conditions from JSON"""
-        try:
-            import json
-            if hasattr(rule, 'conditions') and rule.conditions:
-                return json.loads(rule.conditions) if isinstance(rule.conditions, str) else rule.conditions
-            return {}
-        except (json.JSONDecodeError, AttributeError):
-            return {}
-    
-    def evaluate(self, rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
+    def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         """
         Evaluate invalid locations using virtual location engine
         """
@@ -50,7 +41,7 @@ class VirtualInvalidLocationEvaluator:
         
         return self._evaluate_with_virtual_engine(rule, inventory_df, virtual_engine)
     
-    def _evaluate_with_virtual_engine(self, rule, inventory_df: pd.DataFrame, virtual_engine) -> List[Dict[str, Any]]:
+    def _evaluate_with_virtual_engine(self, rule: Rule, inventory_df: pd.DataFrame, virtual_engine) -> List[Dict[str, Any]]:
         """
         Perform virtual location validation using the virtual engine
         """
@@ -91,7 +82,7 @@ class VirtualInvalidLocationEvaluator:
         
         return anomalies
     
-    def _fallback_basic_validation(self, rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _fallback_basic_validation(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
         Basic fallback validation when virtual engine is not available
         """
