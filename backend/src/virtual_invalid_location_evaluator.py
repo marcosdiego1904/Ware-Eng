@@ -146,8 +146,6 @@ class VirtualInvalidLocationEvaluator:
         """
         print(f"[{self.name}_DEBUG] ========== BASIC FALLBACK VALIDATION START ===========")
         print(f"[{self.name}_DEBUG] Reason: No virtual engine available")
-        print(f"[{self.name}_DEBUG] Using pattern-based validation with {len(basic_invalid_patterns)} patterns")
-        print(f"[{self.name}_DEBUG] Patterns: {basic_invalid_patterns}")
         
         anomalies = []
         basic_invalid_patterns = [
@@ -160,6 +158,9 @@ class VirtualInvalidLocationEvaluator:
             r'NULL',                 # Contains "NULL"
             r'UNKNOWN'               # Contains "UNKNOWN"
         ]
+        
+        print(f"[{self.name}_DEBUG] Using pattern-based validation with {len(basic_invalid_patterns)} patterns")
+        print(f"[{self.name}_DEBUG] Patterns: {basic_invalid_patterns}")
         
         import re
         compiled_patterns = []
