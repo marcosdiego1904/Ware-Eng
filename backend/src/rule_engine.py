@@ -146,13 +146,10 @@ class RuleEngine:
             if not pd.api.types.is_datetime64_any_dtype(df['creation_date']):
                 try:
                     df['creation_date'] = pd.to_datetime(df['creation_date'])
-                    print(f"[RULE_ENGINE_DEBUG] Converted creation_date from {type(inventory_df['creation_date'].iloc[0] if len(inventory_df) > 0 else 'empty')} to datetime")
                 except Exception as e:
-                    print(f"[RULE_ENGINE_WARNING] Failed to convert creation_date to datetime: {e}")
+                    print(f"[WARNING] Failed to convert creation_date to datetime: {e}")
         
-        print(f"[RULE_ENGINE_DEBUG] Column normalization:")
-        print(f"   Original columns: {list(inventory_df.columns)}")
-        print(f"   Normalized columns: {list(df.columns)}")
+        # Column normalization completed silently
         
         return df
     
@@ -167,39 +164,32 @@ class RuleEngine:
         # Normalize column names before processing
         inventory_df = self._normalize_dataframe_columns(inventory_df)
         
-        print(f"[RULE_ENGINE_DEBUG] Evaluating {len(rules)} active rules")
-        print(f"[RULE_ENGINE_DEBUG] Inventory DataFrame shape: {inventory_df.shape}")
+        print(f"[RULE_ENGINE] Evaluating {len(rules)} rules on {inventory_df.shape[0]:,} records")
         
         results = []
         total_anomalies = 0
         
+        # Check if explicit warehouse context is set (from applied template) - show once
+        if hasattr(self, '_warehouse_context') and self._warehouse_context:
+            warehouse_context = self._warehouse_context
+            print(f"[APPLY_TEMPLATE_FIX] Using explicit warehouse context: {warehouse_context}")
+        else:
+            # Auto-detect warehouse context from inventory data
+            warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
+        
         for rule in rules:
-            print(f"\n[RULE_ENGINE_DEBUG] Evaluating Rule ID {rule.id}: {rule.name}")
-            print(f"   Type: {rule.rule_type}, Priority: {rule.priority}")
-            print(f"   Conditions: {rule.conditions}")
-            
-            # Check if explicit warehouse context is set (from applied template)
-            if hasattr(self, '_warehouse_context') and self._warehouse_context:
-                warehouse_context = self._warehouse_context
-                print(f"[APPLY_TEMPLATE_FIX] Using explicit warehouse context: {warehouse_context}")
-            else:
-                # Auto-detect warehouse context from inventory data
-                warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
             result = self.evaluate_rule(rule, inventory_df, warehouse_context)
             results.append(result)
             
             if result.success:
                 anomaly_count = len(result.anomalies)
                 total_anomalies += anomaly_count
-                print(f"   SUCCESS: Rule executed successfully: {anomaly_count} anomalies found")
                 if anomaly_count > 0:
-                    print(f"   ANOMALIES:")
-                    for i, anomaly in enumerate(result.anomalies):
-                        print(f"      {i+1}. {anomaly.get('pallet_id', 'N/A')} - {anomaly.get('issue_description', 'N/A')}")
+                    print(f"[RULE] {rule.name}: {anomaly_count} anomalies detected")
             else:
-                print(f"   FAILED: Rule failed: {result.error_message}")
+                print(f"[RULE_ERROR] {rule.name}: {result.error_message}")
         
-        print(f"\n[RULE_ENGINE_DEBUG] Total anomalies found: {total_anomalies}")
+        print(f"[RULE_ENGINE] Analysis complete: {total_anomalies} total anomalies")
         return results
     
     def _detect_warehouse_context(self, inventory_df: pd.DataFrame, user_context=None) -> dict:
@@ -1196,15 +1186,11 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
             total_pallets = lot_df.shape[0]
             completion_ratio = final_pallets / total_pallets if total_pallets > 0 else 0
             
-            print(f"[UNCOORDINATED_LOTS_DEBUG] Lot '{receipt_number}': {final_pallets}/{total_pallets} pallets in final locations {final_location_types} = {completion_ratio:.1%} completion")
-            
             # Only flag stragglers from mostly-complete lots (>=threshold completion)
             if completion_ratio >= completion_threshold and total_pallets > 1:
-                print(f"[UNCOORDINATED_LOTS_DEBUG] Lot '{receipt_number}' exceeds {completion_threshold:.0%} threshold - checking for stragglers in {location_types}")
                 # Only flag multi-pallet lots where most pallets have been moved to final storage
                 # but some stragglers remain in receiving/staging areas
                 stragglers = lot_df[lot_df['location_type'].isin(location_types)]
-                print(f"[UNCOORDINATED_LOTS_DEBUG] Found {len(stragglers)} stragglers in {location_types}")
                 for _, pallet in stragglers.iterrows():
                     anomalies.append({
                         'pallet_id': pallet['pallet_id'],
@@ -1266,10 +1252,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 location_type = location_obj.location_type if location_obj else 'NOT_FOUND'
                 db_capacity = getattr(location_obj, 'capacity', None) if location_obj else None
                 db_pallet_capacity = getattr(location_obj, 'pallet_capacity', None) if location_obj else None
-                print(f"[OVERCAPACITY_DEBUG] Location '{location}': count={count}, "
-                      f"capacity={capacity}, type={location_type}, "
-                      f"db_capacity={db_capacity}, db_pallet_capacity={db_pallet_capacity}, "
-                      f"found_in_db={location_obj is not None}")
+                # Debug info available if needed: count={count}, capacity={capacity}, type={location_type}
             
             if count > capacity:
                 actual_overcapacity_locations.append({
@@ -1546,12 +1529,12 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
             self.location_matcher = get_location_matcher() 
             self.inventory_validator = get_inventory_validator()
             self.use_canonical = True
-            print("[INVALID_LOCATION_DEBUG] Initialized with canonical location service")
+            # Canonical location service initialized
         except ImportError as e:
-            print(f"[INVALID_LOCATION_DEBUG] Canonical service not available, using legacy mode: {e}")
+            # Canonical service not available, using legacy mode
             self.use_canonical = False
         except Exception as e:
-            print(f"[INVALID_LOCATION_DEBUG] Canonical service initialization failed, using legacy mode: {e}")
+            # Canonical service initialization failed, using legacy mode
             self.use_canonical = False
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
@@ -1885,8 +1868,7 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
             )
         ]
         
-        print(f"[AISLE_STAGNANT_DEBUG] Found {len(matching_pallets)} pallets matching pattern '{location_pattern}'")
-        print(f"[AISLE_STAGNANT_DEBUG] Time threshold: {time_threshold} hours")
+        # Evaluating {len(matching_pallets)} pallets for stagnant behavior
         
         for _, pallet in matching_pallets.iterrows():
             if pd.isna(pallet.get('creation_date')):
@@ -1896,7 +1878,7 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
             time_diff_hours = time_diff.total_seconds() / 3600
             exceeds_threshold = time_diff > timedelta(hours=time_threshold)
             
-            print(f"[AISLE_STAGNANT_DEBUG] {pallet['pallet_id']} in {pallet['location']}: {time_diff_hours:.1f}h (threshold: {time_threshold}h) -> {'VIOLATION' if exceeds_threshold else 'OK'}")
+            # Pallet evaluation: {time_diff_hours:.1f}h vs {time_threshold}h threshold
             
             if exceeds_threshold:
                 anomalies.append({

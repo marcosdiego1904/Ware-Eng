@@ -1097,7 +1097,8 @@ def create_analysis_report(current_user):
     
     # NEW: Get warehouse_id from form data (from applied template)
     warehouse_id = request.form.get('warehouse_id')
-    print(f"[DEBUG] Received warehouse_id from frontend: {warehouse_id}")
+    if warehouse_id:
+        print(f"[APPLY_TEMPLATE] Using explicit warehouse: {warehouse_id}")
     
     # Validate inventory file
     is_valid, error_msg = validate_file_upload(inventory_file)
@@ -1133,29 +1134,17 @@ def create_analysis_report(current_user):
             rules_filepath = DEFAULT_RULES_PATH
 
         # Process the files
-        print(f"\n[DEBUG] Processing file: {inventory_file.filename}")
         inventory_df = pd.read_excel(inventory_filepath)
-        print(f"[DEBUG] Original columns: {list(inventory_df.columns)}")
-        print(f"[DEBUG] Original shape: {inventory_df.shape}")
-        print(f"[DEBUG] Column mapping received: {column_mapping}")
+        print(f"\n[ANALYSIS] Processing {inventory_file.filename} ({inventory_df.shape[0]:,} records)")
         
         # Fix: Invert the mapping - map FROM Excel columns TO system columns
         inverted_mapping = {v: k for k, v in column_mapping.items()}
-        print(f"[DEBUG] Inverted mapping (Excel -> System): {inverted_mapping}")
-        
         inventory_df.rename(columns=inverted_mapping, inplace=True)
-        print(f"[DEBUG] After mapping columns: {list(inventory_df.columns)}")
-        
-        # Show first few rows for debugging
-        print(f"[DEBUG] First 3 rows after mapping:")
-        print(inventory_df.head(3).to_string())
         
         if 'creation_date' in inventory_df.columns:
-            print(f"[DEBUG] Converting creation_date to datetime...")
             inventory_df['creation_date'] = pd.to_datetime(inventory_df['creation_date'])
-            print(f"[DEBUG] Sample creation_date values: {inventory_df['creation_date'].head(3).tolist()}")
         else:
-            print(f"[DEBUG] WARNING: 'creation_date' column not found after mapping!")
+            print(f"[WARNING] 'creation_date' column not found after mapping!")
         
         # Load enhanced engine if not already loaded
         load_enhanced_engine()
@@ -1171,7 +1160,7 @@ def create_analysis_report(current_user):
                 except json.JSONDecodeError:
                     pass
             
-            print(f"[DEBUG] Running enhanced engine with database rules...")
+            print(f"[ANALYSIS] Starting rule engine evaluation...")
             
             # Add timeout protection for production
             import signal
@@ -1201,7 +1190,7 @@ def create_analysis_report(current_user):
                 # Clear timeout
                 signal.alarm(0)
                 execution_time = time.time() - start_time
-                print(f"[DEBUG] Enhanced engine returned {len(anomalies)} anomalies in {execution_time:.2f}s")
+                print(f"[ANALYSIS] Found {len(anomalies)} anomalies in {execution_time:.2f}s")
                 
             except TimeoutError:
                 signal.alarm(0)  # Clear timeout
@@ -1219,12 +1208,12 @@ def create_analysis_report(current_user):
             # Check if Excel fallback is allowed
             allow_excel_fallback = os.getenv('ALLOW_EXCEL_FALLBACK', 'false').lower() == 'true'
             if allow_excel_fallback and rules_file:
-                print(f"[DEBUG] Running legacy engine with uploaded rules...")
+                print(f"[ANALYSIS] Using uploaded rules file...")
                 rules_df = pd.read_excel(rules_filepath)
                 args = Namespace(debug=False, floating_time=8, straggler_ratio=0.85, stuck_ratio=0.80, stuck_time=6)
                 from main import run_engine as legacy_run_engine
                 anomalies = legacy_run_engine(inventory_df, rules_df, args)
-                print(f"[DEBUG] Legacy engine returned {len(anomalies)} anomalies")
+                print(f"[ANALYSIS] Found {len(anomalies)} anomalies using uploaded rules")
             else:
                 return jsonify({
                     'message': 'Database rules engine not available and Excel fallback is disabled. Please contact administrator.',

@@ -43,7 +43,7 @@ def run_enhanced_engine(inventory_df: pd.DataFrame,
     Returns:
         List of anomaly dictionaries
     """
-    print("\nRunning enhanced warehouse intelligence engine...")
+    print("[ENGINE] Starting enhanced warehouse intelligence engine...")
     
     if use_database_rules:
         return _run_database_rules_engine(inventory_df, rule_ids, report_id, user_context, warehouse_id)
@@ -86,7 +86,6 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
             }
         
         # Load and evaluate rules
-        print(f"Loading rules from database...")
         evaluation_results = rule_engine.evaluate_all_rules(inventory_df, rule_ids)
         
         # Collect all anomalies
@@ -102,20 +101,21 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
                 if report_id:
                     _record_rule_performance(result, report_id)
                 
-                # Get rule name for better debug output
-                try:
-                    rule = Rule.query.get(result.rule_id)
-                    rule_name = rule.name if rule else f"Unknown Rule {result.rule_id}"
-                    print(f"Rule {result.rule_id} ({rule_name}): {len(result.anomalies)} anomalies found in {result.execution_time_ms}ms")
-                except Exception:
-                    print(f"Rule {result.rule_id}: {len(result.anomalies)} anomalies found in {result.execution_time_ms}ms")
+                # Only log successful rules that found anomalies
+                if len(result.anomalies) > 0:
+                    try:
+                        rule = Rule.query.get(result.rule_id)
+                        rule_name = rule.name if rule else f"Rule {result.rule_id}"
+                        print(f"[RULE_RESULT] {rule_name}: {len(result.anomalies)} anomalies ({result.execution_time_ms}ms)")
+                    except Exception:
+                        print(f"[RULE_RESULT] Rule {result.rule_id}: {len(result.anomalies)} anomalies ({result.execution_time_ms}ms)")
             else:
                 try:
                     rule = Rule.query.get(result.rule_id)
-                    rule_name = rule.name if rule else f"Unknown Rule {result.rule_id}"
-                    print(f"Rule {result.rule_id} ({rule_name}) failed: {result.error_message}")
+                    rule_name = rule.name if rule else f"Rule {result.rule_id}"
+                    print(f"[RULE_ERROR] {rule_name}: {result.error_message}")
                 except Exception:
-                    print(f"Rule {result.rule_id} failed: {result.error_message}")
+                    print(f"[RULE_ERROR] Rule {result.rule_id}: {result.error_message}")
         
         # Update report with rules used
         if report_id and rules_used:
@@ -124,7 +124,7 @@ def _run_database_rules_engine(inventory_df: pd.DataFrame,
         # Remove duplicates and prioritize
         unique_anomalies = _deduplicate_and_prioritize(all_anomalies)
         
-        print(f"Enhanced engine finished. Found {len(unique_anomalies)} unique anomalies using {len(rules_used)} rules.")
+        print(f"[ENGINE] Analysis complete: {len(unique_anomalies)} unique anomalies from {len(rules_used)} rules")
         
         return unique_anomalies
         
