@@ -11,6 +11,7 @@ from functools import wraps
 from database import db
 from models import WarehouseTemplate, WarehouseConfig, Location
 from core_models import User
+from virtual_template_integration import get_virtual_template_manager
 
 # Create the template API blueprint
 template_bp = Blueprint('template_api', __name__, url_prefix='/api/v1/templates')
@@ -455,7 +456,7 @@ def delete_template(current_user, template_id):
 @template_bp.route('/<int:template_id>/apply', methods=['POST'])
 @token_required
 def apply_template(current_user, template_id):
-    """Apply template to create new warehouse configuration"""
+    """Apply template to create new warehouse configuration with virtual locations"""
     try:
         template = WarehouseTemplate.query.get_or_404(template_id)
         
@@ -469,70 +470,101 @@ def apply_template(current_user, template_id):
         warehouse_id = data.get('warehouse_id', f'WAREHOUSE_{current_user.id}_{int(datetime.utcnow().timestamp())}')
         warehouse_name = data.get('warehouse_name', f'Warehouse from {template.name}')
         
-        # Check if warehouse already exists
-        existing_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+        # VIRTUAL LOCATIONS: Use feature flag to control rollout
+        use_virtual_locations = data.get('use_virtual_locations', True)
         
-        if existing_config:
-            # Update existing warehouse configuration
-            config = existing_config
-            # Clear existing locations before generating new ones (bulk delete for efficiency)
-            Location.query.filter_by(warehouse_id=warehouse_id).delete()
-            
-            # Flush deletions to ensure they complete before creating new locations
-            db.session.flush()
+        print(f"[TEMPLATE_API] Applying template {template_id} with virtual_locations={use_virtual_locations}")
+        
+        # Get virtual template manager
+        virtual_manager = get_virtual_template_manager()
+        
+        # Apply template with virtual or legacy mode
+        if use_virtual_locations:
+            result = virtual_manager.apply_template_with_virtual_locations(
+                template, warehouse_id, warehouse_name, current_user, 
+                customizations=data.get('customizations')
+            )
         else:
-            # Create new warehouse configuration
-            config = WarehouseConfig(warehouse_id=warehouse_id, created_by=current_user.id)
-            db.session.add(config)
-        
-        # Copy template configuration
-        config.warehouse_name = warehouse_name
-        config.num_aisles = template.num_aisles
-        config.racks_per_aisle = template.racks_per_aisle
-        config.positions_per_rack = template.positions_per_rack
-        config.levels_per_position = template.levels_per_position
-        config.level_names = template.level_names
-        config.default_pallet_capacity = template.default_pallet_capacity
-        config.bidimensional_racks = template.bidimensional_racks
-        config.receiving_areas = template.receiving_areas_template
-        config.staging_areas = template.staging_areas_template
-        config.dock_areas = template.dock_areas_template
-        config.updated_at = datetime.utcnow()
-        
-        # Override with any custom parameters
-        if 'customizations' in data:
-            customizations = data['customizations']
-            for field, value in customizations.items():
-                if hasattr(config, field):
-                    setattr(config, field, value)
-        
-        db.session.commit()
-        
-        # Generate locations if requested
-        generate_locations = data.get('generate_locations', True)
-        locations_created = 0
-        created_locations = []
-        
-        if generate_locations:
-            # Generate warehouse locations from template
-            created_locations = generate_locations_from_template(template, warehouse_id, current_user)
-            locations_created = len(created_locations)
-        
-        # Increment template usage count
-        template.increment_usage()
+            result = virtual_manager.apply_template_legacy_mode(
+                template, warehouse_id, warehouse_name, current_user,
+                customizations=data.get('customizations')
+            )
         
         return jsonify({
-            'message': 'Template applied successfully',
-            'warehouse_id': warehouse_id,
-            'configuration': config.to_dict(),
-            'template_code': template.template_code,
-            'locations_created': locations_created,
-            'storage_locations': len([loc for loc in created_locations if loc.location_type == 'STORAGE']) if generate_locations else 0,
-            'special_areas': len([loc for loc in created_locations if loc.location_type != 'STORAGE']) if generate_locations else 0
+            'message': f'Template applied successfully using {result["creation_method"]}',
+            'warehouse_id': result['warehouse_id'],
+            'configuration': result['configuration'],
+            'template_code': result['template_code'],
+            'locations_created': result.get('locations_created', 0),
+            'virtual_locations_available': result.get('virtual_locations_available', 0),
+            'storage_locations': result.get('storage_locations', 0),
+            'special_areas': result.get('special_areas', 0),
+            'virtual_location_summary': result.get('virtual_location_summary', {}),
+            'creation_method': result['creation_method']
         }), 201
         
     except Exception as e:
         db.session.rollback()
+        return jsonify({'error': f'Failed to apply template: {str(e)}'}), 500
+
+@template_bp.route('/apply-by-code', methods=['POST'])
+@token_required
+def apply_template_by_code(current_user):
+    """Apply template by template code with virtual location support"""
+    try:
+        data = request.get_json()
+        if not data or 'template_code' not in data:
+            return jsonify({'error': 'Template code is required'}), 400
+        
+        template_code = data['template_code']
+        template = WarehouseTemplate.query.filter_by(template_code=template_code).first()
+        
+        if not template:
+            return jsonify({'error': f'Template with code {template_code} not found'}), 404
+        
+        # Check access permissions
+        if not template.is_public and template.created_by != current_user.id:
+            return jsonify({'error': 'Access denied to private template'}), 403
+        
+        warehouse_id = data.get('warehouse_id', f'WAREHOUSE_{current_user.id}_{int(datetime.utcnow().timestamp())}')
+        warehouse_name = data.get('warehouse_name', f'Warehouse from {template.name}')
+        
+        # VIRTUAL LOCATIONS: Default to true for new template applications
+        use_virtual_locations = data.get('use_virtual_locations', True)
+        
+        print(f"[TEMPLATE_API] Applying template {template_code} with virtual_locations={use_virtual_locations}")
+        
+        # Get virtual template manager
+        virtual_manager = get_virtual_template_manager()
+        
+        # Apply template with virtual or legacy mode
+        if use_virtual_locations:
+            result = virtual_manager.apply_template_with_virtual_locations(
+                template, warehouse_id, warehouse_name, current_user, 
+                customizations=data.get('customizations')
+            )
+        else:
+            result = virtual_manager.apply_template_legacy_mode(
+                template, warehouse_id, warehouse_name, current_user,
+                customizations=data.get('customizations')
+            )
+        
+        return jsonify({
+            'message': f'Template applied successfully using {result["creation_method"]}',
+            'warehouse_id': result['warehouse_id'],
+            'configuration': result['configuration'],
+            'template_code': result['template_code'],
+            'locations_created': result.get('locations_created', 0),
+            'virtual_locations_available': result.get('virtual_locations_available', 0),
+            'storage_locations': result.get('storage_locations', 0),
+            'special_areas': result.get('special_areas', 0),
+            'virtual_location_summary': result.get('virtual_location_summary', {}),
+            'creation_method': result['creation_method']
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Template application by code failed: {str(e)}')
         return jsonify({'error': f'Failed to apply template: {str(e)}'}), 500
 
 @template_bp.route('/apply-by-code', methods=['POST'])

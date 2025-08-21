@@ -19,6 +19,7 @@ from dataclasses import dataclass
 # Import models (will be imported from app context)
 from models import Rule, RuleCategory, RulePerformance, Location
 from session_manager import RequestScopedSessionManager, ensure_session_bound
+from virtual_invalid_location_evaluator import VirtualInvalidLocationEvaluator
 
 @dataclass
 class RuleEvaluationResult:
@@ -55,12 +56,12 @@ class RuleEngine:
                 return None
         
     def _initialize_evaluators(self):
-        """Initialize rule evaluator registry"""
+        """Initialize rule evaluator registry with virtual location support"""
         return {
             'STAGNANT_PALLETS': StagnantPalletsEvaluator(app=self.app),
             'UNCOORDINATED_LOTS': UncoordinatedLotsEvaluator(app=self.app),
             'OVERCAPACITY': OvercapacityEvaluator(app=self.app),
-            'INVALID_LOCATION': InvalidLocationEvaluator(app=self.app),
+            'INVALID_LOCATION': VirtualInvalidLocationEvaluator(app=self.app),  # VIRTUAL: Enhanced evaluator
             'LOCATION_SPECIFIC_STAGNANT': LocationSpecificStagnantEvaluator(app=self.app),
             'TEMPERATURE_ZONE_MISMATCH': TemperatureZoneMismatchEvaluator(app=self.app),
             'DATA_INTEGRITY': DataIntegrityEvaluator(app=self.app),
