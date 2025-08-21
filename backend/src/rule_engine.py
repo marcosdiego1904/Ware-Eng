@@ -165,7 +165,11 @@ class RuleEngine:
         # Normalize column names before processing
         inventory_df = self._normalize_dataframe_columns(inventory_df)
         
-        print(f"[RULE_ENGINE] Evaluating {len(rules)} rules on {inventory_df.shape[0]:,} records")
+        print(f"\n[RULE_ENGINE_DEBUG] ==================== RULE EVALUATION START ====================")
+        print(f"[RULE_ENGINE_DEBUG] Evaluating {len(rules)} rules on {inventory_df.shape[0]:,} records")
+        print(f"[RULE_ENGINE_DEBUG] Warehouse context: {warehouse_context}")
+        print(f"[RULE_ENGINE_DEBUG] Available columns: {list(inventory_df.columns)}")
+        print(f"[RULE_ENGINE_DEBUG] Sample locations: {list(inventory_df['location'].dropna().unique()[:10])}")
         
         results = []
         total_anomalies = 0
@@ -178,19 +182,45 @@ class RuleEngine:
             # Auto-detect warehouse context from inventory data
             warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
         
-        for rule in rules:
+        for i, rule in enumerate(rules, 1):
+            print(f"\n[RULE_ENGINE_DEBUG] -------------------- RULE {i}/{len(rules)} --------------------")
+            print(f"[RULE_ENGINE_DEBUG] Rule: {rule.name} (ID: {rule.id})")
+            print(f"[RULE_ENGINE_DEBUG] Type: {rule.rule_type}")
+            print(f"[RULE_ENGINE_DEBUG] Priority: {rule.priority}")
+            print(f"[RULE_ENGINE_DEBUG] Conditions: {rule.conditions[:200]}..." if rule.conditions and len(rule.conditions) > 200 else f"[RULE_ENGINE_DEBUG] Conditions: {rule.conditions}")
+            
             result = self.evaluate_rule(rule, inventory_df, warehouse_context)
             results.append(result)
             
             if result.success:
                 anomaly_count = len(result.anomalies)
                 total_anomalies += anomaly_count
+                print(f"[RULE_ENGINE_DEBUG] Result: SUCCESS - {anomaly_count} anomalies in {result.execution_time_ms}ms")
                 if anomaly_count > 0:
-                    print(f"[RULE] {rule.name}: {anomaly_count} anomalies detected")
+                    print(f"[RULE_ENGINE_DEBUG] Sample anomaly: {result.anomalies[0] if result.anomalies else 'N/A'}")
             else:
-                print(f"[RULE_ERROR] {rule.name}: {result.error_message}")
+                print(f"[RULE_ENGINE_DEBUG] Result: FAILURE - {result.error_message}")
         
-        print(f"[RULE_ENGINE] Analysis complete: {total_anomalies} total anomalies")
+        print(f"\n[RULE_ENGINE_DEBUG] ==================== RULE EVALUATION COMPLETE ====================")
+        print(f"[RULE_ENGINE_DEBUG] FINAL RESULTS:")
+        print(f"[RULE_ENGINE_DEBUG] Total rules evaluated: {len(rules)}")
+        print(f"[RULE_ENGINE_DEBUG] Total anomalies found: {total_anomalies}")
+        print(f"[RULE_ENGINE_DEBUG] Successful rules: {sum(1 for r in results if r.success)}")
+        print(f"[RULE_ENGINE_DEBUG] Failed rules: {sum(1 for r in results if not r.success)}")
+        
+        # Show breakdown by anomaly type
+        anomaly_types = {}
+        for result in results:
+            if result.success:
+                for anomaly in result.anomalies:
+                    atype = anomaly.get('anomaly_type', 'Unknown')
+                    anomaly_types[atype] = anomaly_types.get(atype, 0) + 1
+        
+        if anomaly_types:
+            print(f"[RULE_ENGINE_DEBUG] Anomaly breakdown:")
+            for atype, count in anomaly_types.items():
+                print(f"[RULE_ENGINE_DEBUG]   {atype}: {count} anomalies")
+        print(f"[RULE_ENGINE_DEBUG] ================================================================")
         return results
     
     def _detect_warehouse_context(self, inventory_df: pd.DataFrame, user_context=None) -> dict:
