@@ -12,6 +12,7 @@ from functools import wraps
 from database import db
 from models import Location, WarehouseConfig
 from core_models import User
+from virtual_compatibility_layer import get_compatibility_manager
 
 # Create the location API blueprint
 location_bp = Blueprint('location_api', __name__, url_prefix='/api/v1/locations')
@@ -76,7 +77,7 @@ def token_required(f):
 @token_required
 def get_locations(current_user):
     """
-    Get all locations with optional filtering and pagination
+    Get all locations with support for both physical and virtual locations
     Query parameters:
     - warehouse_id: Filter by warehouse
     - location_type: Filter by type (RECEIVING, STORAGE, STAGING, DOCK)
@@ -97,6 +98,32 @@ def get_locations(current_user):
         search = request.args.get('search')
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 50)), 100)  # Max 100 per page
+        
+        print(f"[LOCATION_API] Request for warehouse_id={warehouse_id}, page={page}, per_page={per_page}")
+        
+        # Get compatibility manager to handle virtual/physical locations
+        compat_manager = get_compatibility_manager()
+        
+        # Check if this is a virtual warehouse
+        is_virtual = compat_manager.is_virtual_warehouse(warehouse_id)
+        print(f"[LOCATION_API] Warehouse {warehouse_id} is virtual: {is_virtual}")
+        
+        if is_virtual:
+            return _get_virtual_locations(current_user, warehouse_id, location_type, zone, 
+                                        is_active, aisle_number, search, page, per_page)
+        else:
+            return _get_physical_locations(current_user, warehouse_id, location_type, zone, 
+                                         is_active, aisle_number, search, page, per_page)
+        
+        
+    except Exception as e:
+        print(f"[LOCATION_API] Error: {str(e)}")
+        return jsonify({'error': f'Failed to retrieve locations: {str(e)}'}), 500
+
+def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_active, aisle_number, search, page, per_page):
+    """Handle physical location queries (original database logic)"""
+    try:
+        print(f"[LOCATION_API] Getting physical locations for warehouse {warehouse_id}")
         
         # Build query - CRITICAL: Filter by user to ensure data isolation
         query = Location.query.filter_by(
@@ -128,12 +155,7 @@ def get_locations(current_user):
             )
             
             # Add normalized code matching for better search results
-            # This helps when searching for "A-01-01A" but database has "ALICE_A-01-01A"
             normalized_search = _normalize_location_code(search_term)
-            
-            print(f"🔍 Location API Search Debug:")
-            print(f"  Original search: '{search_term}'")
-            print(f"  Normalized search: '{normalized_search}'")
             
             if normalized_search != search_term:
                 # Get all locations and check normalized matches
@@ -149,25 +171,14 @@ def get_locations(current_user):
                         normalized_db_code in normalized_search or
                         normalized_search == normalized_db_code):
                         matching_ids.append(loc.id)
-                        print(f"  ✓ Normalized match: '{loc.code}' -> '{normalized_db_code}' matches '{normalized_search}'")
                 
                 if matching_ids:
-                    print(f"  Found {len(matching_ids)} normalized matches")
-                    # Add normalized matches to the search filter
-                    search_filter = or_(
-                        search_filter,
-                        Location.id.in_(matching_ids)
-                    )
-                else:
-                    print(f"  No normalized matches found")
-            else:
-                print(f"  Using standard search only")
+                    search_filter = or_(search_filter, Location.id.in_(matching_ids))
             
             query = query.filter(search_filter)
         
-        # Order by location type to prioritize special areas, then by hierarchy for storage locations
+        # Order by location type
         query = query.order_by(
-            # Special areas first (RECEIVING, STAGING, DOCK), then STORAGE
             db.case(
                 (Location.location_type == 'RECEIVING', 1),
                 (Location.location_type == 'STAGING', 2), 
@@ -182,23 +193,14 @@ def get_locations(current_user):
             Location.code.asc()
         )
         
-        # Debug: Print query details
-        print(f"DEBUG: Location query for warehouse_id={warehouse_id}, filters={request.args.to_dict()}")
+        # Debug info
         total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
-        print(f"DEBUG: Total locations in warehouse {warehouse_id}: {total_for_warehouse}")
+        print(f"DEBUG: Total physical locations in warehouse {warehouse_id}: {total_for_warehouse}")
         
         # Paginate
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         locations = pagination.items
-        print(f"DEBUG: Query returned {len(locations)} locations")
-        
-        # Debug: Show location types in response
-        location_types = {}
-        for loc in locations:
-            location_types[loc.location_type] = location_types.get(loc.location_type, 0) + 1
-        print(f"DEBUG: Location types in response: {location_types}")
-        special_areas = [loc.code for loc in locations if loc.location_type in ['RECEIVING', 'STAGING', 'DOCK']]
-        print(f"DEBUG: Special areas in response: {special_areas}")
+        print(f"DEBUG: Physical query returned {len(locations)} locations")
         
         # Get summary statistics
         total_locations = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
@@ -227,11 +229,149 @@ def get_locations(current_user):
                 'storage_locations': storage_locations,
                 'total_capacity': total_capacity,
                 'warehouse_id': warehouse_id
-            }
+            },
+            'location_source': 'physical'
         }), 200
         
     except Exception as e:
-        return jsonify({'error': f'Failed to retrieve locations: {str(e)}'}), 500
+        print(f"[LOCATION_API] Physical locations error: {str(e)}")
+        return jsonify({'error': f'Failed to retrieve physical locations: {str(e)}'}), 500
+
+def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_active, aisle_number, search, page, per_page):
+    """Handle virtual location queries using compatibility manager"""
+    try:
+        print(f"[LOCATION_API] Getting virtual locations for warehouse {warehouse_id}")
+        
+        # Get compatibility manager
+        compat_manager = get_compatibility_manager()
+        
+        # Get all virtual locations for the warehouse (with safety limit)
+        all_locations = compat_manager.get_all_warehouse_locations(warehouse_id)
+        print(f"[LOCATION_API] Retrieved {len(all_locations)} virtual locations")
+        
+        if not all_locations:
+            print(f"[LOCATION_API] No virtual locations found - warehouse may not be properly configured")
+            return jsonify({
+                'locations': [],
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': 0,
+                    'pages': 0,
+                    'has_next': False,
+                    'has_prev': False
+                },
+                'summary': {
+                    'total_locations': 0,
+                    'storage_locations': 0,
+                    'total_capacity': 0,
+                    'warehouse_id': warehouse_id
+                },
+                'location_source': 'virtual',
+                'warning': 'No virtual locations configured for this warehouse'
+            }), 200
+        
+        # Apply filters to virtual locations
+        filtered_locations = all_locations
+        
+        if location_type:
+            filtered_locations = [loc for loc in filtered_locations if loc.get('location_type') == location_type]
+            print(f"[LOCATION_API] After location_type filter ({location_type}): {len(filtered_locations)} locations")
+        
+        if zone:
+            filtered_locations = [loc for loc in filtered_locations if loc.get('zone') == zone]
+            print(f"[LOCATION_API] After zone filter ({zone}): {len(filtered_locations)} locations")
+            
+        if is_active is not None:
+            is_active_bool = is_active.lower() == 'true'
+            filtered_locations = [loc for loc in filtered_locations if loc.get('is_active', True) == is_active_bool]
+            print(f"[LOCATION_API] After is_active filter ({is_active}): {len(filtered_locations)} locations")
+            
+        if aisle_number:
+            aisle_num = int(aisle_number)
+            filtered_locations = [loc for loc in filtered_locations if loc.get('aisle_number') == aisle_num]
+            print(f"[LOCATION_API] After aisle_number filter ({aisle_number}): {len(filtered_locations)} locations")
+            
+        if search:
+            search_term = search.strip().upper()
+            search_results = []
+            for loc in filtered_locations:
+                code = str(loc.get('code', '')).upper()
+                if (search_term in code or 
+                    search_term in str(loc.get('zone', '')).upper()):
+                    search_results.append(loc)
+            filtered_locations = search_results
+            print(f"[LOCATION_API] After search filter ('{search}'): {len(filtered_locations)} locations")
+        
+        # Sort virtual locations (special areas first, then storage)
+        def sort_key(loc):
+            type_priority = {
+                'RECEIVING': 1,
+                'STAGING': 2, 
+                'DOCK': 3,
+                'STORAGE': 4
+            }
+            return (
+                type_priority.get(loc.get('location_type', 'STORAGE'), 5),
+                loc.get('aisle_number') or 0,
+                loc.get('rack_number') or 0,
+                loc.get('position_number') or 0,
+                loc.get('level', '') or '',
+                loc.get('code', '')
+            )
+        
+        filtered_locations.sort(key=sort_key)
+        
+        # Apply pagination to filtered results
+        total_filtered = len(filtered_locations)
+        start_index = (page - 1) * per_page
+        end_index = start_index + per_page
+        paginated_locations = filtered_locations[start_index:end_index]
+        
+        print(f"[LOCATION_API] Pagination: showing {len(paginated_locations)} of {total_filtered} locations (page {page})")
+        
+        # Calculate summary statistics
+        total_locations = len(all_locations)
+        storage_locations = len([loc for loc in all_locations if loc.get('location_type') == 'STORAGE'])
+        total_capacity = sum(loc.get('capacity', 1) for loc in all_locations)
+        
+        # Debug: Show location types in response
+        location_types = {}
+        for loc in paginated_locations:
+            loc_type = loc.get('location_type', 'UNKNOWN')
+            location_types[loc_type] = location_types.get(loc_type, 0) + 1
+        print(f"DEBUG: Virtual location types in response: {location_types}")
+        
+        special_areas = [loc.get('code') for loc in paginated_locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK']]
+        print(f"DEBUG: Virtual special areas in response: {special_areas}")
+        
+        # Calculate pagination info
+        total_pages = (total_filtered + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_prev = page > 1
+        
+        return jsonify({
+            'locations': paginated_locations,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total_filtered,
+                'pages': total_pages,
+                'has_next': has_next,
+                'has_prev': has_prev
+            },
+            'summary': {
+                'total_locations': total_locations,
+                'storage_locations': storage_locations,
+                'total_capacity': total_capacity,
+                'warehouse_id': warehouse_id
+            },
+            'location_source': 'virtual'
+        }), 200
+        
+    except Exception as e:
+        print(f"[LOCATION_API] Virtual locations error: {str(e)}")
+        return jsonify({'error': f'Failed to retrieve virtual locations: {str(e)}'}), 500
 
 @location_bp.route('/<int:location_id>', methods=['GET'])
 @token_required
