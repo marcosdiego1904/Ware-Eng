@@ -1435,9 +1435,237 @@ except ImportError as e:
 
 # ==================== PRODUCTION DATABASE DIAGNOSTIC ====================
 
+def run_warehouse_migration():
+    """Run the warehouse context migration"""
+    try:
+        from core_models import User, UserWarehouseAccess
+        from warehouse_context_resolver import resolve_warehouse_context_for_user
+        
+        print("[MIGRATION] Starting warehouse context migration...")
+        
+        # Create the table using SQLAlchemy (works on both SQLite and PostgreSQL)
+        db.create_all()
+        print("[MIGRATION] Tables created/updated")
+        
+        # Check if migration already done
+        try:
+            existing_count = UserWarehouseAccess.query.count()
+            if existing_count > 0:
+                return jsonify({
+                    'success': True,
+                    'message': f'Migration already completed. Found {existing_count} warehouse access records.',
+                    'existing_records': existing_count,
+                    'migration_already_done': True
+                })
+        except Exception as e:
+            print(f"[MIGRATION] Table doesn't exist yet: {e}")
+        
+        # Get all users and create warehouse access
+        users = User.query.all()
+        print(f"[MIGRATION] Found {len(users)} users to migrate")
+        
+        created_count = 0
+        created_records = []
+        
+        for user in users:
+            try:
+                # Check if user already has access
+                existing = UserWarehouseAccess.query.filter_by(user_id=user.id).first()
+                if existing:
+                    print(f"[MIGRATION] User {user.username} already has access")
+                    continue
+                
+                # Determine warehouse ID
+                username = user.username.lower()
+                if username == 'testf':
+                    warehouse_id = 'USER_TESTF'
+                elif username == 'marcos9':
+                    warehouse_id = 'USER_MARCOS9'
+                elif username == 'alice':
+                    warehouse_id = 'USER_ALICE'
+                else:
+                    warehouse_id = f'USER_{user.username.upper()}'
+                
+                # Create warehouse access
+                warehouse_access = UserWarehouseAccess(
+                    user_id=user.id,
+                    warehouse_id=warehouse_id,
+                    access_level='ADMIN',
+                    is_default=True
+                )
+                
+                db.session.add(warehouse_access)
+                created_count += 1
+                created_records.append({
+                    'username': user.username,
+                    'warehouse_id': warehouse_id
+                })
+                
+                print(f"[MIGRATION] Created access: {user.username} -> {warehouse_id}")
+                
+            except Exception as e:
+                print(f"[MIGRATION] Error creating access for {user.username}: {e}")
+        
+        # Commit all changes
+        db.session.commit()
+        
+        # Verify migration
+        total_users = User.query.count()
+        total_access = UserWarehouseAccess.query.count()
+        
+        print(f"[MIGRATION] Successfully created {created_count} new records")
+        print(f"[MIGRATION] Total coverage: {total_access}/{total_users} users")
+        
+        # Test the resolution system
+        test_user = User.query.filter_by(username='testf').first()
+        test_result = None
+        
+        if test_user:
+            try:
+                test_context = resolve_warehouse_context_for_user(test_user)
+                test_result = {
+                    'warehouse_id': test_context.get('warehouse_id'),
+                    'confidence': test_context.get('confidence'),
+                    'resolution_method': test_context.get('resolution_method')
+                }
+                print(f"[MIGRATION] Test resolution: {test_result}")
+            except Exception as e:
+                print(f"[MIGRATION] Test resolution failed: {e}")
+                test_result = {'error': str(e)}
+        
+        return jsonify({
+            'success': True,
+            'message': 'Warehouse context migration completed successfully!',
+            'created_records': created_count,
+            'total_users': total_users,
+            'total_access_records': total_access,
+            'coverage_percentage': round(total_access/total_users*100, 1) if total_users > 0 else 0,
+            'created_mappings': created_records,
+            'test_resolution': test_result,
+            'migration_timestamp': datetime.utcnow().isoformat(),
+            'long_term_architecture_deployed': True
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"[MIGRATION] Migration failed: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Migration failed. Check server logs for details.'
+        }), 500
+
+@app.route('/api/v1/debug/execute-sql', methods=['POST'])
+def execute_sql_migration():
+    """Execute SQL commands for warehouse migration"""
+    try:
+        # Create the table first
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS user_warehouse_access (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            warehouse_id VARCHAR(50) NOT NULL,
+            access_level VARCHAR(20) DEFAULT 'ADMIN',
+            is_default BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, warehouse_id)
+        );
+        """
+        
+        # Execute table creation
+        db.session.execute(db.text(create_table_sql))
+        db.session.commit()
+        
+        # Insert user mappings
+        insert_sql = """
+        INSERT INTO user_warehouse_access (user_id, warehouse_id, access_level, is_default)
+        SELECT 
+            u.id, 
+            CASE 
+                WHEN LOWER(u.username) = 'testf' THEN 'USER_TESTF'
+                WHEN LOWER(u.username) = 'marcos9' THEN 'USER_MARCOS9'
+                WHEN LOWER(u.username) = 'hola2' THEN 'USER_HOLA2'
+                WHEN LOWER(u.username) = 'hola3' THEN 'USER_HOLA3'
+                WHEN LOWER(u.username) = 'marcos10' THEN 'USER_MARCOS10'
+                ELSE 'USER_' || UPPER(u.username)
+            END,
+            'ADMIN',
+            true
+        FROM "user" u
+        WHERE NOT EXISTS (
+            SELECT 1 FROM user_warehouse_access uwa 
+            WHERE uwa.user_id = u.id
+        );
+        """
+        
+        # Execute user migration
+        result = db.session.execute(db.text(insert_sql))
+        db.session.commit()
+        
+        # Verify results
+        verify_sql = """
+        SELECT 
+            u.username,
+            uwa.warehouse_id,
+            uwa.access_level,
+            uwa.is_default
+        FROM "user" u
+        JOIN user_warehouse_access uwa ON u.id = uwa.user_id
+        ORDER BY u.username;
+        """
+        
+        verification = db.session.execute(db.text(verify_sql)).fetchall()
+        
+        # Test the new system
+        from core_models import User
+        from warehouse_context_resolver import resolve_warehouse_context_for_user
+        
+        test_user = User.query.filter_by(username='testf').first()
+        test_result = None
+        
+        if test_user:
+            try:
+                test_context = resolve_warehouse_context_for_user(test_user)
+                test_result = {
+                    'warehouse_id': test_context.get('warehouse_id'),
+                    'confidence': test_context.get('confidence'),
+                    'resolution_method': test_context.get('resolution_method')
+                }
+            except Exception as e:
+                test_result = {'error': str(e)}
+        
+        return jsonify({
+            'success': True,
+            'message': 'SQL migration executed successfully!',
+            'table_created': True,
+            'users_migrated': result.rowcount,
+            'verification': [dict(row._mapping) for row in verification],
+            'test_resolution': test_result,
+            'long_term_architecture_deployed': True
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'SQL migration failed'
+        }), 500
+
 @app.route('/api/v1/test/warehouse-check', methods=['GET'])
 def test_warehouse_check():
     """Simple warehouse check endpoint - diagnose production PostgreSQL issue"""
+    
+    # Check if migration is requested
+    migrate = request.args.get('migrate', '').lower() in ['true', '1', 'yes']
+    
+    if migrate:
+        return run_warehouse_migration()
+    
     try:
         from models import Location
         from database import db
@@ -2287,7 +2515,7 @@ def complete_database_fix():
         return error_html, 500
 
 # Add warehouse migration endpoint for production
-@app.route('/api/v1/admin/migrate-warehouse-context', methods=['POST'])
+@app.route('/api/v1/admin/migrate-warehouse-context', methods=['GET', 'POST'])
 def migrate_warehouse_context():
     """
     Production migration endpoint for creating UserWarehouseAccess table

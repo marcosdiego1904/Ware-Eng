@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "Warehouse Migration - Production",
+    "description": "Production migration for UserWarehouseAccess table creation",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Check Current Database Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://ware-eng.onrender.com/api/v1/test/warehouse-check",
+          "protocol": "https",
+          "host": ["ware-eng", "onrender", "com"],
+          "path": ["api", "v1", "test", "warehouse-check"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Run Warehouse Migration (Method 1)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://ware-eng.onrender.com/api/v1/test/warehouse-check?migrate=true",
+          "protocol": "https",
+          "host": ["ware-eng", "onrender", "com"],
+          "path": ["api", "v1", "test", "warehouse-check"],
+          "query": [
+            {
+              "key": "migrate",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Run Warehouse Migration (Method 2)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action\": \"migrate_warehouse_context\",\n  \"force\": true\n}"
+        },
+        "url": {
+          "raw": "https://ware-eng.onrender.com/api/v1/admin/migrate-warehouse-context",
+          "protocol": "https",
+          "host": ["ware-eng", "onrender", "com"],
+          "path": ["api", "v1", "admin", "migrate-warehouse-context"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Manual SQL Execution (via API)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sql\": \"CREATE TABLE IF NOT EXISTS user_warehouse_access (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, warehouse_id VARCHAR(50) NOT NULL, access_level VARCHAR(20) DEFAULT 'ADMIN', is_default BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, warehouse_id));\",\n  \"migrate_users\": true\n}"
+        },
+        "url": {
+          "raw": "https://ware-eng.onrender.com/api/v1/debug/execute-sql",
+          "protocol": "https",
+          "host": ["ware-eng", "onrender", "com"],
+          "path": ["api", "v1", "debug", "execute-sql"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Test Upload After Migration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer YOUR_JWT_TOKEN_HERE"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "test_inventory.xlsx"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://ware-eng.onrender.com/api/v1/reports",
+          "protocol": "https",
+          "host": ["ware-eng", "onrender", "com"],
+          "path": ["api", "v1", "reports"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

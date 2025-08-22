@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Production Migration Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .button { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px 0; }
+        .button:hover { background: #0056b3; }
+        .result { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 20px; margin: 20px 0; white-space: pre-wrap; font-family: monospace; }
+        .success { border-left: 4px solid #28a745; }
+        .error { border-left: 4px solid #dc3545; }
+        .info { border-left: 4px solid #17a2b8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Production Warehouse Migration Tool</h1>
+        <p>This tool will create the UserWarehouseAccess table in your PostgreSQL production database and migrate all users to the long-term warehouse context resolution system.</p>
+        
+        <button class="button" onclick="runMigration()">Run Warehouse Migration</button>
+        <button class="button" onclick="checkStatus()">Check Migration Status</button>
+        
+        <div id="result" class="result" style="display: none;"></div>
+        
+        <h3>📋 Migration Details</h3>
+        <div class="info result">
+This migration will:
+• Create UserWarehouseAccess table in PostgreSQL
+• Map each user to their warehouse (testf → USER_TESTF, etc.)
+• Enable long-term warehouse context resolution
+• Eliminate all temporal fixes and detection algorithms
+• Provide enterprise-grade user permissions
+
+Expected users to migrate:
+• testf → USER_TESTF
+• marcos9 → USER_MARCOS9  
+• hola2 → USER_HOLA2
+• hola3 → USER_HOLA3
+• marcos10 → USER_MARCOS10
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://ware-eng.onrender.com/api/v1';
+        
+        async function runMigration() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result info';
+            resultDiv.textContent = 'Creating UserWarehouseAccess table and migrating users...\nThis may take a few moments...';
+            
+            try {
+                // Try the direct migration endpoint first
+                let response = await fetch(`${API_BASE}/admin/migrate-warehouse-context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (!response.ok) {
+                    // If that fails, try the warehouse check endpoint with migration
+                    response = await fetch(`${API_BASE}/test/warehouse-check?migrate=true`);
+                }
+                
+                if (!response.ok) {
+                    // If both fail, create the table manually using a different approach
+                    await createTableManually();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.textContent = `✅ Migration Successful!\n\n${JSON.stringify(data, null, 2)}`;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `❌ Migration Failed:\n\n${JSON.stringify(data, null, 2)}`;
+                }
+                
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `❌ Network Error:\n\n${error.message}\n\nTrying manual SQL approach...`;
+                await createTableManually();
+            }
+        }
+        
+        async function createTableManually() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result info';
+            resultDiv.textContent = 'Attempting manual table creation via SQL endpoint...';
+            
+            // This is a fallback approach using existing endpoints
+            const sql = `
+                CREATE TABLE IF NOT EXISTS user_warehouse_access (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    warehouse_id VARCHAR(50) NOT NULL,
+                    access_level VARCHAR(20) DEFAULT 'ADMIN',
+                    is_default BOOLEAN DEFAULT true,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, warehouse_id)
+                );
+                
+                INSERT INTO user_warehouse_access (user_id, warehouse_id, access_level, is_default)
+                SELECT u.id, 'USER_' || UPPER(u.username), 'ADMIN', true
+                FROM "user" u
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM user_warehouse_access uwa 
+                    WHERE uwa.user_id = u.id
+                );
+            `;
+            
+            resultDiv.textContent = `Manual SQL commands to run in PostgreSQL:\n\n${sql}\n\nℹ️ You may need to run these commands directly in your PostgreSQL database console.`;
+        }
+        
+        async function checkStatus() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result info';
+            resultDiv.textContent = 'Checking migration status...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/test/warehouse-check`);
+                const data = await response.json();
+                
+                resultDiv.className = 'result info';
+                resultDiv.textContent = `📊 Current Database Status:\n\n${JSON.stringify(data, null, 2)}`;
+                
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `❌ Status Check Failed:\n\n${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
