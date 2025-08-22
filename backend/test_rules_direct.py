@@ -30,8 +30,17 @@ def test_enhanced_rules_direct():
         with app.app_context():
             print("Loading rule engine...")
             
-            # Create rule engine instance
-            engine = RuleEngine(app)
+            # Get test user for proper warehouse context resolution
+            from core_models import User
+            test_user = User.query.filter_by(username='testf').first()
+            
+            if not test_user:
+                print("ERROR: Test user 'testf' not found")
+                return None
+            
+            # Create rule engine instance with user context
+            from database import db
+            engine = RuleEngine(db.session, app=app, user_context=test_user)
             
             # Load test data
             print("Loading test inventory data...")

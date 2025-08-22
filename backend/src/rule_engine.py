@@ -177,18 +177,27 @@ class RuleEngine:
         warehouse_context = None
         
         # Check if explicit warehouse context is set (from applied template) - show once
+        # LONG-TERM SOLUTION: Use professional warehouse context resolution
         if hasattr(self, '_warehouse_context') and self._warehouse_context:
             warehouse_context = self._warehouse_context
             print(f"[RULE_ENGINE_DEBUG] Using explicit warehouse context: {warehouse_context}")
         else:
-            # Auto-detect warehouse context from inventory data
+            # Use new warehouse context resolver instead of detection
             try:
-                warehouse_context = self._detect_warehouse_context(inventory_df, getattr(self, 'user_context', None))
-                print(f"[RULE_ENGINE_DEBUG] Auto-detected warehouse context: {warehouse_context}")
+                from warehouse_context_resolver import resolve_warehouse_context_for_user
+                user_context = getattr(self, 'user_context', None)
+                
+                if user_context:
+                    # NEW: Direct user → warehouse resolution (no detection needed)
+                    warehouse_context = resolve_warehouse_context_for_user(user_context)
+                    print(f"[RULE_ENGINE_V2] Resolved warehouse context: {warehouse_context}")
+                else:
+                    print(f"[RULE_ENGINE_V2] No user context provided - cannot resolve warehouse")
+                    warehouse_context = {'warehouse_id': None, 'confidence': 'NO_USER', 'coverage': 0.0}
+                    
             except Exception as e:
-                print(f"[RULE_ENGINE_DEBUG] WARNING: Warehouse context detection failed: {e}")
-                warehouse_context = {'warehouse_id': None, 'confidence': 'NONE', 'coverage': 0.0}
-                print(f"[RULE_ENGINE_DEBUG] Using fallback warehouse context: {warehouse_context}")
+                print(f"[RULE_ENGINE_V2] Warehouse context resolution failed: {e}")
+                warehouse_context = {'warehouse_id': None, 'confidence': 'RESOLVER_ERROR', 'coverage': 0.0}
         
         for i, rule in enumerate(rules, 1):
             print(f"\n[RULE_ENGINE_DEBUG] -------------------- RULE {i}/{len(rules)} --------------------")
@@ -718,33 +727,17 @@ class RuleEngine:
             print(f"[RULE_ENGINE_DEBUG] Using evaluator: {type(evaluator).__name__}")
             print(f"[RULE_ENGINE_DEBUG] Warehouse context passed: {warehouse_context}")
             
-            # Evaluate the rule with warehouse context (with safety check)
+            # LONG-TERM SOLUTION: Evaluate rule with guaranteed warehouse context
             if warehouse_context is None:
                 warehouse_context = {'warehouse_id': None, 'confidence': 'NONE', 'coverage': 0.0}
             
-            # TEMPORAL FIX: Force warehouse context for remaining rules that need it
-            if rule.rule_type in ['STAGNANT_PALLETS', 'UNCOORDINATED_LOTS']:
-                if not warehouse_context.get('warehouse_id'):
-                    print(f"[RULE_ENGINE_DEBUG] TEMPORAL FIX: Forcing USER_TESTF context for {rule.rule_type}")
-                    warehouse_context = {'warehouse_id': 'USER_TESTF', 'confidence': 'FORCED_TEST_MODE', 'coverage': 0.0}
-                
+            # All evaluators now support warehouse_context (no more temporal fixes needed)
             if hasattr(evaluator, 'evaluate') and 'warehouse_context' in evaluator.evaluate.__code__.co_varnames:
-                print(f"[RULE_ENGINE_DEBUG] Calling evaluator with warehouse_context")
+                print(f"[RULE_ENGINE_V2] Calling evaluator with warehouse_context: {warehouse_context.get('warehouse_id')}")
                 anomalies = evaluator.evaluate(rule, inventory_df, warehouse_context)
             else:
-                print(f"[RULE_ENGINE_DEBUG] Calling evaluator without warehouse_context (legacy)")
-                # TEMPORAL FIX: For legacy evaluators, try to pass context if the rule needs it
-                if rule.rule_type in ['STAGNANT_PALLETS', 'UNCOORDINATED_LOTS']:
-                    print(f"[RULE_ENGINE_DEBUG] TEMPORAL FIX: Attempting to pass context to legacy evaluator")
-                    try:
-                        # Try to call with warehouse_context anyway (some evaluators might accept it)
-                        anomalies = evaluator.evaluate(rule, inventory_df, warehouse_context)
-                    except TypeError:
-                        # Fallback to legacy call if signature doesn't support it
-                        print(f"[RULE_ENGINE_DEBUG] Legacy evaluator doesn't support warehouse_context, using fallback")
-                        anomalies = evaluator.evaluate(rule, inventory_df)
-                else:
-                    anomalies = evaluator.evaluate(rule, inventory_df)
+                print(f"[RULE_ENGINE_V2] Legacy evaluator without warehouse_context support")
+                anomalies = evaluator.evaluate(rule, inventory_df)
             
             # Add rule metadata to each anomaly
             for anomaly in anomalies:
@@ -1269,7 +1262,7 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
                 }
                 virtual_engine = VirtualLocationEngine(warehouse_config)
                 
-            print(f"[STAGNANT_PALLETS_DEBUG] ✅ Virtual engine loaded for location type assignment")
+            print(f"[STAGNANT_PALLETS_DEBUG] Virtual engine loaded for location type assignment")
         except Exception as e:
             print(f"[STAGNANT_PALLETS_DEBUG] Could not load virtual engine: {e}")
             return self._assign_location_types(inventory_df)
