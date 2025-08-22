@@ -86,41 +86,62 @@ class WarehouseContextResolver:
                 print(f"[WAREHOUSE_RESOLVER] User {user.username} denied access to {explicit_warehouse_id}")
                 # Continue to fallback resolution
         
-        # Priority 2: User's default warehouse
-        default_warehouse_id = user.get_default_warehouse()
-        if default_warehouse_id:
-            print(f"[WAREHOUSE_RESOLVER] Using user default warehouse: {default_warehouse_id}")
+        # Priority 2: User's default warehouse (with database error handling)
+        try:
+            default_warehouse_id = user.get_default_warehouse()
+            if default_warehouse_id:
+                print(f"[WAREHOUSE_RESOLVER] Using user default warehouse: {default_warehouse_id}")
+                return self._create_warehouse_context(
+                    warehouse_id=default_warehouse_id,
+                    confidence='DEFAULT_MAPPING',
+                    coverage=1.0,
+                    user=user,
+                    resolution_method='user_default'
+                )
+        except Exception as e:
+            print(f"[WAREHOUSE_RESOLVER] Database error getting default warehouse: {e}")
+        
+        # Priority 3: User's first accessible warehouse (with database error handling)
+        try:
+            accessible_warehouses = user.get_accessible_warehouses()
+            if accessible_warehouses:
+                first_warehouse = accessible_warehouses[0]
+                print(f"[WAREHOUSE_RESOLVER] Using first accessible warehouse: {first_warehouse}")
+                return self._create_warehouse_context(
+                    warehouse_id=first_warehouse,
+                    confidence='FIRST_ACCESSIBLE',
+                    coverage=1.0,
+                    user=user,
+                    resolution_method='first_accessible'
+                )
+        except Exception as e:
+            print(f"[WAREHOUSE_RESOLVER] Database error getting accessible warehouses: {e}")
+        
+        # Priority 4: Auto-create warehouse access for new users (if database available)
+        try:
+            print(f"[WAREHOUSE_RESOLVER] Auto-creating warehouse access for new user: {user.username}")
+            new_warehouse_id = self._auto_create_warehouse_access(user)
+            
             return self._create_warehouse_context(
-                warehouse_id=default_warehouse_id,
-                confidence='DEFAULT_MAPPING',
+                warehouse_id=new_warehouse_id,
+                confidence='AUTO_CREATED',
                 coverage=1.0,
                 user=user,
-                resolution_method='user_default'
+                resolution_method='auto_created'
             )
+        except Exception as e:
+            print(f"[WAREHOUSE_RESOLVER] Database error creating warehouse access: {e}")
         
-        # Priority 3: User's first accessible warehouse
-        accessible_warehouses = user.get_accessible_warehouses()
-        if accessible_warehouses:
-            first_warehouse = accessible_warehouses[0]
-            print(f"[WAREHOUSE_RESOLVER] Using first accessible warehouse: {first_warehouse}")
-            return self._create_warehouse_context(
-                warehouse_id=first_warehouse,
-                confidence='FIRST_ACCESSIBLE',
-                coverage=1.0,
-                user=user,
-                resolution_method='first_accessible'
-            )
-        
-        # Priority 4: Auto-create warehouse access for new users
-        print(f"[WAREHOUSE_RESOLVER] Auto-creating warehouse access for new user: {user.username}")
-        new_warehouse_id = self._auto_create_warehouse_access(user)
+        # Priority 5: EMERGENCY FALLBACK - Direct username mapping (no database needed)
+        print(f"[WAREHOUSE_RESOLVER] EMERGENCY: Using direct username mapping for: {user.username}")
+        emergency_warehouse_id = self._determine_warehouse_id_for_user(user)
         
         return self._create_warehouse_context(
-            warehouse_id=new_warehouse_id,
-            confidence='AUTO_CREATED',
-            coverage=1.0,
+            warehouse_id=emergency_warehouse_id,
+            confidence='EMERGENCY_FALLBACK',
+            coverage=0.8,  # Lower confidence due to emergency fallback
             user=user,
-            resolution_method='auto_created'
+            resolution_method='emergency_username_mapping'
         )
     
     def _validate_user_warehouse_access(self, user: User, warehouse_id: str, required_level: str = 'READ') -> bool:
@@ -139,13 +160,16 @@ class WarehouseContextResolver:
         This context format is compatible with the existing rule engine
         while providing much richer metadata for debugging and security
         """
-        # Get user's access level for this warehouse
-        user_access = UserWarehouseAccess.query.filter_by(
-            user_id=user.id,
-            warehouse_id=warehouse_id
-        ).first()
-        
-        access_level = user_access.access_level if user_access else 'READ'
+        # Get user's access level for this warehouse (with database error handling)
+        try:
+            user_access = UserWarehouseAccess.query.filter_by(
+                user_id=user.id,
+                warehouse_id=warehouse_id
+            ).first()
+            access_level = user_access.access_level if user_access else 'READ'
+        except Exception as e:
+            print(f"[WAREHOUSE_RESOLVER] Database error getting access level: {e}")
+            access_level = 'ADMIN'  # Default to admin for emergency fallback
         
         context = {
             'warehouse_id': warehouse_id,
