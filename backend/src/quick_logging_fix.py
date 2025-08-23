@@ -85,7 +85,7 @@ class LoggingPatcher:
         builtins.print = self.filter.filter_print
         self.patched = True
         
-        print("[LOG_FILTER] ✅ Noise reduction active - verbose debug output suppressed")
+        print("[LOG_FILTER] Noise reduction active - verbose debug output suppressed")
     
     def unpatch_print(self):
         """Restore original print function"""

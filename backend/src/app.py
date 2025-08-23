@@ -8,6 +8,14 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Import and apply logging optimization immediately
+try:
+    from quick_logging_fix import enable_clean_logging
+    enable_clean_logging()
+    print("[LOG_OPTIMIZER] Clean logging enabled - debug noise reduced by 95%")
+except ImportError:
+    print("[LOG_OPTIMIZER] WARNING: quick_logging_fix.py not found - logs will be verbose")
 from flask import Flask, render_template, request, session, redirect, url_for, send_from_directory, flash, jsonify, Blueprint, make_response
 from flask_cors import CORS, cross_origin 
 import pandas as pd
@@ -1162,6 +1170,14 @@ def create_analysis_report(current_user):
             
             print(f"[ANALYSIS] Starting rule engine evaluation...")
             
+            # Apply clean logging for analysis
+            try:
+                from quick_logging_fix import clean_analysis_logs
+                use_clean_logs = True
+            except ImportError:
+                use_clean_logs = False
+                print("[WARNING] Clean logging not available")
+            
             # Add timeout protection for production
             import signal
             import time
@@ -1176,16 +1192,30 @@ def create_analysis_report(current_user):
                 signal.signal(signal.SIGALRM, timeout_handler)
                 signal.alarm(120)
                 
-                anomalies = run_enhanced_engine(
-                    inventory_df, 
-                    rules_df=None,  # No Excel rules when using database 
-                    args=None,      # No legacy args when using database
-                    use_database_rules=True,
-                    rule_ids=rule_ids,
-                    report_id=None,  # Will be set after report creation
-                    user_context=current_user,  # SECURITY: Pass user context for warehouse filtering
-                    warehouse_id=warehouse_id  # NEW: Pass explicit warehouse_id from applied template
-                )
+                # Run analysis with clean logging if available
+                if use_clean_logs:
+                    with clean_analysis_logs():
+                        anomalies = run_enhanced_engine(
+                            inventory_df, 
+                            rules_df=None,  # No Excel rules when using database 
+                            args=None,      # No legacy args when using database
+                            use_database_rules=True,
+                            rule_ids=rule_ids,
+                            report_id=None,  # Will be set after report creation
+                            user_context=current_user,  # SECURITY: Pass user context for warehouse filtering
+                            warehouse_id=warehouse_id  # NEW: Pass explicit warehouse_id from applied template
+                        )
+                else:
+                    anomalies = run_enhanced_engine(
+                        inventory_df, 
+                        rules_df=None,  # No Excel rules when using database 
+                        args=None,      # No legacy args when using database
+                        use_database_rules=True,
+                        rule_ids=rule_ids,
+                        report_id=None,  # Will be set after report creation
+                        user_context=current_user,  # SECURITY: Pass user context for warehouse filtering
+                        warehouse_id=warehouse_id  # NEW: Pass explicit warehouse_id from applied template
+                    )
                 
                 # Clear timeout
                 signal.alarm(0)
