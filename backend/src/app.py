@@ -1417,6 +1417,172 @@ def change_api_anomaly_status(current_user, anomaly_id):
         'history_item': new_history_item
     })
 
+@api_bp.route('/reports/<int:report_id>', methods=['DELETE'])
+@token_required
+def delete_report(current_user, report_id):
+    """Delete a report and all its associated anomalies"""
+    try:
+        report = AnalysisReport.query.get_or_404(report_id)
+        
+        # Check ownership
+        if report.user_id != current_user.id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        report_name = report.report_name
+        
+        # Delete associated anomaly history first (due to foreign key constraints)
+        for anomaly in report.anomalies:
+            AnomalyHistory.query.filter_by(anomaly_id=anomaly.id).delete()
+        
+        # Delete anomalies
+        Anomaly.query.filter_by(report_id=report_id).delete()
+        
+        # Delete the report
+        db.session.delete(report)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Report "{report_name}" deleted successfully'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting report {report_id}: {e}")
+        return jsonify({
+            'success': False, 
+            'message': 'Failed to delete report'
+        }), 500
+
+@api_bp.route('/reports/<int:report_id>/export', methods=['GET'])
+@token_required
+def export_report(current_user, report_id):
+    """Export report to various formats"""
+    try:
+        report = AnalysisReport.query.get_or_404(report_id)
+        
+        # Check ownership
+        if report.user_id != current_user.id:
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        export_format = request.args.get('format', 'excel').lower()
+        
+        # Get anomalies data
+        anomalies_data = []
+        for anomaly in report.anomalies:
+            try:
+                details = json.loads(anomaly.details) if anomaly.details else {}
+                anomaly_row = {
+                    'Anomaly ID': anomaly.id,
+                    'Status': anomaly.status,
+                    'Anomaly Type': details.get('anomaly_type', 'N/A'),
+                    'Priority': details.get('priority', 'N/A'),
+                    'Location': details.get('location', 'N/A'),
+                    'Pallet ID': details.get('pallet_id', 'N/A'),
+                    'Issue Description': details.get('issue_description', 'N/A'),
+                    'Rule Name': details.get('rule_name', 'N/A'),
+                    'Created': anomaly.created_at.isoformat() if hasattr(anomaly, 'created_at') else 'N/A'
+                }
+                anomalies_data.append(anomaly_row)
+            except (json.JSONDecodeError, AttributeError):
+                continue
+        
+        if not anomalies_data:
+            return jsonify({
+                'error': 'No anomaly data available for export'
+            }), 400
+        
+        # Create DataFrame
+        df = pd.DataFrame(anomalies_data)
+        
+        # Generate filename
+        safe_report_name = "".join(c for c in report.report_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        if export_format == 'excel':
+            filename = f"{safe_report_name}_export_{timestamp}.xlsx"
+            filepath = os.path.join(tempfile.gettempdir(), filename)
+            df.to_excel(filepath, index=False)
+            
+        elif export_format == 'csv':
+            filename = f"{safe_report_name}_export_{timestamp}.csv"
+            filepath = os.path.join(tempfile.gettempdir(), filename)
+            df.to_csv(filepath, index=False)
+            
+        else:
+            return jsonify({'error': 'Unsupported export format'}), 400
+        
+        # For now, return a success message with file info
+        # In production, you'd want to serve the actual file or use cloud storage
+        return jsonify({
+            'download_url': f'/api/v1/downloads/{filename}',
+            'filename': filename,
+            'message': f'Export completed: {len(anomalies_data)} anomalies exported'
+        })
+        
+    except Exception as e:
+        print(f"Error exporting report {report_id}: {e}")
+        return jsonify({'error': 'Failed to export report'}), 500
+
+@api_bp.route('/reports/<int:report_id>/duplicate', methods=['POST'])
+@token_required
+def duplicate_report(current_user, report_id):
+    """Create a copy of an existing report"""
+    try:
+        original_report = AnalysisReport.query.get_or_404(report_id)
+        
+        # Check ownership
+        if original_report.user_id != current_user.id:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+        # Check user report limit
+        report_count = AnalysisReport.query.filter_by(user_id=current_user.id).count()
+        if report_count >= 3 and current_user.username not in ['marcosbarzola@devbymarcos.com', 'marcos9', 'testf']:
+            return jsonify({
+                'success': False, 
+                'message': 'Cannot duplicate - you have reached the maximum limit of 3 reports'
+            }), 403
+        
+        # Get new name from request or generate one
+        data = request.get_json() or {}
+        new_name = data.get('new_name') or f"{original_report.report_name} (Copy)"
+        
+        # Create new report
+        new_report = AnalysisReport(
+            report_name=new_name,
+            user_id=current_user.id,
+            timestamp=datetime.now()
+        )
+        
+        db.session.add(new_report)
+        db.session.flush()  # Get the new report ID
+        
+        # Duplicate anomalies
+        for original_anomaly in original_report.anomalies:
+            new_anomaly = Anomaly(
+                report_id=new_report.id,
+                details=original_anomaly.details,
+                status='New',  # Reset status for duplicated anomalies
+                created_at=datetime.now()
+            )
+            db.session.add(new_anomaly)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'new_report_id': new_report.id,
+            'message': f'Report duplicated successfully as "{new_name}"'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error duplicating report {report_id}: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to duplicate report'
+        }), 500
+
 # Register the Blueprint with the main application
 app.register_blueprint(api_bp)
 
