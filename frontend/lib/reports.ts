@@ -137,6 +137,23 @@ export const reportsApi = {
     });
     return response.data;
   },
+
+  async deleteReport(reportId: number): Promise<{ success: boolean; message: string }> {
+    const response = await api.delete(`/reports/${reportId}`);
+    return response.data;
+  },
+
+  async exportReport(reportId: number, format: 'excel' | 'pdf' | 'csv'): Promise<{ download_url: string; filename: string }> {
+    const response = await api.get(`/reports/${reportId}/export?format=${format}`);
+    return response.data;
+  },
+
+  async duplicateReport(reportId: number, newName?: string): Promise<{ success: boolean; new_report_id: number; message: string }> {
+    const response = await api.post(`/reports/${reportId}/duplicate`, {
+      new_name: newName
+    });
+    return response.data;
+  },
 };
 
 // Utility functions
