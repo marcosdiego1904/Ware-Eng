@@ -1529,10 +1529,13 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         conditions = self._parse_conditions(rule)
         parameters = self._parse_parameters(rule)
         
-        # Check if statistical analysis is enabled (default: True for new behavior)
-        use_statistical_analysis = parameters.get('use_statistical_analysis', True)
-        significance_threshold = parameters.get('significance_threshold', 1.0)  # LOWERED: Flag if 1x expected (was 2.0)
-        min_severity_ratio = parameters.get('min_severity_ratio', 1.2)  # LOWERED: Minimum severity to report (was 1.5)
+        # SMART CAPACITY FEATURE DISABLED FOR CORE PRODUCT
+        # Smart overcapacity detection moved to premium "Intelligent Analytics" section
+        # This advanced statistical analysis will be available as a premium feature
+        # To re-enable: change default from False to True
+        use_statistical_analysis = parameters.get('use_statistical_analysis', False)  # DISABLED: Smart capacity moved to premium
+        significance_threshold = parameters.get('significance_threshold', 1.0)  # PRESERVED: For future premium feature
+        min_severity_ratio = parameters.get('min_severity_ratio', 1.2)  # PRESERVED: For future premium feature
         
         if use_statistical_analysis:
             return self._evaluate_with_statistical_analysis(
@@ -1544,7 +1547,24 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
     
     def _evaluate_with_statistical_analysis(self, rule: Rule, inventory_df: pd.DataFrame, 
                                           significance_threshold: float, min_severity_ratio: float) -> List[Dict[str, Any]]:
-        """Enhanced overcapacity detection with statistical analysis"""
+        """
+        SMART CAPACITY PREMIUM FEATURE - PRESERVED FOR FUTURE USE
+        
+        Enhanced overcapacity detection with statistical analysis
+        This method implements the intelligent capacity analytics that will be moved
+        to the premium "Intelligent Warehouse Analytics" section.
+        
+        Features preserved here:
+        - Statistical modeling of warehouse utilization
+        - Pattern recognition for capacity anomalies  
+        - Smart overcapacity detection beyond obvious violations
+        - Predictive capacity analysis
+        
+        To activate this premium feature:
+        1. Set use_statistical_analysis=True in rule parameters
+        2. Move to premium analytics dashboard section
+        3. Add appropriate user access controls
+        """
         anomalies = []
         
         # Calculate warehouse statistics
@@ -1796,7 +1816,22 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             return 5   # Conservative default
     
     def _evaluate_legacy(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Legacy overcapacity detection for backward compatibility"""
+        """
+        CORE OVERCAPACITY DETECTION - PRIMARY FEATURE
+        
+        Detects obvious capacity violations where locations contain more pallets 
+        than their designated capacity. This is the main overcapacity rule that 
+        provides clear, actionable alerts for warehouse operators.
+        
+        Features:
+        - Simple, reliable capacity violation detection
+        - Clear alerts for locations exceeding capacity limits
+        - Immediate action required for all violations
+        - No statistical complexity - just business rule enforcement
+        
+        This method was renamed from 'legacy' but is now the core feature.
+        Advanced analytics have been moved to premium features.
+        """
         conditions = self._parse_conditions(rule)
         anomalies = []
         

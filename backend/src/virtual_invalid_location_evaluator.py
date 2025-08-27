@@ -6,6 +6,7 @@ Replaces the traditional database-heavy InvalidLocationEvaluator with algorithmi
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from virtual_template_integration import get_virtual_engine_for_warehouse
+from optimized_logging import get_logger, LogLevel, LogCategory
 
 
 class VirtualInvalidLocationEvaluator:
@@ -16,7 +17,9 @@ class VirtualInvalidLocationEvaluator:
     def __init__(self, app=None):
         self.app = app
         self.name = "VirtualInvalidLocationEvaluator"
-        print(f"[{self.name}] Initialized with virtual location validation")
+        self.logger = get_logger()
+        if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
+            print(f"[{self.name}] Initialized with virtual location validation")
     
     def _parse_conditions(self, rule):
         """Parse rule conditions from JSON"""
@@ -32,54 +35,54 @@ class VirtualInvalidLocationEvaluator:
         """
         Evaluate invalid locations using virtual location engine
         """
-        print(f"\n[{self.name}_DEBUG] ========== VIRTUAL LOCATION VALIDATION START ==========")
-        print(f"[{self.name}_DEBUG] Rule: {getattr(rule, 'name', 'Unknown')} (ID: {getattr(rule, 'id', 'Unknown')}) Priority: {getattr(rule, 'priority', 'Unknown')}")
-        print(f"[{self.name}_DEBUG] Inventory records to validate: {len(inventory_df):,}")
-        print(f"[{self.name}_DEBUG] Unique locations in inventory: {inventory_df['location'].nunique():,}")
-        print(f"[{self.name}_DEBUG] Warehouse context: {warehouse_context}")
+        rule_name = getattr(rule, 'name', 'Unknown')
+        rule_id = getattr(rule, 'id', 'Unknown')
+        rule_priority = getattr(rule, 'priority', 'Unknown')
         
-        sample_locations = list(inventory_df['location'].dropna().unique()[:10])
-        print(f"[{self.name}_DEBUG] Sample locations: {sample_locations}")
+        if self.logger.should_log(LogLevel.ESSENTIAL, LogCategory.LOCATION_VALIDATION):
+            print(f"\n[LOCATION_VALIDATION] Starting {rule_name} (ID: {rule_id}) - {len(inventory_df):,} records, {inventory_df['location'].nunique():,} unique locations")
+        
+        if self.logger.should_log(LogLevel.VERBOSE, LogCategory.VIRTUAL_ENGINE):
+            sample_locations = list(inventory_df['location'].dropna().unique()[:10])
+            print(f"[{self.name}_DEBUG] Sample locations: {sample_locations}")
+            print(f"[{self.name}_DEBUG] Warehouse context: {warehouse_context}")
         
         conditions = self._parse_conditions(rule)
         warehouse_id = warehouse_context.get('warehouse_id') if warehouse_context else None
         
         if not warehouse_id:
-            print(f"[{self.name}_DEBUG] ❌ CRITICAL: No warehouse context provided - cannot perform virtual validation")
-            print(f"[{self.name}_DEBUG] Available context keys: {list(warehouse_context.keys()) if warehouse_context else 'None'}")
-            print(f"[{self.name}_DEBUG] Falling back to basic validation patterns")
+            if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
+                print(f"[{self.name}] ❌ No warehouse context provided - falling back to basic validation")
+                print(f"[{self.name}] Available context keys: {list(warehouse_context.keys()) if warehouse_context else 'None'}")
             return self._fallback_basic_validation(rule, inventory_df)
         
-        print(f"[{self.name}_DEBUG] ✅ Using warehouse_id: {warehouse_id}")
+        if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
+            print(f"[{self.name}] Using warehouse_id: {warehouse_id}")
         
         # Get virtual location engine for this warehouse
-        print(f"[{self.name}_DEBUG] Attempting to get virtual engine for warehouse {warehouse_id}...")
         virtual_engine = get_virtual_engine_for_warehouse(warehouse_id)
         
         if not virtual_engine:
-            print(f"[{self.name}_DEBUG] ❌ No virtual engine available for warehouse {warehouse_id}")
-            print(f"[{self.name}_DEBUG] This could indicate:")
-            print(f"[{self.name}_DEBUG]   - Warehouse {warehouse_id} not configured for virtual locations")
-            print(f"[{self.name}_DEBUG]   - Template not applied or missing")
-            print(f"[{self.name}_DEBUG]   - Virtual location system disabled")
-            print(f"[{self.name}_DEBUG] Falling back to basic validation patterns")
+            if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
+                print(f"[{self.name}] ❌ No virtual engine available for warehouse {warehouse_id} - falling back to basic validation")
             return self._fallback_basic_validation(rule, inventory_df)
         
-        print(f"[{self.name}_DEBUG] ✅ Virtual engine loaded successfully")
-        print(f"[{self.name}_DEBUG] Engine warehouse_id: {getattr(virtual_engine, 'warehouse_id', 'Unknown')}")
-        try:
-            summary = virtual_engine.get_warehouse_summary()
-            print(f"[{self.name}_DEBUG] Virtual warehouse summary: {summary}")
-        except Exception as e:
-            print(f"[{self.name}_DEBUG] Could not get warehouse summary: {e}")
+        if self.logger.should_log(LogLevel.VERBOSE, LogCategory.VIRTUAL_ENGINE):
+            try:
+                summary = virtual_engine.get_warehouse_summary()
+                print(f"[{self.name}] Virtual warehouse summary: {summary}")
+            except Exception as e:
+                print(f"[{self.name}] Could not get warehouse summary: {e}")
         
-        print(f"[{self.name}_DEBUG] Proceeding with virtual engine validation...")
         result = self._evaluate_with_virtual_engine(rule, inventory_df, virtual_engine)
         
-        print(f"[{self.name}_DEBUG] ========== VIRTUAL LOCATION VALIDATION COMPLETE ===========")
-        print(f"[{self.name}_DEBUG] Total anomalies found: {len(result)}")
-        if result:
-            print(f"[{self.name}_DEBUG] Sample anomaly: {result[0]}")
+        # Use the optimized location validation summary instead of verbose debugging
+        invalid_count = len(set(anomaly['location'] for anomaly in result))
+        total_locations = inventory_df['location'].nunique()
+        self.logger.location_validation_summary(total_locations, invalid_count, 'virtual_engine')
+        
+        if self.logger.should_log(LogLevel.VERBOSE, LogCategory.LOCATION_VALIDATION) and result:
+            print(f"[{self.name}] Sample anomaly: {result[0]}")
             
         return result
     
@@ -89,11 +92,10 @@ class VirtualInvalidLocationEvaluator:
         """
         anomalies = []
         processed_locations = set()  # Avoid duplicate processing
+        invalid_locations = []  # Track invalid locations for logging
         
-        print(f"[{self.name}_DEBUG] ---------- VIRTUAL ENGINE VALIDATION DETAILS ----------")
-        print(f"[{self.name}_DEBUG] Virtual engine type: {type(virtual_engine).__name__}")
-        print(f"[{self.name}_DEBUG] Processing {len(inventory_df)} inventory records against virtual warehouse")
-        print(f"[{self.name}_DEBUG] Expected to validate {inventory_df['location'].nunique()} unique locations")
+        if self.logger.should_log(LogLevel.VERBOSE, LogCategory.VIRTUAL_ENGINE):
+            print(f"[{self.name}] Processing {len(inventory_df)} records, {inventory_df['location'].nunique()} unique locations")
         
         for _, pallet in inventory_df.iterrows():
             location = str(pallet.get('location', '')).strip()
@@ -104,13 +106,15 @@ class VirtualInvalidLocationEvaluator:
             
             processed_locations.add(location)
             
-            # CORE VIRTUAL VALIDATION: Single algorithmic check
-            print(f"[{self.name}_DEBUG] Validating location: '{location}'")
+            # CORE VIRTUAL VALIDATION: Single algorithmic check (no per-location logging)
             is_valid, reason = virtual_engine.validate_location(location)
-            print(f"[{self.name}_DEBUG] Result: {'✅ VALID' if is_valid else '❌ INVALID'} - {reason}")
             
             if not is_valid:
-                print(f"[{self.name}_DEBUG] 🚨 ANOMALY: Location '{location}' is invalid -> {reason}")
+                # Only log invalid locations - this dramatically reduces output
+                if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.LOCATION_VALIDATION):
+                    print(f"[LOCATION_VALIDATION] ❌ Invalid: '{location}' -> {reason}")
+                
+                invalid_locations.append(location)
                 
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
@@ -124,19 +128,8 @@ class VirtualInvalidLocationEvaluator:
                     'enhanced_reason': reason
                 })
         
-        validation_stats = {
-            'total_records_processed': len(inventory_df),
-            'unique_locations_checked': len(processed_locations),
-            'invalid_locations_found': len(set(a['location'] for a in anomalies)),
-            'total_anomalies': len(anomalies),
-            'validation_method': 'virtual_engine'
-        }
-        
-        print(f"[{self.name}_DEBUG] ---------- VIRTUAL VALIDATION STATS ----------")
-        for key, value in validation_stats.items():
-            print(f"[{self.name}_DEBUG] {key}: {value}")
-        
-        print(f"[{self.name}_DEBUG] Virtual validation complete: {len(anomalies)} anomalies detected")
+        if self.logger.should_log(LogLevel.VERBOSE, LogCategory.LOCATION_VALIDATION):
+            print(f"[{self.name}] Validation complete: {len(anomalies)} anomalies from {len(processed_locations)} locations")
         
         return anomalies
     
@@ -144,8 +137,8 @@ class VirtualInvalidLocationEvaluator:
         """
         Basic fallback validation when virtual engine is not available
         """
-        print(f"[{self.name}_DEBUG] ========== BASIC FALLBACK VALIDATION START ===========")
-        print(f"[{self.name}_DEBUG] Reason: No virtual engine available")
+        if self.logger.should_log(LogLevel.ESSENTIAL, LogCategory.LOCATION_VALIDATION):
+            print(f"[LOCATION_VALIDATION] Using basic pattern validation (no virtual engine)")
         
         anomalies = []
         basic_invalid_patterns = [
@@ -159,8 +152,8 @@ class VirtualInvalidLocationEvaluator:
             r'UNKNOWN'               # Contains "UNKNOWN"
         ]
         
-        print(f"[{self.name}_DEBUG] Using pattern-based validation with {len(basic_invalid_patterns)} patterns")
-        print(f"[{self.name}_DEBUG] Patterns: {basic_invalid_patterns}")
+        if self.logger.should_log(LogLevel.VERBOSE, LogCategory.LOCATION_VALIDATION):
+            print(f"[{self.name}] Using {len(basic_invalid_patterns)} validation patterns")
         
         import re
         compiled_patterns = []
@@ -179,6 +172,9 @@ class VirtualInvalidLocationEvaluator:
             # Check against basic invalid patterns
             for pattern in compiled_patterns:
                 if pattern.search(location):
+                    if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.LOCATION_VALIDATION):
+                        print(f"[LOCATION_VALIDATION] ❌ Pattern match: '{location}' (basic validation)")
+                    
                     anomalies.append({
                         'pallet_id': pallet['pallet_id'],
                         'location': pallet['location'],
@@ -190,18 +186,9 @@ class VirtualInvalidLocationEvaluator:
                     })
                     break
         
-        fallback_stats = {
-            'total_records_processed': len(inventory_df),
-            'patterns_used': len(compiled_patterns),
-            'anomalies_found': len(anomalies),
-            'validation_method': 'basic_fallback'
-        }
+        # Use the optimized summary
+        self.logger.location_validation_summary(inventory_df['location'].nunique(), len(anomalies), 'basic_fallback')
         
-        print(f"[{self.name}_DEBUG] ---------- FALLBACK VALIDATION STATS ----------")
-        for key, value in fallback_stats.items():
-            print(f"[{self.name}_DEBUG] {key}: {value}")
-        
-        print(f"[{self.name}_DEBUG] ========== BASIC FALLBACK VALIDATION COMPLETE ===========")
         return anomalies
 
 

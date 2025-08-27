@@ -168,6 +168,7 @@ class OptimizedLogger:
     @contextmanager
     def rule_context(self, rule_name: str, rule_id: int, priority: str):
         """Context manager for rule evaluation with automatic timing"""
+        import time
         start_time = time.time()
         self.rule_start(rule_name, rule_id, priority)
         

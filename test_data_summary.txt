@@ -1,0 +1,65 @@
+INVENTORY REPORT TEST DATA - ANOMALY SUMMARY
+==========================================
+
+Total Records: 800
+Valid Records: 720 (90%)
+Total Anomalies: 80 (10%)
+
+RULE VIOLATION BREAKDOWN:
+------------------------
+1. Location Capacity Violations: 15 anomalies
+   - Multiple pallets assigned to same single-capacity location (01-01-001A)
+   - Tests system handling of overcapacity scenarios
+
+2. Invalid Location Format: 15 anomalies
+   - Locations not following AA-RR-PPPL format
+   - Examples: 1-01-001A, 01-3-001A, 01-01-43A, INVALID, BAD_LOC, X-Y-Z
+   - Tests format validation rules
+
+3. Invalid/Non-existent Locations: 10 anomalies
+   - Locations outside warehouse structure bounds
+   - Examples: 00-01-001A, 04-03-050Z, 99-99-999Z, 05-05-005E
+   - Tests location existence validation
+
+4. Inactive Zone Usage: 15 anomalies
+   - Pallets assigned to inactive special areas
+   - Zones: RECV-02 (5 records), STAGE-01 (5 records), DOCK-01 (5 records)
+   - Tests zone status validation
+
+5. Duplicate Pallet ID: 15 anomalies
+   - Duplicate pallet identifiers (PLT000001 through PLT000015)
+   - Tests uniqueness constraints
+
+6. Missing Required Data: 10 anomalies
+   - Records with empty or null required fields
+   - Fields tested: Pallet_ID, Location, Product_Type, Quantity, Weight_KG, 
+     Received_Date, Status, Batch_Number, Supplier, Zone
+   - Tests required field validation
+
+WAREHOUSE STRUCTURE TESTED:
+---------------------------
+- Warehouse ID: USER_MARCOS9
+- Structure: 3 aisles × 2 racks × 42 positions × 4 levels = 1,008 locations
+- Location Format: AA-RR-PPPL (e.g., 01-02-001A)
+- Capacity: 1 pallet per level
+- Special Areas: RECV-02, STAGE-01, DOCK-01 (all inactive)
+
+TESTING OBJECTIVES:
+------------------
+- Validate rule engine detection capabilities
+- Test system performance under data anomaly load (10% anomaly rate)
+- Verify error handling and reporting mechanisms
+- Ensure data validation accuracy across all rule types
+- Stress-test with realistic warehouse scenario
+
+DATA CHARACTERISTICS:
+--------------------
+- Product diversity: 10 different product types
+- Date range: 30-day rolling window
+- Realistic quantities (10-100 units) and weights (50-500 KG)
+- Mixed status types (Available, Reserved, Picked)
+- Supplier diversity (50 different suppliers)
+
+File: inventoryreport.xlsx
+Generated: 2025-08-27 17:53:16
+Warehouse: Testing test123 (USER_MARCOS9)
