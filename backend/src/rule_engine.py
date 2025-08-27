@@ -39,6 +39,7 @@ class RuleEngine:
         self.db = db_session
         self.app = app
         self.user_context = user_context  # SECURITY: Store user context for warehouse filtering
+        self._location_cache = {}  # PERFORMANCE: Cache locations per warehouse
         self.evaluators = self._initialize_evaluators()
     
     def _ensure_app_context(self):
@@ -70,6 +71,67 @@ class RuleEngine:
             'PRODUCT_INCOMPATIBILITY': ProductIncompatibilityEvaluator(app=self.app)
         }
     
+    def _get_warehouse_locations(self, warehouse_context: dict = None):
+        """
+        PERFORMANCE OPTIMIZATION: Get locations filtered by warehouse instead of loading ALL locations.
+        This fixes the critical performance issue where 12,080+ locations were loaded for every rule.
+        """
+        # Extract warehouse_id from context
+        warehouse_id = None
+        if warehouse_context and isinstance(warehouse_context, dict):
+            warehouse_id = warehouse_context.get('warehouse_id')
+        elif hasattr(self, 'current_warehouse_context') and self.current_warehouse_context:
+            warehouse_id = self.current_warehouse_context.get('warehouse_id')
+        elif self.user_context and hasattr(self.user_context, 'username'):
+            # Fallback: Try to infer warehouse from user context
+            warehouse_id = f'USER_{self.user_context.username.upper()}'
+            
+        print(f"[PERFORMANCE_FIX] Loading locations for warehouse: {warehouse_id}")
+        
+        # Get locations with proper filtering
+        context = self._ensure_app_context()
+        if context:
+            with context:
+                return self._get_warehouse_locations_internal(warehouse_id)
+        else:
+            return self._get_warehouse_locations_internal(warehouse_id)
+    
+    def _get_warehouse_locations_internal(self, warehouse_id: str = None):
+        """Internal method to get warehouse-filtered locations"""
+        from sqlalchemy import or_
+        
+        if warehouse_id:
+            # CRITICAL FIX: Filter by warehouse_id instead of loading ALL locations
+            locations = Location.query.filter(
+                Location.warehouse_id == warehouse_id,
+                or_(Location.is_active == True, Location.is_active.is_(None))
+            ).all()
+            print(f"[PERFORMANCE_FIX] Loaded {len(locations)} locations for warehouse {warehouse_id}")
+        else:
+            # Fallback: Still better than loading ALL - limit to active locations
+            locations = Location.query.filter(
+                or_(Location.is_active == True, Location.is_active.is_(None))
+            ).limit(1000).all()  # Safety limit to prevent memory exhaustion
+            print(f"[PERFORMANCE_FIX] Loaded {len(locations)} locations (no warehouse filter)")
+            
+        return locations
+    
+    def _get_cached_locations(self, warehouse_context: dict = None):
+        """
+        PERFORMANCE OPTIMIZATION: Cache locations per warehouse to avoid repeated database queries.
+        """
+        warehouse_id = 'default'
+        if warehouse_context and isinstance(warehouse_context, dict):
+            warehouse_id = warehouse_context.get('warehouse_id', 'default')
+        elif hasattr(self, 'current_warehouse_context') and self.current_warehouse_context:
+            warehouse_id = self.current_warehouse_context.get('warehouse_id', 'default')
+            
+        # Check cache first
+        if warehouse_id not in self._location_cache:
+            self._location_cache[warehouse_id] = self._get_warehouse_locations(warehouse_context)
+            
+        return self._location_cache[warehouse_id]
+
     def load_active_rules(self, category_filter: str = None) -> List[Rule]:
         """Load all active rules from database, optionally filtered by category"""
         context = self._ensure_app_context()
@@ -176,10 +238,14 @@ class RuleEngine:
         # Initialize warehouse_context before using it
         warehouse_context = None
         
+        # PERFORMANCE FIX: Store warehouse context for location filtering
+        self.current_warehouse_context = None
+        
         # Check if explicit warehouse context is set (from applied template) - show once
         # LONG-TERM SOLUTION: Use professional warehouse context resolution
         if hasattr(self, '_warehouse_context') and self._warehouse_context:
             warehouse_context = self._warehouse_context
+            self.current_warehouse_context = warehouse_context  # PERFORMANCE: Store for location filtering
             print(f"[RULE_ENGINE_DEBUG] Using explicit warehouse context: {warehouse_context}")
         else:
             # Use new warehouse context resolver instead of detection
@@ -190,6 +256,7 @@ class RuleEngine:
                 if user_context:
                     # NEW: Direct user → warehouse resolution (no detection needed)
                     warehouse_context = resolve_warehouse_context_for_user(user_context)
+                    self.current_warehouse_context = warehouse_context  # PERFORMANCE: Store for location filtering
                     print(f"[RULE_ENGINE_V2] Resolved warehouse context: {warehouse_context}")
                 else:
                     print(f"[RULE_ENGINE_V2] No user context provided - cannot resolve warehouse")
@@ -1028,8 +1095,8 @@ class BaseRuleEvaluator:
             
         from models import Location
         
-        # Get all locations once
-        all_locations = Location.query.all()
+        # PERFORMANCE FIX: Get cached warehouse-filtered locations  
+        all_locations = self._get_cached_locations()
         
         # Build efficient lookup structures
         exact_lookup = {}  # code -> Location
@@ -1170,17 +1237,8 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         """Assign location types based on location patterns with smart matching"""
         df = inventory_df.copy()
         
-        # Get location mappings from database with proper context
-        context = self._ensure_app_context()
-        if context:
-            with context:
-                locations = Location.query.all()
-        else:
-            try:
-                locations = Location.query.all()
-            except RuntimeError:
-                # Fallback if no database context available
-                locations = []
+        # PERFORMANCE FIX: Get cached warehouse-filtered locations
+        locations = self._get_cached_locations()
         
         location_map = {}
         location_map_normalized = {}  # For handling prefixed codes
@@ -1359,8 +1417,8 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
             'recommendations': []
         }
         
-        # Get all database locations
-        all_locations = Location.query.all()
+        # PERFORMANCE FIX: Get cached warehouse-filtered locations
+        all_locations = self._get_cached_locations()
         results['database_locations'] = [
             {
                 'code': loc.code,
@@ -2254,8 +2312,8 @@ class ProductIncompatibilityEvaluator(BaseRuleEvaluator):
         
         anomalies = []
         
-        # Get location restrictions
-        locations = Location.query.all()
+        # PERFORMANCE FIX: Get cached warehouse-filtered locations
+        locations = self._get_cached_locations()
         
         for _, pallet in inventory_df.iterrows():
             if pd.isna(pallet.get('description')) or pd.isna(pallet.get('location')):
