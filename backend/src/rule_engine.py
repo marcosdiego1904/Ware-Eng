@@ -1093,10 +1093,26 @@ class BaseRuleEvaluator:
         if self._location_cache is not None:
             return self._location_cache
             
-        from models import Location
+        # PERFORMANCE FIX: Get warehouse-filtered locations using direct query
+        from sqlalchemy import or_
+        from flask import g
         
-        # PERFORMANCE FIX: Get cached warehouse-filtered locations  
-        all_locations = self._get_cached_locations()
+        # Get warehouse context from current app context if available
+        warehouse_id = None
+        if hasattr(g, 'warehouse_context') and g.warehouse_context:
+            warehouse_id = g.warehouse_context.get('warehouse_id')
+        
+        # Query locations with warehouse filtering
+        if warehouse_id:
+            all_locations = Location.query.filter(
+                Location.warehouse_id == warehouse_id,
+                or_(Location.is_active == True, Location.is_active.is_(None))
+            ).all()
+        else:
+            # Fallback to all locations if no warehouse context
+            all_locations = Location.query.filter(
+                or_(Location.is_active == True, Location.is_active.is_(None))
+            ).all()
         
         # Build efficient lookup structures
         exact_lookup = {}  # code -> Location
