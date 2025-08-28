@@ -110,14 +110,16 @@ class VirtualLocationEngine:
                     'zone': 'DOCK'
                 }
         
-        # Add AISLE transitional areas (one per aisle)
-        for aisle_num in self.storage_space['aisles']:
-            aisle_code = f'AISLE-{aisle_num:02d}'
-            special_areas[aisle_code] = {
-                'location_type': 'TRANSITIONAL',
-                'capacity': 10,  # Standard transitional capacity
-                'zone': 'GENERAL'
-            }
+        # Add AISLE transitional areas (one per aisle) - only if explicitly configured
+        # This prevents unexpected special areas from appearing in the UI
+        if self.config.get('auto_create_aisle_areas', False):
+            for aisle_num in self.storage_space['aisles']:
+                aisle_code = f'AISLE-{aisle_num:02d}'
+                special_areas[aisle_code] = {
+                    'location_type': 'TRANSITIONAL',
+                    'capacity': 10,  # Standard transitional capacity
+                    'zone': 'GENERAL'
+                }
         
         return special_areas
     

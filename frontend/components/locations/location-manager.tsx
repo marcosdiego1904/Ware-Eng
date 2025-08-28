@@ -267,13 +267,27 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   }, [currentWarehouseConfig]);
 
   // Client-side filter to get only special locations
+  // Enhanced filtering for both virtual and physical location objects
   const specialLocations = React.useMemo(() => {
-    return locations.filter(location => 
-      location.location_type === 'RECEIVING' || 
-      location.location_type === 'STAGING' || 
-      location.location_type === 'DOCK' ||
-      location.location_type === 'TRANSITIONAL'
-    );
+    if (!Array.isArray(locations) || locations.length === 0) {
+      return [];
+    }
+    
+    return locations.filter(location => {
+      if (!location || typeof location !== 'object') {
+        return false;
+      }
+      
+      // Handle both frontend Location interface and backend virtual location format
+      const locationType = location.location_type || location.type;
+      
+      return (
+        locationType === 'RECEIVING' || 
+        locationType === 'STAGING' || 
+        locationType === 'DOCK' ||
+        locationType === 'TRANSITIONAL'
+      );
+    });
   }, [locations]);
 
   // Enhanced debug logging for special areas issue
@@ -856,7 +870,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                 {specialLocations.length > 0 ? (
                   <LocationList
                     locations={specialLocations}
-                    loading={false} // Don't show loading when we have data
+                    loading={locationsLoading} // Show loading state for special areas too
                     pagination={null} // No pagination for special areas
                     onEdit={(location) => {
                       setEditingLocation(location);
@@ -866,10 +880,12 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                   />
                 ) : (
                   <div className="text-center py-12">
-                    {locationsLoading && locations.length === 0 ? (
+                    {(locationsLoading || configLoading) ? (
                       <div>
                         <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
-                        <p className="text-muted-foreground">Loading special areas...</p>
+                        <p className="text-muted-foreground">
+                          {configLoading ? 'Loading warehouse configuration...' : 'Loading special areas...'}
+                        </p>
                       </div>
                     ) : (
                       <div>
@@ -877,10 +893,22 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                         <h3 className="text-lg font-semibold mb-2">No Special Areas Found</h3>
                         <p className="text-muted-foreground mb-6 max-w-md mx-auto">
                           No receiving, staging, or dock areas found for warehouse &apos;{warehouseId}&apos;. 
-                          {locations.length > 0 ? 
-                            `Found ${locations.length} storage locations, but no special areas.` :
-                            'No locations loaded yet - check console for API errors.'
-                          }
+                          {locations.length > 0 ? (
+                            <>
+                              Found {locations.length} total location(s), but no special areas. 
+                              {(() => {
+                                // Show location types for debugging
+                                const locationTypes = [...new Set(locations.map(loc => 
+                                  loc?.location_type || loc?.type || 'unknown'
+                                ))];
+                                return locationTypes.length > 0 ? 
+                                  ` Types found: ${locationTypes.join(', ')}.` : 
+                                  ' Location types could not be determined.';
+                              })()}
+                            </>
+                          ) : (
+                            'No locations loaded yet. This might indicate a configuration or API issue.'
+                          )}
                         </p>
                         <div className="flex gap-2 justify-center">
                           <Button 

@@ -225,9 +225,33 @@ export function Step2SpecialAreas({ data, onChange }: Step2SpecialAreasProps) {
           min="1"
           max="100"
           value={area.capacity}
-          onChange={(e) => onUpdate(index, { capacity: parseInt(e.target.value) || 1 })}
+          onChange={(e) => {
+            const value = parseInt(e.target.value) || 1;
+            const clampedValue = Math.max(1, Math.min(100, value));
+            onUpdate(index, { capacity: clampedValue });
+          }}
           placeholder="Number of pallets this area can hold"
+          className={
+            area.capacity < 1 || area.capacity > 100 ? 
+            "border-destructive focus:border-destructive" : 
+            ""
+          }
         />
+        {(area.capacity < 1 || area.capacity > 100) && (
+          <p className="text-xs text-destructive">
+            Capacity must be between 1 and 100 pallets
+          </p>
+        )}
+        {area.type === 'RECEIVING' && area.capacity > 50 && (
+          <p className="text-xs text-amber-600">
+            Large receiving areas (>50 pallets) may indicate operational bottlenecks
+          </p>
+        )}
+        {area.type === 'DOCK' && area.capacity > 10 && (
+          <p className="text-xs text-amber-600">
+            Dock areas are typically 2-10 pallets for truck loading/unloading
+          </p>
+        )}
       </div>
     </div>
   );
