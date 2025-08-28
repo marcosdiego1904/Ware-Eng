@@ -55,7 +55,7 @@ def debug_missing_special_areas():
         locations = compat_manager.get_all_warehouse_locations(warehouse_id)
         print(f"Total locations from compat manager: {len(locations)}")
         
-        special_locs = [loc for loc in locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK']]
+        special_locs = [loc for loc in locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL']]
         print(f"Special locations from compat manager: {len(special_locs)}")
         
         for loc in special_locs:
@@ -67,7 +67,7 @@ def debug_missing_special_areas():
             virtual_locs = compat_manager._get_all_virtual_locations(engine, limit=1000)
             print(f"Virtual locations from _get_all_virtual_locations: {len(virtual_locs)}")
             
-            virtual_special = [loc for loc in virtual_locs if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK']]
+            virtual_special = [loc for loc in virtual_locs if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL']]
             print(f"Virtual special from direct method: {len(virtual_special)}")
             
             for loc in virtual_special:

@@ -110,9 +110,9 @@ class VirtualLocationEngine:
                     'zone': area.get('zone', 'DOCK')  # Use config zone or default
                 }
         
-        # Add AISLE transitional areas (one per aisle) - only if explicitly configured
-        # This prevents unexpected special areas from appearing in the UI
-        if self.config.get('auto_create_aisle_areas', False):
+        # Add AISLE transitional areas (one per aisle) - enabled by default for consistency
+        # Physical warehouses typically have aisle transitional areas
+        if self.config.get('auto_create_aisle_areas', True):  # Changed default to True
             for aisle_num in self.storage_space['aisles']:
                 aisle_code = f'AISLE-{aisle_num:02d}'
                 special_areas[aisle_code] = {

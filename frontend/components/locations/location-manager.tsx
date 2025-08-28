@@ -249,6 +249,16 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     };
   }, [warehouseId, fetchLocations, locationsLoading, setFilters]); // FIXED: Only depend on warehouseId, not configLoading
 
+  // Refresh locations when switching back to locations tab (after template changes)
+  useEffect(() => {
+    if (activeTab === 'locations' && warehouseId && currentWarehouseConfig && !locationsLoading) {
+      console.log('🔄 Tab switched to locations - refreshing to show latest special areas');
+      const locationFilters = { warehouse_id: warehouseId };
+      setFilters(locationFilters);
+      fetchLocations(locationFilters, 1, 100).catch(console.error);
+    }
+  }, [activeTab, warehouseId, currentWarehouseConfig, locationsLoading, setFilters, fetchLocations]);
+
   // Note: Removed duplicate and looping useEffect to prevent race conditions
 
   // Populate settings form when config loads
@@ -879,7 +889,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                 {specialLocations.length > 0 ? (
                   <LocationList
                     locations={specialLocations}
-                    loading={locationsLoading} // Show loading state for special areas too
+                    loading={locationsLoading && specialLocations.length === 0} // Only show loading if actually loading AND no locations yet
                     pagination={null} // No pagination for special areas
                     onEdit={(location) => {
                       setEditingLocation(location);
