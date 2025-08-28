@@ -83,31 +83,31 @@ class VirtualLocationEngine:
         """Build lookup table for special areas from warehouse config"""
         special_areas = {}
         
-        # Add receiving areas
+        # Add receiving areas - RESPECT zone from config
         for area in self.config.get('receiving_areas', []):
             if isinstance(area, dict) and 'code' in area:
                 special_areas[area['code']] = {
                     'location_type': 'RECEIVING',
                     'capacity': area.get('capacity', 10),
-                    'zone': 'RECEIVING'
+                    'zone': area.get('zone', 'RECEIVING')  # Use config zone or default
                 }
         
-        # Add staging areas
+        # Add staging areas - RESPECT zone from config
         for area in self.config.get('staging_areas', []):
             if isinstance(area, dict) and 'code' in area:
                 special_areas[area['code']] = {
                     'location_type': 'STAGING',
                     'capacity': area.get('capacity', 5),
-                    'zone': 'STAGING'
+                    'zone': area.get('zone', 'STAGING')  # Use config zone or default
                 }
         
-        # Add dock areas
+        # Add dock areas - RESPECT zone from config
         for area in self.config.get('dock_areas', []):
             if isinstance(area, dict) and 'code' in area:
                 special_areas[area['code']] = {
                     'location_type': 'DOCK',
                     'capacity': area.get('capacity', 2),
-                    'zone': 'DOCK'
+                    'zone': area.get('zone', 'DOCK')  # Use config zone or default
                 }
         
         # Add AISLE transitional areas (one per aisle) - only if explicitly configured
@@ -141,12 +141,9 @@ class VirtualLocationEngine:
         # Remove warehouse prefix if present for validation
         normalized_code = self._remove_warehouse_prefix(code)
         
-        # Check special areas first (faster lookup)
-        if self._is_special_area(normalized_code):
-            if normalized_code in self.special_areas:
-                return True, "Valid special area"
-            else:
-                return False, f"Special area '{normalized_code}' not defined in warehouse template"
+        # Check special areas first - DIRECT lookup instead of pattern matching
+        if normalized_code in self.special_areas:
+            return True, "Valid special area"
         
         # Check storage location format and bounds
         return self._validate_storage_location(normalized_code)
