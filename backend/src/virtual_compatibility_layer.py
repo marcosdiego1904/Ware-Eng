@@ -145,23 +145,33 @@ class VirtualLocationCompatibilityManager:
         
         NOTE: For large virtual warehouses, we don't generate ALL possible locations
         as that could be millions. Instead, we return a sample or specific locations.
+        PRIORITY: Special areas are ALWAYS included and generated first
         """
         locations = []
         
-        # Add all special areas
+        # Add all special areas FIRST (these are finite and essential for UI)
         warehouse_summary = virtual_engine.get_warehouse_summary()
         
-        # Add special areas (these are finite and manageable)
+        # Add special areas (these are finite and manageable) - PRIORITY FOR UI
         for special_area in warehouse_summary.get('special_areas_list', []):
             properties = virtual_engine.get_location_properties(special_area)
             if properties and properties.is_valid:
                 locations.append({
+                    'id': hash(properties.code),  # Add ID for frontend compatibility
                     'code': properties.code,
                     'location_type': properties.location_type,
                     'capacity': properties.capacity,
                     'pallet_capacity': properties.capacity,
                     'zone': properties.zone,
                     'warehouse_id': virtual_engine.warehouse_id,
+                    'aisle_number': properties.aisle_number,
+                    'rack_number': None,  # Virtual engine uses rack_identifier
+                    'position_number': properties.position_number,
+                    'level': properties.level,
+                    'is_storage_location': False,  # Special areas are not storage
+                    'full_address': f"Special Area: {properties.code}",
+                    'is_active': True,
+                    'created_at': '2025-01-01T00:00:00Z',  # Default timestamp
                     'source': 'virtual_special'
                 })
         
@@ -203,6 +213,7 @@ class VirtualLocationCompatibilityManager:
                         
                         if properties and properties.is_valid:
                             sample_locations.append({
+                                'id': hash(properties.code),  # Add ID for frontend compatibility
                                 'code': properties.code,
                                 'location_type': properties.location_type,
                                 'capacity': properties.capacity,
@@ -210,8 +221,13 @@ class VirtualLocationCompatibilityManager:
                                 'zone': properties.zone,
                                 'warehouse_id': virtual_engine.warehouse_id,
                                 'aisle_number': properties.aisle_number,
+                                'rack_number': None,  # Virtual uses rack_identifier
                                 'position_number': properties.position_number,
                                 'level': properties.level,
+                                'is_storage_location': True,  # Storage locations
+                                'full_address': f"A{properties.aisle_number:02d}-{properties.rack_identifier}{properties.position_number:02d}-{properties.level}",
+                                'is_active': True,
+                                'created_at': '2025-01-01T00:00:00Z',  # Default timestamp
                                 'source': 'virtual_sample'
                             })
                             count += 1
@@ -246,23 +262,37 @@ class VirtualLocationCompatibilityManager:
     def is_virtual_warehouse(self, warehouse_id: str) -> bool:
         """Check if warehouse is using virtual locations"""
         try:
-            # Check if warehouse has WarehouseConfig but no/few physical locations
+            # Check if warehouse has WarehouseConfig - if so, treat as virtual by default
             config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
             if not config:
+                if self.debug_compatibility:
+                    print(f"[VIRTUAL_COMPAT] No config found for {warehouse_id} - not virtual")
                 return False
             
-            physical_count = Location.query.filter_by(warehouse_id=warehouse_id).count()
+            # NEW LOGIC: If warehouse has config, prioritize virtual locations
+            # This ensures consistent behavior for special locations
+            if self.debug_compatibility:
+                print(f"[VIRTUAL_COMPAT] Warehouse {warehouse_id} has config - treating as virtual")
             
-            # If warehouse has config but very few physical locations, it's likely virtual
+            physical_count = Location.query.filter_by(warehouse_id=warehouse_id).count()
             expected_locations = (config.num_aisles * config.racks_per_aisle * 
                                 config.positions_per_rack * config.levels_per_position)
             
-            if expected_locations > 100 and physical_count < expected_locations * 0.1:
-                return True
+            # NEW: Always prefer virtual for warehouses with configs unless explicitly legacy
+            # You can set FORCE_PHYSICAL_MODE=true in environment to disable this
+            force_physical = os.environ.get('FORCE_PHYSICAL_MODE', 'false').lower() == 'true'
             
-            return False
+            if force_physical:
+                if self.debug_compatibility:
+                    print(f"[VIRTUAL_COMPAT] FORCE_PHYSICAL_MODE enabled - using physical locations")
+                return False
             
-        except Exception:
+            # Default: treat warehouses with configs as virtual
+            return True
+            
+        except Exception as e:
+            if self.debug_compatibility:
+                print(f"[VIRTUAL_COMPAT] Error checking virtual status: {e}")
             return False
     
     def get_warehouse_statistics(self, warehouse_id: str) -> Dict[str, Any]:

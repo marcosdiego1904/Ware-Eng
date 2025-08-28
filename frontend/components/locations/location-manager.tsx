@@ -293,7 +293,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
 
   // Enhanced debug logging for special areas issue
   console.log('==================================================');
-  console.log('🔍 LOCATION MANAGER DEBUG');
+  console.log('🔍 LOCATION MANAGER DEBUG - VIRTUAL ARCHITECTURE');
   console.log('==================================================');
   console.log(`📊 Locations state - Total: ${locations.length}, Special: ${specialLocations.length}`);
   console.log('🏠 Current warehouse ID:', warehouseId);
@@ -303,7 +303,12 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   console.log('🏢 Current warehouse config:', currentWarehouseConfig ? {
     id: currentWarehouseConfig.id,
     name: currentWarehouseConfig.warehouse_name,
-    warehouse_id: currentWarehouseConfig.warehouse_id
+    warehouse_id: currentWarehouseConfig.warehouse_id,
+    special_areas_configured: {
+      receiving: currentWarehouseConfig.receiving_areas?.length || 0,
+      staging: currentWarehouseConfig.staging_areas?.length || 0,
+      dock: currentWarehouseConfig.dock_areas?.length || 0
+    }
   } : 'null');
   
   if (locations.length > 0) {
@@ -311,13 +316,16 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
       code: loc.code, 
       type: loc.location_type,
       warehouse_id: loc.warehouse_id,
-      zone: loc.zone 
+      zone: loc.zone,
+      source: (loc as any).source || 'unknown'  // Track if virtual or physical
     })));
-    console.log('⭐ Special locations found:', specialLocations.map(loc => ({ 
+    console.log('⭐ Virtual Special locations found:', specialLocations.map(loc => ({ 
       code: loc.code, 
       type: loc.location_type, 
       zone: loc.zone,
-      warehouse_id: loc.warehouse_id
+      warehouse_id: loc.warehouse_id,
+      source: (loc as any).source || 'unknown',
+      is_storage: loc.is_storage_location
     })));
     
     // Show all unique location types
