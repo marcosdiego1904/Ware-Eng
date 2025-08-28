@@ -52,7 +52,13 @@ class VirtualTemplateManager:
             print(f"  - Storage locations: {virtual_summary['storage_locations']:,}")
             print(f"  - Special areas: {virtual_summary['special_areas']}")
             
-            # Step 4: Increment template usage
+            # Step 4: CRITICAL FIX - Create physical special location records
+            # This allows Special Areas Management UI to display them
+            special_locations_created = self._create_physical_special_locations(
+                template, warehouse_id, current_user
+            )
+            
+            # Step 5: Increment template usage
             template.increment_usage()
             
             return {
@@ -61,9 +67,10 @@ class VirtualTemplateManager:
                 'configuration': config_dict,
                 'virtual_location_summary': virtual_summary,
                 'template_code': template.template_code,
-                'creation_method': 'virtual_locations',
-                'locations_created': 0,  # No physical locations created
-                'virtual_locations_available': virtual_summary['total_possible_locations']
+                'creation_method': 'hybrid_virtual_with_physical_special_areas',
+                'locations_created': len(special_locations_created),  # Physical special locations
+                'virtual_locations_available': virtual_summary['total_possible_locations'],
+                'special_areas': len(special_locations_created)
             }
             
         except Exception as e:
@@ -153,6 +160,80 @@ class VirtualTemplateManager:
                     print(f"[VIRTUAL_TEMPLATE] Applied customization: {field} = {value}")
         
         return config
+    
+    def _create_physical_special_locations(self, template, warehouse_id, current_user):
+        """
+        Create physical location records for special areas only
+        
+        This is the HYBRID ARCHITECTURE FIX - special areas as physical records
+        while keeping storage locations virtual for performance.
+        
+        Returns:
+            list: Created location objects
+        """
+        created_special_locations = []
+        
+        try:
+            print(f"[VIRTUAL_TEMPLATE] Creating physical special area locations for warehouse {warehouse_id}")
+            
+            # Remove any existing special locations for this warehouse to prevent duplicates
+            existing_special = Location.query.filter(
+                Location.warehouse_id == warehouse_id,
+                Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
+            ).all()
+            
+            if existing_special:
+                print(f"[VIRTUAL_TEMPLATE] Removing {len(existing_special)} existing special locations")
+                for loc in existing_special:
+                    db.session.delete(loc)
+                db.session.flush()
+            
+            # Process each type of special area from template
+            special_area_configs = [
+                (template.receiving_areas_template, 'RECEIVING', 'DOCK', 10),
+                (template.staging_areas_template, 'STAGING', 'STAGING', 5),
+                (template.dock_areas_template, 'DOCK', 'DOCK', 2)
+            ]
+            
+            for areas_template, location_type, default_zone, default_capacity in special_area_configs:
+                if not areas_template:
+                    continue
+                    
+                try:
+                    areas = json.loads(areas_template) if isinstance(areas_template, str) else areas_template
+                    print(f"[VIRTUAL_TEMPLATE] Processing {len(areas)} {location_type} areas")
+                    
+                    for area_data in areas:
+                        # Create physical special location record
+                        location = Location(
+                            code=area_data.get('code', f'{location_type}_1'),
+                            location_type=location_type,
+                            capacity=area_data.get('capacity', default_capacity),
+                            pallet_capacity=area_data.get('capacity', default_capacity),
+                            zone=area_data.get('zone', default_zone),
+                            warehouse_id=warehouse_id,
+                            created_by=current_user.id,
+                            is_active=True
+                        )
+                        
+                        db.session.add(location)
+                        created_special_locations.append(location)
+                        print(f"[VIRTUAL_TEMPLATE] Created special location: {location.code} ({location_type})")
+                        
+                except (json.JSONDecodeError, TypeError) as e:
+                    print(f"[VIRTUAL_TEMPLATE] Error processing {location_type} areas: {e}")
+                    continue
+            
+            # Flush but don't commit yet (will be committed by caller)
+            db.session.flush()
+            
+            print(f"[VIRTUAL_TEMPLATE] Successfully prepared {len(created_special_locations)} special locations")
+            return created_special_locations
+            
+        except Exception as e:
+            current_app.logger.error(f"Error creating physical special locations: {e}")
+            # Don't rollback here, let the caller handle it
+            return []
     
     def get_virtual_location_engine_for_warehouse(self, warehouse_id):
         """
