@@ -494,7 +494,7 @@ from database import db
 db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.init_app(app)
-login_manager.login_view = 'login' # type: ignore
+login_manager.login_view = 'api.api_login' # type: ignore
 
 
 # --- Database Models ---
@@ -1628,6 +1628,14 @@ try:
     print("Rules API registered successfully")
 except ImportError as e:
     print(f"Rules API not available: {e}")
+
+# Register User Warehouse API (Dynamic warehouse detection)
+try:
+    from user_warehouse_api import user_warehouse_bp
+    app.register_blueprint(user_warehouse_bp)
+    print("User Warehouse API registered successfully")
+except ImportError as e:
+    print(f"User Warehouse API not available: {e}")
 
 # ==================== PRODUCTION DATABASE DIAGNOSTIC ====================
 
