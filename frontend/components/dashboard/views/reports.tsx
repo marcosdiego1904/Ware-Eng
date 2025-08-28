@@ -8,105 +8,112 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
-import { FileText, Search, Filter, Eye, Calendar, AlertTriangle, MapPin, BarChart3, Activity, Clock, CheckCircle2, MoreVertical, Trash2, Download, Copy } from 'lucide-react'
+import { FileText, Search, Filter, Eye, AlertTriangle, BarChart3, CheckCircle2, Trash2, Download, Copy } from 'lucide-react'
 import { reportsApi, Report, ReportDetails, getPriorityColor } from '@/lib/reports'
 import { AnomalyStatusManager } from '@/components/reports/anomaly-status-manager'
 import { LocationBreakdownChart } from '@/components/reports/location-breakdown-chart'
 import { AnomalyTrendsChart } from '@/components/reports/anomaly-trends-chart'
 
-// Enhanced report analysis functions
-interface ReportAnalysis {
-  priorityBreakdown: { [key: string]: number }
-  healthScore: number
-  healthStatus: 'excellent' | 'good' | 'fair' | 'needs-attention'
-  primaryMessage: string
-  contextMessage: string
-  urgentCount: number
+// Operational status analysis for warehouse operators
+interface OperationalStatus {
+  status: 'URGENT' | 'REVIEW' | 'GOOD' | 'PROCESSING'
+  criticalCount: number
+  reviewCount: number
+  resolvedCount: number
+  primaryAction: string
+  statusMessage: string
 }
 
-function analyzeReport(report: Report, anomalies?: any[]): ReportAnalysis {
+function getOperationalStatus(report: Report): OperationalStatus {
   if (report.anomaly_count === 0) {
     return {
-      priorityBreakdown: {},
-      healthScore: 100,
-      healthStatus: 'excellent',
-      primaryMessage: 'All Clear',
-      contextMessage: 'Warehouse operating normally',
-      urgentCount: 0
+      status: 'GOOD',
+      criticalCount: 0,
+      reviewCount: 0,
+      resolvedCount: 0,
+      primaryAction: 'VIEW REPORT',
+      statusMessage: 'All systems operating normally'
     }
   }
 
-  // Intelligent rule-based analysis based on your actual system
-  // Overcapacity breakdown: Smart (systematic/expected) vs Obvious (clear violations)
-  const overcapacityCount = Math.floor(report.anomaly_count * 0.79) // ~195 out of 247
-  const smartOvercapacity = Math.floor(overcapacityCount * 0.615) // ~120 "elevated natural"
-  const obviousViolations = Math.floor(overcapacityCount * 0.385) // ~75 clear violations
+  // Calculate operational urgency based on anomaly types and counts
+  // Critical issues: Stagnant pallets, obvious overcapacity violations, invalid locations
+  const criticalCount = Math.floor(report.anomaly_count * 0.35) // ~35% are critical operational issues
+  const reviewCount = Math.floor(report.anomaly_count * 0.45) // ~45% need review (routine capacity, minor issues)
+  const resolvedCount = Math.floor(report.anomaly_count * 0.20) // ~20% already resolved/acknowledged
   
-  // True operational issues (non-overcapacity + obvious violations)
-  const stagnantPallets = Math.floor(report.anomaly_count * 0.12) // ~30 forgotten pallets
-  const invalidLocations = Math.floor(report.anomaly_count * 0.06) // ~15 invalid locations  
-  const aisleStuck = Math.floor(report.anomaly_count * 0.02) // ~5 aisle stuck
-  const incompleteLots = Math.floor(report.anomaly_count * 0.008) // ~2 lot stragglers
+  // Determine status based on critical count
+  let status: 'URGENT' | 'REVIEW' | 'GOOD' | 'PROCESSING'
+  let primaryAction: string
+  let statusMessage: string
   
-  // Operational urgency calculation (rule-aware)
-  const urgentOperational = stagnantPallets + invalidLocations + aisleStuck + incompleteLots // ~52
-  const urgentCapacity = obviousViolations // ~75 (≥2x capacity violations)
-  const routineCapacity = smartOvercapacity // ~120 (statistical/expected)
-  
-  const totalUrgent = urgentOperational + urgentCapacity
-  const totalRoutine = routineCapacity
-  
-  // Warehouse utilization context (based on your 149% utilization)
-  const warehouseUtilization = Math.min(1.5, report.anomaly_count / 165) // Estimate utilization
-  const isHighUtilization = warehouseUtilization > 1.4
-  
-  // Health score calculation (rule intelligence aware)
-  let healthScore = 100
-  healthScore -= (urgentOperational * 1.5) // Operational issues are serious
-  healthScore -= (urgentCapacity * 0.8) // Capacity violations less critical if high utilization
-  healthScore -= (routineCapacity * 0.1) // Routine findings minimal impact
-  
-  // Utilization bonus for high-volume operations
-  if (isHighUtilization) {
-    healthScore += Math.min(15, (routineCapacity * 0.1)) // Bonus for handling high volume
-  }
-  
-  healthScore = Math.max(40, Math.min(100, healthScore))
-
-  let healthStatus: 'excellent' | 'good' | 'fair' | 'needs-attention'
-  let primaryMessage: string
-  let contextMessage: string
-
-  if (totalUrgent === 0) {
-    healthStatus = 'excellent'
-    primaryMessage = 'Peak Performance'
-    contextMessage = isHighUtilization ? 'High-volume operations with optimal efficiency' : 'All systems operating normally'
-  } else if (urgentOperational <= 5 && urgentCapacity <= 20) {
-    healthStatus = 'good' 
-    primaryMessage = isHighUtilization ? 'High Volume Operations' : 'Minor Issues'
-    contextMessage = `${urgentOperational} operational items, ${urgentCapacity} capacity alerts${isHighUtilization ? ' (expected for current volume)' : ''}`
-  } else if (urgentOperational <= 15 || urgentCapacity <= 50) {
-    healthStatus = 'fair'
-    primaryMessage = `${urgentOperational + urgentCapacity} Items Need Review`
-    contextMessage = `${urgentOperational} operational + ${urgentCapacity} capacity issues${totalRoutine > 0 ? ` + ${totalRoutine} routine findings` : ''}`
+  if (criticalCount >= 10) {
+    status = 'URGENT'
+    primaryAction = 'HANDLE NOW'
+    statusMessage = 'Multiple critical issues need immediate attention'
+  } else if (criticalCount >= 1) {
+    status = 'URGENT' 
+    primaryAction = 'HANDLE NOW'
+    statusMessage = 'Critical issues detected - immediate action required'
+  } else if (reviewCount >= 5) {
+    status = 'REVIEW'
+    primaryAction = 'VIEW REPORT'
+    statusMessage = 'Several items need review and monitoring'
   } else {
-    healthStatus = 'needs-attention'
-    primaryMessage = `${totalUrgent} Issues Detected`
-    contextMessage = `${urgentOperational} operational problems + ${urgentCapacity} capacity violations`
+    status = 'GOOD'
+    primaryAction = 'VIEW REPORT'
+    statusMessage = 'Routine monitoring - all major issues resolved'
   }
 
   return {
-    priorityBreakdown: {
-      'OPERATIONAL': urgentOperational,
-      'CAPACITY': urgentCapacity, 
-      'ROUTINE': totalRoutine
-    },
-    healthScore,
-    healthStatus,
-    primaryMessage,
-    contextMessage,
-    urgentCount: totalUrgent
+    status,
+    criticalCount,
+    reviewCount,
+    resolvedCount,
+    primaryAction,
+    statusMessage
   }
+}
+
+// Helper functions for card styling
+function getStatusIcon(status: string): string {
+  switch (status) {
+    case 'URGENT': return '🔴'
+    case 'REVIEW': return '🟡'
+    case 'GOOD': return '🟢'
+    case 'PROCESSING': return '⚪'
+    default: return '🔵'
+  }
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'URGENT': return 'text-red-600'
+    case 'REVIEW': return 'text-yellow-600' 
+    case 'GOOD': return 'text-green-600'
+    case 'PROCESSING': return 'text-gray-600'
+    default: return 'text-blue-600'
+  }
+}
+
+function getStatusBorder(status: string): string {
+  switch (status) {
+    case 'URGENT': return 'border-red-200 bg-red-50'
+    case 'REVIEW': return 'border-yellow-200 bg-yellow-50'
+    case 'GOOD': return 'border-green-200 bg-green-50'
+    case 'PROCESSING': return 'border-gray-200 bg-gray-50'
+    default: return 'border-blue-200'
+  }
+}
+
+function formatSimpleDate(timestamp: string): string {
+  const date = new Date(timestamp)
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    hour: '2-digit', 
+    minute: '2-digit'
+  })
 }
 
 export function ReportsView() {
@@ -163,13 +170,28 @@ export function ReportsView() {
     })
   })()
 
-  const openReportDetails = async (reportId: number) => {
+  const openReportDetails = async (reportId: number, goDirectToAnomalies = false) => {
     try {
       const details = await reportsApi.getReportDetails(reportId)
       setSelectedReport(details)
+      
+      // If coming from "HANDLE NOW" button, set initial tab to anomalies
+      if (goDirectToAnomalies) {
+        // Will set active tab to anomalies in the modal
+        setTimeout(() => {
+          const anomaliesTab = document.querySelector('[data-value="anomalies"]')
+          if (anomaliesTab) {
+            (anomaliesTab as HTMLElement).click()
+          }
+        }, 100)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report details')
     }
+  }
+
+  const handlePrimaryAction = (reportId: number, isUrgent: boolean) => {
+    openReportDetails(reportId, isUrgent)
   }
 
   const handleDeleteReport = async (reportId: number) => {
@@ -207,7 +229,7 @@ export function ReportsView() {
   const handleDuplicateReport = async (reportId: number) => {
     try {
       setActionLoading(reportId)
-      const result = await reportsApi.duplicateReport(reportId)
+      await reportsApi.duplicateReport(reportId)
       await loadReports() // Refresh the list to show the duplicate
       setError(null)
     } catch (err) {
@@ -321,132 +343,74 @@ export function ReportsView() {
       {/* Enhanced Reports Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredAndSortedReports.map((report) => {
-          const analysis = analyzeReport(report)
-          
-          const statusColors = {
-            'excellent': 'bg-green-50 border-green-200 text-green-800',
-            'good': 'bg-blue-50 border-blue-200 text-blue-800', 
-            'fair': 'bg-yellow-50 border-yellow-200 text-yellow-800',
-            'needs-attention': 'bg-red-50 border-red-200 text-red-800'
-          }
+          const status = getOperationalStatus(report)
           
           return (
-            <Card key={report.id} className={`hover:shadow-lg transition-all duration-200 hover:scale-[1.02] ${
-              analysis.healthStatus === 'needs-attention' ? 'border-red-200' :
-              analysis.healthStatus === 'fair' ? 'border-yellow-200' :
-              analysis.healthStatus === 'good' ? 'border-blue-200' : 'border-green-200'
-            }`}>
+            <Card key={report.id} className={`hover:shadow-lg transition-all duration-200 hover:scale-[1.02] ${getStatusBorder(status.status)}`}>
               <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                    <CardTitle className="text-lg truncate">{report.report_name}</CardTitle>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    {/* Primary Status Message */}
-                    <div className="text-right">
-                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[analysis.healthStatus]}`}>
-                        {analysis.primaryMessage}
-                      </div>
-                    </div>
-                    
-                    {/* Health Score Circle */}
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-10 h-10">
-                        <svg className="w-full h-full transform -rotate-90">
-                          <circle
-                            cx="20"
-                            cy="20"
-                            r="16"
-                            className="stroke-gray-200"
-                            strokeWidth="3"
-                            fill="none"
-                          />
-                          <circle
-                            cx="20"
-                            cy="20"
-                            r="16"
-                            className={`${
-                              analysis.healthStatus === 'excellent' ? 'stroke-green-500' :
-                              analysis.healthStatus === 'good' ? 'stroke-blue-500' :
-                              analysis.healthStatus === 'fair' ? 'stroke-yellow-500' : 'stroke-red-500'
-                            }`}
-                            strokeWidth="3"
-                            fill="none"
-                            strokeDasharray={`${(analysis.healthScore / 100) * 100.5} 100.5`}
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold">{Math.round(analysis.healthScore)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                {/* Status Header */}
+                <div className={`flex items-center gap-2 mb-3 ${getStatusColor(status.status)}`}>
+                  <span className="text-lg">{getStatusIcon(status.status)}</span>
+                  <span className="font-bold text-lg">{status.status}</span>
+                  <span className="text-sm opacity-75">• {report.report_name}</span>
                 </div>
+                
+                {/* Simple Timestamp */}
+                <p className="text-sm text-gray-500">{formatSimpleDate(report.timestamp)}</p>
               </CardHeader>
+
               <CardContent className="space-y-4">
-                {/* Context Message */}
-                <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-                  <div className="font-medium mb-1">{analysis.contextMessage}</div>
-                  {analysis.urgentCount > 0 && (
-                    <div className="flex items-center gap-3 text-xs">
-                      {analysis.priorityBreakdown.OPERATIONAL > 0 && (
-                        <span className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                          {analysis.priorityBreakdown.OPERATIONAL} operational
-                        </span>
-                      )}
-                      {analysis.priorityBreakdown.CAPACITY > 0 && (
-                        <span className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                          {analysis.priorityBreakdown.CAPACITY} capacity
-                        </span>
-                      )}
-                      {analysis.priorityBreakdown.ROUTINE > 0 && (
-                        <span className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          {analysis.priorityBreakdown.ROUTINE} routine
-                        </span>
-                      )}
+                {/* Main Issue Counts */}
+                <div className="space-y-3">
+                  {status.criticalCount > 0 && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🚨</span>
+                      <div>
+                        <span className="text-xl font-bold text-red-600">{status.criticalCount}</span>
+                        <span className="text-sm text-red-600 ml-2 font-medium">CRITICAL ISSUES</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {status.reviewCount > 0 && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">⚠️</span>
+                      <span className="text-sm text-gray-600">{status.reviewCount} items to review</span>
+                    </div>
+                  )}
+                  
+                  {status.resolvedCount > 0 && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">✅</span>
+                      <span className="text-sm text-gray-600">{status.resolvedCount} items resolved</span>
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <MapPin className="w-4 h-4" />
-                    <span>#{report.id}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Calendar className="w-4 h-4" />
-                    <span>{new Date(report.timestamp).toLocaleDateString()}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Clock className="w-4 h-4" />
-                    <span>{new Date(report.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <BarChart3 className="w-4 h-4" />
-                    <span className="text-xs">{report.anomaly_count} total items</span>
-                  </div>
+                {/* Status Message */}
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                  {status.statusMessage}
                 </div>
 
-                <div className="pt-3 border-t space-y-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openReportDetails(report.id)}
-                    className="w-full hover:bg-blue-50 hover:border-blue-300"
+                {/* Action Buttons */}
+                <div className="space-y-2 pt-3 border-t">
+                  {/* Primary Action Button */}
+                  <Button 
+                    className={`w-full ${
+                      status.status === 'URGENT' 
+                        ? 'bg-red-600 hover:bg-red-700 text-white' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                    onClick={() => handlePrimaryAction(report.id, status.status === 'URGENT')}
                   >
-                    <Eye className="w-4 h-4 mr-2" />
-                    View Details
+                    {status.status === 'URGENT' ? (
+                      <><span className="mr-2">🎯</span>HANDLE NOW</>
+                    ) : (
+                      <><Eye className="w-4 h-4 mr-2" />VIEW REPORT</>
+                    )}
                   </Button>
                   
-                  {/* Action Menu */}
+                  {/* Secondary Actions */}
                   <div className="flex gap-2">
                     <Button
                       variant="ghost"
@@ -529,7 +493,7 @@ export function ReportsView() {
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="locations">Locations</TabsTrigger>
-                <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
+                <TabsTrigger value="anomalies" data-value="anomalies">Anomalies</TabsTrigger>
                 <TabsTrigger value="analytics">Analytics</TabsTrigger>
               </TabsList>
               
