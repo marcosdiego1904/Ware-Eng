@@ -244,7 +244,7 @@ export function Step2SpecialAreas({ data, onChange }: Step2SpecialAreasProps) {
         )}
         {area.type === 'RECEIVING' && area.capacity > 50 && (
           <p className="text-xs text-amber-600">
-            Large receiving areas (>50 pallets) may indicate operational bottlenecks
+            Large receiving areas (&gt;50 pallets) may indicate operational bottlenecks
           </p>
         )}
         {area.type === 'DOCK' && area.capacity > 10 && (

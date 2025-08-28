@@ -200,6 +200,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     console.log('🎯 LOCATIONS FETCH useEffect triggered for warehouse:', warehouseId);
     
     let isMounted = true;
+    // eslint-disable-next-line prefer-const
     let timeoutId: NodeJS.Timeout;
     
     const loadLocations = async () => {
@@ -278,8 +279,8 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         return false;
       }
       
-      // Handle both frontend Location interface and backend virtual location format
-      const locationType = location.location_type || location.type;
+      // Handle frontend Location interface (location_type property)
+      const locationType = location.location_type;
       
       return (
         locationType === 'RECEIVING' || 
@@ -899,7 +900,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                               {(() => {
                                 // Show location types for debugging
                                 const locationTypes = [...new Set(locations.map(loc => 
-                                  loc?.location_type || loc?.type || 'unknown'
+                                  loc?.location_type || 'unknown'
                                 ))];
                                 return locationTypes.length > 0 ? 
                                   ` Types found: ${locationTypes.join(', ')}.` : 

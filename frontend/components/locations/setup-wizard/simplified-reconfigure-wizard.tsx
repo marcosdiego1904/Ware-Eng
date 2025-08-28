@@ -56,7 +56,7 @@ export function SimplifiedReconfigureWizard({
   });
 
   const [step, setStep] = useState(1);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [, setIsProcessing] = useState(false);
   
   const handleInputChange = (field: keyof ReconfigureData, value: string | boolean) => {
     setReconfigureData(prev => ({
