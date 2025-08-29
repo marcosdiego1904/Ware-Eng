@@ -179,35 +179,41 @@ class VirtualLocationCompatibilityManager:
                 'source': 'physical_special'
             })
         
-        # Then add virtual special areas (avoid duplicates by checking codes)
-        existing_codes = {loc['code'] for loc in locations}
-        warehouse_summary = virtual_engine.get_warehouse_summary()
-        
-        for special_area in warehouse_summary.get('special_areas_list', []):
-            if special_area in existing_codes:
-                print(f"[VIRTUAL_COMPAT] Skipping virtual special area {special_area} - physical version exists")
-                continue
-                
-            properties = virtual_engine.get_location_properties(special_area)
-            if properties and properties.is_valid:
-                locations.append({
-                    'id': hash(properties.code),  # Add ID for frontend compatibility
-                    'code': properties.code,
-                    'location_type': properties.location_type,
-                    'capacity': properties.capacity,
-                    'pallet_capacity': properties.capacity,
-                    'zone': properties.zone,
-                    'warehouse_id': virtual_engine.warehouse_id,
-                    'aisle_number': properties.aisle_number,
-                    'rack_number': None,  # Virtual engine uses rack_identifier
-                    'position_number': properties.position_number,
-                    'level': properties.level,
-                    'is_storage_location': False,  # Special areas are not storage
-                    'full_address': f"Special Area: {properties.code}",
-                    'is_active': True,
-                    'created_at': '2025-01-01T00:00:00Z',  # Default timestamp
-                    'source': 'virtual_special'
-                })
+        # CRITICAL FIX: Skip virtual special areas entirely when physical special areas exist
+        # After template application, physical special areas are the authoritative source
+        if physical_special_areas:
+            print(f"[VIRTUAL_COMPAT] Found {len(physical_special_areas)} physical special areas - skipping all virtual special areas to avoid conflicts")
+        else:
+            # Only use virtual special areas when no physical ones exist (legacy warehouses)
+            print(f"[VIRTUAL_COMPAT] No physical special areas found - using virtual special areas as fallback")
+            existing_codes = {loc['code'] for loc in locations}
+            warehouse_summary = virtual_engine.get_warehouse_summary()
+            
+            for special_area in warehouse_summary.get('special_areas_list', []):
+                if special_area in existing_codes:
+                    print(f"[VIRTUAL_COMPAT] Skipping virtual special area {special_area} - already exists")
+                    continue
+                    
+                properties = virtual_engine.get_location_properties(special_area)
+                if properties and properties.is_valid:
+                    locations.append({
+                        'id': hash(properties.code),  # Add ID for frontend compatibility
+                        'code': properties.code,
+                        'location_type': properties.location_type,
+                        'capacity': properties.capacity,
+                        'pallet_capacity': properties.capacity,
+                        'zone': properties.zone,
+                        'warehouse_id': virtual_engine.warehouse_id,
+                        'aisle_number': properties.aisle_number,
+                        'rack_number': None,  # Virtual engine uses rack_identifier
+                        'position_number': properties.position_number,
+                        'level': properties.level,
+                        'is_storage_location': False,  # Special areas are not storage
+                        'full_address': f"Special Area: {properties.code}",
+                        'is_active': True,
+                        'created_at': '2025-01-01T00:00:00Z',  # Default timestamp
+                        'source': 'virtual_special'
+                    })
         
         # Add a sample of storage locations (not all - that could be millions!)
         storage_sample = self._generate_storage_location_sample(virtual_engine, limit - len(locations))
