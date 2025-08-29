@@ -149,11 +149,45 @@ class VirtualLocationCompatibilityManager:
         """
         locations = []
         
-        # Add all special areas FIRST (these are finite and essential for UI)
+        # CRITICAL FIX: Add PHYSICAL special areas first (AISLE locations, etc.)
+        # These are the locations we created with our fixes that virtual engine doesn't know about
+        physical_special_areas = Location.query.filter(
+            Location.warehouse_id == virtual_engine.warehouse_id,
+            Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
+        ).all()
+        
+        print(f"[VIRTUAL_COMPAT] Found {len(physical_special_areas)} physical special areas for warehouse {virtual_engine.warehouse_id}")
+        
+        # Add physical special areas first (these are authoritative)
+        for physical_loc in physical_special_areas:
+            locations.append({
+                'id': physical_loc.id,  # Use real database ID
+                'code': physical_loc.code,
+                'location_type': physical_loc.location_type,
+                'capacity': physical_loc.capacity or physical_loc.pallet_capacity or 1,
+                'pallet_capacity': physical_loc.pallet_capacity or physical_loc.capacity or 1,
+                'zone': physical_loc.zone,
+                'warehouse_id': physical_loc.warehouse_id,
+                'aisle_number': physical_loc.aisle_number,
+                'rack_number': physical_loc.rack_number,
+                'position_number': physical_loc.position_number,
+                'level': physical_loc.level,
+                'is_storage_location': False,  # Special areas are not storage
+                'full_address': f"Special Area: {physical_loc.code}",
+                'is_active': physical_loc.is_active,
+                'created_at': physical_loc.created_at.isoformat() if physical_loc.created_at else '2025-01-01T00:00:00Z',
+                'source': 'physical_special'
+            })
+        
+        # Then add virtual special areas (avoid duplicates by checking codes)
+        existing_codes = {loc['code'] for loc in locations}
         warehouse_summary = virtual_engine.get_warehouse_summary()
         
-        # Add special areas (these are finite and manageable) - PRIORITY FOR UI
         for special_area in warehouse_summary.get('special_areas_list', []):
+            if special_area in existing_codes:
+                print(f"[VIRTUAL_COMPAT] Skipping virtual special area {special_area} - physical version exists")
+                continue
+                
             properties = virtual_engine.get_location_properties(special_area)
             if properties and properties.is_valid:
                 locations.append({

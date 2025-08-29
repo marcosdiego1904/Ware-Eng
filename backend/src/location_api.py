@@ -309,7 +309,8 @@ def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_a
                 'RECEIVING': 1,
                 'STAGING': 2, 
                 'DOCK': 3,
-                'STORAGE': 4
+                'TRANSITIONAL': 4,  # CRITICAL FIX: Include AISLE locations in high priority
+                'STORAGE': 5
             }
             return (
                 type_priority.get(loc.get('location_type', 'STORAGE'), 5),
@@ -342,7 +343,7 @@ def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_a
             location_types[loc_type] = location_types.get(loc_type, 0) + 1
         print(f"DEBUG: Virtual location types in response: {location_types}")
         
-        special_areas = [loc.get('code') for loc in paginated_locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK']]
+        special_areas = [loc.get('code') for loc in paginated_locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL']]
         print(f"DEBUG: Virtual special areas in response: {special_areas}")
         
         # Calculate pagination info
