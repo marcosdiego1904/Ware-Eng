@@ -19,7 +19,8 @@ import {
   Globe,
   Building,
   CheckCircle,
-  Edit
+  Edit,
+  Trash2
 } from 'lucide-react';
 
 // Extend WarehouseTemplate with optional fields for UI display
@@ -43,6 +44,7 @@ interface TemplatePreviewProps {
   onView?: (template: TemplateData) => void;
   onCopyCode?: (code: string) => void;
   onEdit?: (template: TemplateData) => void;
+  onDelete?: (template: TemplateData) => void;
   currentUsername?: string;
   className?: string;
 }
@@ -54,6 +56,7 @@ export function TemplatePreview({
   onView,
   onCopyCode,
   onEdit,
+  onDelete,
   currentUsername,
   className = '' 
 }: TemplatePreviewProps) {
@@ -331,6 +334,18 @@ export function TemplatePreview({
                 Edit Template
               </Button>
             )}
+            {onDelete && isOwner && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => onDelete(template)}
+                title="Delete template"
+                className="border-red-300 text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            )}
             {onApply && (
               <Button size="sm" onClick={() => onApply(template)}>
                 <Download className="h-4 w-4 mr-2" />
@@ -455,6 +470,18 @@ export function TemplatePreview({
                 Edit
               </Button>
             )}
+            {onDelete && isOwner && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => onDelete(template)}
+                title="Delete template"
+                className="flex-1 text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
+              </Button>
+            )}
             {onApply && (
               <Button size="sm" onClick={() => onApply(template)} className="flex-1">
                 <Download className="h-3 w-3 mr-1" />
@@ -476,6 +503,7 @@ interface TemplateGridProps {
   onView?: (template: TemplateData) => void;
   onCopyCode?: (code: string) => void;
   onEdit?: (template: TemplateData) => void;
+  onDelete?: (template: TemplateData) => void;
   currentUsername?: string;
   emptyMessage?: string;
   className?: string;
@@ -488,6 +516,7 @@ export function TemplateGrid({
   onView,
   onCopyCode,
   onEdit,
+  onDelete,
   currentUsername,
   emptyMessage = 'No templates found',
   className = '' 
@@ -514,6 +543,7 @@ export function TemplateGrid({
             onView={onView}
             onCopyCode={onCopyCode}
             onEdit={onEdit}
+            onDelete={onDelete}
             currentUsername={currentUsername}
           />
         ))}
@@ -532,6 +562,7 @@ export function TemplateGrid({
           onView={onView}
           onCopyCode={onCopyCode}
           onEdit={onEdit}
+          onDelete={onDelete}
           currentUsername={currentUsername}
         />
       ))}

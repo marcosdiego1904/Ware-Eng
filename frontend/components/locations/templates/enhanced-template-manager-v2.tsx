@@ -82,6 +82,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     applyTemplate,
     applyTemplateByCode,
     createTemplateFromConfig,
+    deleteTemplate,
     fetchWarehouseConfig,
     fetchLocations,
     error
@@ -302,6 +303,27 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     // Refresh templates list to show updated information
     const scope = templateScope === 'featured' ? 'all' : templateScope;
     fetchTemplates(scope, searchTerm);
+  };
+
+  const handleDeleteTemplate = async (template: WarehouseTemplate) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the template "${template.name}"? This action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      await deleteTemplate(template.id);
+      
+      // Refresh templates list to show updated information
+      const scope = templateScope === 'featured' ? 'all' : templateScope;
+      await fetchTemplates(scope, searchTerm);
+      
+      console.log(`Template "${template.name}" deleted successfully`);
+    } catch (error: any) {
+      console.error('Failed to delete template:', error);
+      alert(`Failed to delete template: ${error.response?.data?.error || error.message || 'Unknown error'}`);
+    }
   };
 
   const getScopeDescription = () => {
@@ -532,6 +554,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
             onView={handleViewTemplate}
             onCopyCode={copyTemplateCode}
             onEdit={handleEditTemplate}
+            onDelete={handleDeleteTemplate}
             currentUsername={user?.username}
             emptyMessage={
               templateScope === 'my' 
@@ -588,6 +611,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
                 onView={handleViewTemplate}
                 onCopyCode={copyTemplateCode}
                 onEdit={handleEditTemplate}
+                onDelete={handleDeleteTemplate}
                 currentUsername={user?.username}
                 emptyMessage="No recently used templates"
               />
@@ -628,6 +652,7 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
                 onView={handleViewTemplate}
                 onCopyCode={copyTemplateCode}
                 onEdit={handleEditTemplate}
+                onDelete={handleDeleteTemplate}
                 currentUsername={user?.username}
                 emptyMessage="You haven't created any templates yet. Design your first template to get started!"
               />

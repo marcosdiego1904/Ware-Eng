@@ -358,3 +358,30 @@ def add_template_review(current_user, template_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to add review: {str(e)}'}), 500
+
+@enhanced_template_bp.route('/<int:template_id>', methods=['DELETE'])
+@cross_origin()
+@token_required
+def delete_enhanced_template(current_user, template_id):
+    """
+    Delete a template (soft delete) - Enhanced version with better permission checking
+    """
+    try:
+        template = EnhancedWarehouseTemplate.query.get_or_404(template_id)
+        
+        # Check if user owns the template
+        if template.created_by != current_user.id:
+            return jsonify({'error': 'Access denied. You can only delete your own templates'}), 403
+        
+        # Soft delete
+        template.is_active = False
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Template deleted successfully',
+            'template_id': template_id
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete template: {str(e)}'}), 500
