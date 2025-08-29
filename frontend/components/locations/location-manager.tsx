@@ -705,28 +705,24 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         const storageLocations = numAisles * racksPerAisle * positionsPerRack * levelsPerPosition;
         const storageCapacity = storageLocations * defaultPalletCapacity;
         
-        // Add receiving/staging/dock area capacities from configuration
-        let specialAreaCapacity = 0;
-        let specialAreaCount = 0;
+        // CRITICAL FIX: Use actual location data instead of config JSON
+        // Get special areas from the actual locations store (includes AISLE locations!)
+        const specialAreaLocations = locations.filter(loc => 
+          ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'].includes(loc.location_type)
+        );
         
-        try {
-          if (currentWarehouseConfig.receiving_areas && Array.isArray(currentWarehouseConfig.receiving_areas)) {
-            specialAreaCapacity += currentWarehouseConfig.receiving_areas.reduce((sum: number, area: { capacity?: number }) => sum + (area.capacity || 0), 0);
-            specialAreaCount += currentWarehouseConfig.receiving_areas.length;
-          }
-          if (currentWarehouseConfig.staging_areas && Array.isArray(currentWarehouseConfig.staging_areas)) {
-            specialAreaCapacity += currentWarehouseConfig.staging_areas.reduce((sum: number, area: { capacity?: number }) => sum + (area.capacity || 0), 0);
-            specialAreaCount += currentWarehouseConfig.staging_areas.length;
-          }
-          if (currentWarehouseConfig.dock_areas && Array.isArray(currentWarehouseConfig.dock_areas)) {
-            specialAreaCapacity += currentWarehouseConfig.dock_areas.reduce((sum: number, area: { capacity?: number }) => sum + (area.capacity || 0), 0);
-            specialAreaCount += currentWarehouseConfig.dock_areas.length;
-          }
-        } catch (error) {
-          // Handle JSON parsing errors gracefully
-          console.warn('Error parsing special areas:', error);
-        }
+        const specialAreaCount = specialAreaLocations.length;
+        const specialAreaCapacity = specialAreaLocations.reduce((sum, loc) => sum + (loc.capacity || 0), 0);
         
+        console.log('📊 Summary Card Debug:', {
+          totalLocationsInStore: locations.length,
+          specialAreaLocations: specialAreaLocations.length,
+          specialAreaCapacity,
+          specialAreaCodes: specialAreaLocations.map(loc => loc.code)
+        });
+        
+        // IMPORTANT: totalLocations = virtual storage + actual special areas
+        // Storage locations are virtual (not in store), special areas are physical (in store)
         const totalLocations = storageLocations + specialAreaCount;
         const totalCapacity = storageCapacity + specialAreaCapacity;
         
