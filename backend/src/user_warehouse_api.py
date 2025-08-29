@@ -43,7 +43,7 @@ def get_user_warehouse():
             from models import Location
             special_count = Location.query.filter(
                 Location.warehouse_id == warehouse.warehouse_id,
-                Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK'])
+                Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
             ).count()
             
             all_user_warehouses.append({
@@ -62,7 +62,7 @@ def get_user_warehouse():
                 from models import Location
                 special_count = Location.query.filter(
                     Location.warehouse_id == warehouse.warehouse_id,
-                    Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK'])
+                    Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
                 ).count()
                 
                 all_user_warehouses.append({
@@ -97,7 +97,7 @@ def get_user_warehouse():
                 from models import Location
                 special_count = Location.query.filter(
                     Location.warehouse_id == 'DEFAULT',
-                    Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK'])
+                    Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
                 ).count()
                 
                 return jsonify({

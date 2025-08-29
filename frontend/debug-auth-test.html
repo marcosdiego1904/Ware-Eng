@@ -65,7 +65,7 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    const special = data.locations.filter(loc => ['RECEIVING', 'STAGING', 'DOCK'].includes(loc.location_type));
+                    const special = data.locations.filter(loc => ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'].includes(loc.location_type));
                     updateStatus(`✅ API Success! Total: ${data.locations.length}, Special: ${special.length}`);
                     
                     special.forEach(loc => {

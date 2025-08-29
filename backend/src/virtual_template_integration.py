@@ -195,6 +195,21 @@ class VirtualTemplateManager:
                 (template.dock_areas_template, 'DOCK', 'DOCK', 2)
             ]
             
+            # CRITICAL FIX: Add AISLE locations (TRANSITIONAL type) for warehouse aisles
+            # This matches the logic from template_api.py lines 87-98
+            if hasattr(template, 'num_aisles') and template.num_aisles > 0:
+                aisle_locations_data = []
+                for aisle_num in range(1, template.num_aisles + 1):
+                    aisle_locations_data.append({
+                        'code': f'AISLE-{aisle_num:02d}',
+                        'capacity': 10,  # Temporary capacity for pallets in transit
+                        'zone': 'GENERAL'
+                    })
+                
+                # Add AISLE locations as TRANSITIONAL type
+                special_area_configs.append((json.dumps(aisle_locations_data), 'TRANSITIONAL', 'GENERAL', 10))
+                print(f"[VIRTUAL_TEMPLATE] Added {len(aisle_locations_data)} AISLE locations for {template.num_aisles} aisles")
+            
             for areas_template, location_type, default_zone, default_capacity in special_area_configs:
                 if not areas_template:
                     continue

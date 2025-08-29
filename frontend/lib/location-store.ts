@@ -257,7 +257,7 @@ const useLocationStore = create<LocationStore>()(
           const summary = response.data.summary || null;
 
           const specialLocations = locations.filter((loc: any) => 
-            ['RECEIVING', 'STAGING', 'DOCK'].includes(loc.location_type)
+            ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'].includes(loc.location_type)
           );
           
           console.log('🏢 Locations analysis:', {
