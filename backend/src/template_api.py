@@ -505,7 +505,73 @@ def apply_template(current_user, template_id):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Failed to apply template: {str(e)}'}), 500
+        
+        # CRITICAL UX IMPROVEMENT: Provide user-friendly error messages
+        error_message = str(e)
+        
+        # Check for duplicate key constraint violation (most common template issue)
+        if 'duplicate key value violates unique constraint' in error_message and 'location_code_key' in error_message:
+            # Extract the location code from the error message
+            import re
+            location_match = re.search(r"Key \(code\)=\(([^)]+)\)", error_message)
+            location_code = location_match.group(1) if location_match else "unknown location"
+            
+            return jsonify({
+                'error': 'Template Application Conflict',
+                'error_type': 'duplicate_locations',
+                'message': f'Template contains locations that already exist in this warehouse.',
+                'details': {
+                    'conflicting_location': location_code,
+                    'explanation': f'Location "{location_code}" already exists in your warehouse. Templates cannot create duplicate location codes.',
+                    'solutions': [
+                        {
+                            'option': 'replace',
+                            'title': 'Replace Existing Locations',
+                            'description': 'Apply template and replace existing locations with new configuration',
+                            'action': 'The system will delete existing locations and create new ones from your template'
+                        },
+                        {
+                            'option': 'rename',
+                            'title': 'Rename Template Locations', 
+                            'description': 'Edit your template to use different location names',
+                            'action': 'Change location codes in template (e.g., RECV-01 → RECV-NEW1)'
+                        },
+                        {
+                            'option': 'cancel',
+                            'title': 'Cancel Application',
+                            'description': 'Keep existing locations unchanged',
+                            'action': 'No changes will be made to your warehouse'
+                        }
+                    ]
+                },
+                'user_friendly': True
+            }), 409  # 409 Conflict is more appropriate than 500
+        
+        # Check for other common database errors
+        elif 'permission denied' in error_message.lower():
+            return jsonify({
+                'error': 'Permission Error',
+                'message': 'You do not have permission to modify this warehouse configuration.',
+                'user_friendly': True
+            }), 403
+        
+        elif 'connection' in error_message.lower() or 'timeout' in error_message.lower():
+            return jsonify({
+                'error': 'Database Connection Issue',
+                'message': 'Unable to connect to the warehouse database. Please try again in a moment.',
+                'user_friendly': True
+            }), 503
+        
+        # For other errors, provide a generic user-friendly message but log the technical details
+        import logging
+        logging.error(f"Template application failed for user {current_user.id}: {error_message}")
+        
+        return jsonify({
+            'error': 'Template Application Failed',
+            'message': 'An unexpected error occurred while applying the template. Please contact support if this continues.',
+            'user_friendly': True,
+            'support_info': 'Include template name and timestamp when contacting support'
+        }), 500
 
 # Duplicate function removed - using updated original function below
 
@@ -574,7 +640,58 @@ def apply_template_by_code(current_user):
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Failed to apply template by code: {str(e)}'}), 500
+        
+        # CRITICAL UX IMPROVEMENT: Provide user-friendly error messages (same as apply endpoint)
+        error_message = str(e)
+        
+        # Check for duplicate key constraint violation (most common template issue)
+        if 'duplicate key value violates unique constraint' in error_message and 'location_code_key' in error_message:
+            # Extract the location code from the error message
+            import re
+            location_match = re.search(r"Key \(code\)=\(([^)]+)\)", error_message)
+            location_code = location_match.group(1) if location_match else "unknown location"
+            
+            return jsonify({
+                'error': 'Template Application Conflict',
+                'error_type': 'duplicate_locations',
+                'message': f'Template contains locations that already exist in this warehouse.',
+                'details': {
+                    'conflicting_location': location_code,
+                    'explanation': f'Location "{location_code}" already exists in your warehouse. Templates cannot create duplicate location codes.',
+                    'solutions': [
+                        {
+                            'option': 'replace',
+                            'title': 'Replace Existing Locations',
+                            'description': 'Apply template and replace existing locations with new configuration',
+                            'action': 'The system will delete existing locations and create new ones from your template'
+                        },
+                        {
+                            'option': 'rename',
+                            'title': 'Rename Template Locations', 
+                            'description': 'Edit your template to use different location names',
+                            'action': 'Change location codes in template (e.g., RECV-01 → RECV-NEW1)'
+                        },
+                        {
+                            'option': 'cancel',
+                            'title': 'Cancel Application',
+                            'description': 'Keep existing locations unchanged',
+                            'action': 'No changes will be made to your warehouse'
+                        }
+                    ]
+                },
+                'user_friendly': True
+            }), 409  # 409 Conflict is more appropriate than 500
+        
+        # For other errors, provide a generic user-friendly message but log the technical details
+        import logging
+        logging.error(f"Template application by code failed for user {current_user.id}: {error_message}")
+        
+        return jsonify({
+            'error': 'Template Application Failed',
+            'message': 'An unexpected error occurred while applying the template. Please contact support if this continues.',
+            'user_friendly': True,
+            'support_info': 'Include template code and timestamp when contacting support'
+        }), 500
 
 @template_bp.route('/<int:template_id>/preview', methods=['GET'])
 @token_required

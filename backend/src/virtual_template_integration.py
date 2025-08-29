@@ -176,17 +176,23 @@ class VirtualTemplateManager:
         try:
             print(f"[VIRTUAL_TEMPLATE] Creating physical special area locations for warehouse {warehouse_id}")
             
-            # Remove any existing special locations for this warehouse to prevent duplicates
+            # CRITICAL FIX: Remove existing special locations and commit to prevent unique constraint violations
             existing_special = Location.query.filter(
                 Location.warehouse_id == warehouse_id,
                 Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
             ).all()
             
             if existing_special:
-                print(f"[VIRTUAL_TEMPLATE] Removing {len(existing_special)} existing special locations")
+                print(f"[VIRTUAL_TEMPLATE] Removing {len(existing_special)} existing special locations to prevent duplicates")
                 for loc in existing_special:
+                    print(f"[VIRTUAL_TEMPLATE] Deleting existing location: {loc.code} ({loc.location_type})")
                     db.session.delete(loc)
-                db.session.flush()
+                
+                # CRITICAL: Commit the deletions immediately to release unique constraints
+                db.session.commit()
+                print(f"[VIRTUAL_TEMPLATE] Successfully deleted {len(existing_special)} existing locations")
+            else:
+                print("[VIRTUAL_TEMPLATE] No existing special locations to remove")
             
             # Process each type of special area from template
             special_area_configs = [
@@ -219,9 +225,21 @@ class VirtualTemplateManager:
                     print(f"[VIRTUAL_TEMPLATE] Processing {len(areas)} {location_type} areas")
                     
                     for area_data in areas:
+                        location_code = area_data.get('code', f'{location_type}_1')
+                        
+                        # Double-check: Ensure this location doesn't exist (safety check)
+                        existing_check = Location.query.filter(
+                            Location.code == location_code,
+                            Location.warehouse_id == warehouse_id
+                        ).first()
+                        
+                        if existing_check:
+                            print(f"[VIRTUAL_TEMPLATE] WARNING: Location {location_code} still exists after deletion attempt - skipping")
+                            continue
+                        
                         # Create physical special location record
                         location = Location(
-                            code=area_data.get('code', f'{location_type}_1'),
+                            code=location_code,
                             location_type=location_type,
                             capacity=area_data.get('capacity', default_capacity),
                             pallet_capacity=area_data.get('capacity', default_capacity),
@@ -231,9 +249,13 @@ class VirtualTemplateManager:
                             is_active=True
                         )
                         
-                        db.session.add(location)
-                        created_special_locations.append(location)
-                        print(f"[VIRTUAL_TEMPLATE] Created special location: {location.code} ({location_type})")
+                        try:
+                            db.session.add(location)
+                            created_special_locations.append(location)
+                            print(f"[VIRTUAL_TEMPLATE] Created special location: {location.code} ({location_type})")
+                        except Exception as location_error:
+                            print(f"[VIRTUAL_TEMPLATE] ERROR: Failed to create location {location_code}: {location_error}")
+                            # Continue with other locations rather than failing completely
                         
                 except (json.JSONDecodeError, TypeError) as e:
                     print(f"[VIRTUAL_TEMPLATE] Error processing {location_type} areas: {e}")

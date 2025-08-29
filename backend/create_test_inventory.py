@@ -49,10 +49,10 @@ def create_test_inventory():
     ]
     test_inventory.extend(forgotten_pallets)
     
-    # Rule 2: "Incomplete Lots Alert" - Most of lot stored, some still in RECEIVING
+    # Rule 2: "Incomplete Lots Alert" - IMPROVED: Much higher completion ratio to trigger rule
     print("Creating incomplete lots in RECEIVING...")
     incomplete_lot_data = [
-        # Most of LOT-2024-100 already stored
+        # LOT-2024-100: 9 out of 10 pallets stored (90% completion - well above 80% threshold)
         {
             'Pallet ID': 'PALLET-STORED-100A',
             'Product Name': 'Product Delta Complete', 
@@ -83,11 +83,71 @@ def create_test_inventory():
             'Lot': 'LOT-2024-100',
             'Status': 'STORED'
         },
-        # But one pallet still stuck in RECEIVING (should trigger alert)
         {
-            'Pallet ID': 'PALLET-INCOMPLETE-100D',
+            'Pallet ID': 'PALLET-STORED-100D',
             'Product Name': 'Product Delta Complete',
-            'Location': 'RECV-01',  # Still in receiving!
+            'Location': '01-A04-A',  # Storage location
+            'Quantity': 10, 
+            'Timestamp': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S'),
+            'SKU': 'SKU-DELTA-100',
+            'Lot': 'LOT-2024-100',
+            'Status': 'STORED'
+        },
+        {
+            'Pallet ID': 'PALLET-STORED-100E',
+            'Product Name': 'Product Delta Complete',
+            'Location': '01-A05-A',  # Storage location
+            'Quantity': 10, 
+            'Timestamp': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S'),
+            'SKU': 'SKU-DELTA-100',
+            'Lot': 'LOT-2024-100',
+            'Status': 'STORED'
+        },
+        {
+            'Pallet ID': 'PALLET-STORED-100F',
+            'Product Name': 'Product Delta Complete',
+            'Location': '01-A06-A',  # Storage location
+            'Quantity': 10, 
+            'Timestamp': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S'),
+            'SKU': 'SKU-DELTA-100',
+            'Lot': 'LOT-2024-100',
+            'Status': 'STORED'
+        },
+        {
+            'Pallet ID': 'PALLET-STORED-100G',
+            'Product Name': 'Product Delta Complete',
+            'Location': '01-A07-A',  # Storage location
+            'Quantity': 10, 
+            'Timestamp': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S'),
+            'SKU': 'SKU-DELTA-100',
+            'Lot': 'LOT-2024-100',
+            'Status': 'STORED'
+        },
+        {
+            'Pallet ID': 'PALLET-STORED-100H',
+            'Product Name': 'Product Delta Complete',
+            'Location': '01-A08-A',  # Storage location
+            'Quantity': 10, 
+            'Timestamp': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S'),
+            'SKU': 'SKU-DELTA-100',
+            'Lot': 'LOT-2024-100',
+            'Status': 'STORED'
+        },
+        {
+            'Pallet ID': 'PALLET-STORED-100I',
+            'Product Name': 'Product Delta Complete',
+            'Location': '01-A09-A',  # Storage location
+            'Quantity': 10, 
+            'Timestamp': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S'),
+            'SKU': 'SKU-DELTA-100',
+            'Lot': 'LOT-2024-100',
+            'Status': 'STORED'
+        },
+        # The "forgotten" pallet still in RECEIVING (1 out of 10 = 90% completion)
+        {
+            'Pallet ID': 'PALLET-INCOMPLETE-100J',
+            'Product Name': 'Product Delta Complete',
+            'Location': 'RECV-01',  # Still in receiving! Should definitely trigger alert
             'Quantity': 10,
             'Timestamp': (now - timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S'),
             'SKU': 'SKU-DELTA-100',
@@ -322,12 +382,15 @@ if __name__ == "__main__":
     print(f"Total records: {len(df)}")
     print("\nTest coverage summary:")
     print("- Forgotten Pallets (RECEIVING > 10hrs): 3 records")
-    print("- Incomplete Lots (partial lot stored): 1 problematic record") 
+    print("- Incomplete Lots (90% complete - should trigger!): 1 problematic record") 
     print("- Overcapacity Violations: 5 records (RECV-03 + DOCK-01)")
     print("- Invalid Locations: 2 records")
     print("- AISLE Stuck Pallets (>4hrs): 3 records") 
     print("- Cold Chain Violations: 2 records")
     print("- Normal/Compliant Records: 7 records")
+    print("\nIncomplete Lots Detail:")
+    print("- LOT-2024-100: 9 pallets STORED + 1 pallet in RECEIVING = 90% completion")
+    print("- This should definitely trigger the Incomplete Lots Alert (threshold: 80%)")
     
     # Count pallets by special location
     special_locations = [
