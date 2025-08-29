@@ -39,9 +39,12 @@ def get_user_warehouse():
         
         # Add created warehouses first (highest priority)
         for warehouse in user_created_warehouses:
-            special_count = (len(warehouse.get_receiving_areas()) + 
-                           len(warehouse.get_staging_areas()) + 
-                           len(warehouse.get_dock_areas()))
+            # CRITICAL FIX: Count physical special location records, not config JSON
+            from models import Location
+            special_count = Location.query.filter(
+                Location.warehouse_id == warehouse.warehouse_id,
+                Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK'])
+            ).count()
             
             all_user_warehouses.append({
                 'warehouse_id': warehouse.warehouse_id,
@@ -55,9 +58,12 @@ def get_user_warehouse():
         # Add pattern matches (lower priority)
         for warehouse in pattern_warehouses:
             if warehouse not in user_created_warehouses:  # Avoid duplicates
-                special_count = (len(warehouse.get_receiving_areas()) + 
-                               len(warehouse.get_staging_areas()) + 
-                               len(warehouse.get_dock_areas()))
+                # CRITICAL FIX: Count physical special location records, not config JSON
+                from models import Location
+                special_count = Location.query.filter(
+                    Location.warehouse_id == warehouse.warehouse_id,
+                    Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK'])
+                ).count()
                 
                 all_user_warehouses.append({
                     'warehouse_id': warehouse.warehouse_id,
@@ -87,9 +93,12 @@ def get_user_warehouse():
             # No user-specific warehouses found, use DEFAULT
             default_warehouse = WarehouseConfig.query.filter_by(warehouse_id='DEFAULT').first()
             if default_warehouse:
-                special_count = (len(default_warehouse.get_receiving_areas()) + 
-                               len(default_warehouse.get_staging_areas()) + 
-                               len(default_warehouse.get_dock_areas()))
+                # CRITICAL FIX: Count physical special location records, not config JSON
+                from models import Location
+                special_count = Location.query.filter(
+                    Location.warehouse_id == 'DEFAULT',
+                    Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK'])
+                ).count()
                 
                 return jsonify({
                     'success': True,
