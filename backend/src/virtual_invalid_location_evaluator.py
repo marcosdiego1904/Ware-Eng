@@ -106,8 +106,9 @@ class VirtualInvalidLocationEvaluator:
             
             processed_locations.add(location)
             
-            # CORE VIRTUAL VALIDATION: Single algorithmic check (no per-location logging)
-            is_valid, reason = virtual_engine.validate_location(location)
+            # CRITICAL FIX: Check physical special locations first (manually-created locations)
+            # This ensures that locations created via "Add New Location" are recognized as valid
+            is_valid, reason = self._validate_location_with_physical_fallback(location, virtual_engine)
             
             if not is_valid:
                 # Only log invalid locations - this dramatically reduces output
@@ -190,6 +191,53 @@ class VirtualInvalidLocationEvaluator:
         self.logger.location_validation_summary(inventory_df['location'].nunique(), len(anomalies), 'basic_fallback')
         
         return anomalies
+
+    def _validate_location_with_physical_fallback(self, location: str, virtual_engine) -> tuple:
+        """
+        Validate location using physical-first approach
+        
+        This ensures manually-created special locations are recognized as valid,
+        matching the same logic used in virtual_compatibility_layer.py
+        """
+        # First, check if this is a physical special location (manually created)
+        if self._is_physical_special_location(location):
+            if self.logger.should_log(LogLevel.VERBOSE, LogCategory.LOCATION_VALIDATION):
+                print(f"[LOCATION_VALIDATION] ✅ Physical special location recognized: '{location}'")
+            return True, "Physical special location"
+        
+        # If not a physical special location, use virtual engine validation
+        return virtual_engine.validate_location(location)
+    
+    def _is_physical_special_location(self, location: str) -> bool:
+        """
+        Check if location exists as a physical special location in the database
+        
+        This matches the same logic from virtual_compatibility_layer.py to ensure
+        consistent behavior across the system.
+        """
+        try:
+            # Import here to avoid circular imports
+            from models import Location
+            from database import db
+            
+            # Check if location exists as a physical special area
+            physical_location = Location.query.filter(
+                Location.code == location,
+                Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
+            ).first()
+            
+            if physical_location:
+                if self.logger.should_log(LogLevel.VERBOSE, LogCategory.LOCATION_VALIDATION):
+                    print(f"[LOCATION_VALIDATION] Found physical special location: {location} (type: {physical_location.location_type})")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            # If database check fails, fall back to virtual validation
+            if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.LOCATION_VALIDATION):
+                print(f"[LOCATION_VALIDATION] Physical location check failed for '{location}': {e}")
+            return False
 
 
 def create_virtual_invalid_location_evaluator(app=None):
