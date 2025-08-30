@@ -99,14 +99,17 @@ def get_locations(current_user):
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 50)), 100)  # Max 100 per page
         
-        print(f"[LOCATION_API] Request for warehouse_id={warehouse_id}, page={page}, per_page={per_page}")
+        # Only log on first page requests to reduce spam
+        if page == 1:
+            print(f"[LOCATION_API] Request for warehouse_id={warehouse_id}, page={page}, per_page={per_page}")
         
         # Get compatibility manager to handle virtual/physical locations
         compat_manager = get_compatibility_manager()
         
         # Check if this is a virtual warehouse
         is_virtual = compat_manager.is_virtual_warehouse(warehouse_id)
-        print(f"[LOCATION_API] Warehouse {warehouse_id} is virtual: {is_virtual}")
+        if page == 1:
+            print(f"[LOCATION_API] Warehouse {warehouse_id} is virtual: {is_virtual}")
         
         if is_virtual:
             return _get_virtual_locations(current_user, warehouse_id, location_type, zone, 
@@ -123,7 +126,8 @@ def get_locations(current_user):
 def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_active, aisle_number, search, page, per_page):
     """Handle physical location queries (original database logic)"""
     try:
-        print(f"[LOCATION_API] Getting physical locations for warehouse {warehouse_id}")
+        if page == 1:
+            print(f"[LOCATION_API] Getting physical locations for warehouse {warehouse_id}")
         
         # Build query - CRITICAL: Filter by user to ensure data isolation
         query = Location.query.filter_by(
@@ -193,14 +197,16 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
             Location.code.asc()
         )
         
-        # Debug info
-        total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
-        print(f"DEBUG: Total physical locations in warehouse {warehouse_id}: {total_for_warehouse}")
+        # Debug info (only for first page to reduce spam)
+        if page == 1:
+            total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
+            print(f"DEBUG: Total physical locations in warehouse {warehouse_id}: {total_for_warehouse}")
         
         # Paginate
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         locations = pagination.items
-        print(f"DEBUG: Physical query returned {len(locations)} locations")
+        if page == 1:
+            print(f"DEBUG: Physical query returned {len(locations)} locations")
         
         # Get summary statistics
         total_locations = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
@@ -240,14 +246,17 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
 def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_active, aisle_number, search, page, per_page):
     """Handle virtual location queries using compatibility manager"""
     try:
-        print(f"[LOCATION_API] Getting virtual locations for warehouse {warehouse_id}")
+        # Only log on first page requests to reduce spam
+        if page == 1:
+            print(f"[LOCATION_API] Getting virtual locations for warehouse {warehouse_id}")
         
         # Get compatibility manager
         compat_manager = get_compatibility_manager()
         
         # Get all virtual locations for the warehouse (with safety limit)
         all_locations = compat_manager.get_all_warehouse_locations(warehouse_id)
-        print(f"[LOCATION_API] Retrieved {len(all_locations)} virtual locations")
+        if page == 1:
+            print(f"[LOCATION_API] Retrieved {len(all_locations)} virtual locations")
         
         if not all_locations:
             print(f"[LOCATION_API] No virtual locations found - warehouse may not be properly configured")
@@ -276,21 +285,25 @@ def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_a
         
         if location_type:
             filtered_locations = [loc for loc in filtered_locations if loc.get('location_type') == location_type]
-            print(f"[LOCATION_API] After location_type filter ({location_type}): {len(filtered_locations)} locations")
+            if page == 1:
+                print(f"[LOCATION_API] After location_type filter ({location_type}): {len(filtered_locations)} locations")
         
         if zone:
             filtered_locations = [loc for loc in filtered_locations if loc.get('zone') == zone]
-            print(f"[LOCATION_API] After zone filter ({zone}): {len(filtered_locations)} locations")
+            if page == 1:
+                print(f"[LOCATION_API] After zone filter ({zone}): {len(filtered_locations)} locations")
             
         if is_active is not None:
             is_active_bool = is_active.lower() == 'true'
             filtered_locations = [loc for loc in filtered_locations if loc.get('is_active', True) == is_active_bool]
-            print(f"[LOCATION_API] After is_active filter ({is_active}): {len(filtered_locations)} locations")
+            if page == 1:
+                print(f"[LOCATION_API] After is_active filter ({is_active}): {len(filtered_locations)} locations")
             
         if aisle_number:
             aisle_num = int(aisle_number)
             filtered_locations = [loc for loc in filtered_locations if loc.get('aisle_number') == aisle_num]
-            print(f"[LOCATION_API] After aisle_number filter ({aisle_number}): {len(filtered_locations)} locations")
+            if page == 1:
+                print(f"[LOCATION_API] After aisle_number filter ({aisle_number}): {len(filtered_locations)} locations")
             
         if search:
             search_term = search.strip().upper()
@@ -301,7 +314,8 @@ def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_a
                     search_term in str(loc.get('zone', '')).upper()):
                     search_results.append(loc)
             filtered_locations = search_results
-            print(f"[LOCATION_API] After search filter ('{search}'): {len(filtered_locations)} locations")
+            if page == 1:
+                print(f"[LOCATION_API] After search filter ('{search}'): {len(filtered_locations)} locations")
         
         # Sort virtual locations (special areas first, then storage)
         def sort_key(loc):
@@ -329,22 +343,24 @@ def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_a
         end_index = start_index + per_page
         paginated_locations = filtered_locations[start_index:end_index]
         
-        print(f"[LOCATION_API] Pagination: showing {len(paginated_locations)} of {total_filtered} locations (page {page})")
+        if page == 1:
+            print(f"[LOCATION_API] Pagination: showing {len(paginated_locations)} of {total_filtered} locations (page {page})")
         
         # Calculate summary statistics
         total_locations = len(all_locations)
         storage_locations = len([loc for loc in all_locations if loc.get('location_type') == 'STORAGE'])
         total_capacity = sum(loc.get('capacity', 1) for loc in all_locations)
         
-        # Debug: Show location types in response
-        location_types = {}
-        for loc in paginated_locations:
-            loc_type = loc.get('location_type', 'UNKNOWN')
-            location_types[loc_type] = location_types.get(loc_type, 0) + 1
-        print(f"DEBUG: Virtual location types in response: {location_types}")
-        
-        special_areas = [loc.get('code') for loc in paginated_locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL']]
-        print(f"DEBUG: Virtual special areas in response: {special_areas}")
+        # Debug: Show location types in response (only for first page to reduce spam)
+        if page == 1:
+            location_types = {}
+            for loc in paginated_locations:
+                loc_type = loc.get('location_type', 'UNKNOWN')
+                location_types[loc_type] = location_types.get(loc_type, 0) + 1
+            print(f"DEBUG: Virtual location types in response: {location_types}")
+            
+            special_areas = [loc.get('code') for loc in paginated_locations if loc.get('location_type') in ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL']]
+            print(f"DEBUG: Virtual special areas in response: {special_areas}")
         
         # Calculate pagination info
         total_pages = (total_filtered + per_page - 1) // per_page

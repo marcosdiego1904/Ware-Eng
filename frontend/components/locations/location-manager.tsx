@@ -146,100 +146,48 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     setSearchWarnings(warnings);
   }, [currentWarehouseConfig]);
 
-  // Load initial data with abort controller to prevent race conditions
+  // Consolidated data loading effect - prevents cascading calls
   useEffect(() => {
-    console.log('🚀 LocationManager useEffect triggered - loading initial data');
-    console.log('🔑 Current warehouse ID:', warehouseId);
-    console.log('🔑 Checking authentication...');
-    const token = localStorage.getItem('token');
-    const user = localStorage.getItem('user');
-    console.log('🔐 Auth status:', { hasToken: !!token, hasUser: !!user });
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
     
-    // Reset store when warehouse ID changes to prevent data contamination
-    console.log('🔄 Resetting store for warehouse ID change...');
-    clearError();
-    
-    // Clear existing locations and config to ensure fresh data for this warehouse
-    if (currentWarehouseConfig?.warehouse_id !== warehouseId || locations.length > 0) {
-      console.log('🗑️ Clearing stale data for new warehouse:', warehouseId);
-      // Reset all store data for new warehouse to prevent contamination
-      resetStore();
-    }
-    
-    const abortController = new AbortController();
-    
-    const loadInitialData = async () => {
-      console.log('🔄 Starting loadInitialData...');
+    const loadData = async () => {
+      if (!warehouseId || !isMountedRef.current) return;
+      
       try {
-        console.log(`📡 Fetching warehouse config for: ${warehouseId}`);
+        // Clear errors first
+        clearError();
+        
+        // Reset store only if switching warehouses
+        if (currentWarehouseConfig?.warehouse_id && currentWarehouseConfig.warehouse_id !== warehouseId) {
+          resetStore();
+        }
+        
+        // Load config and templates first
         await Promise.all([
           fetchWarehouseConfig(warehouseId),
           fetchTemplates('my')
         ]);
         
-        // Force immediate location refresh to ensure special areas are loaded
-        console.log('🔄 Force refreshing locations after initial load...');
-        const locationFilters = { warehouse_id: warehouseId };
-        await fetchLocations(locationFilters, 1, 100);
+        // Then load locations with a slight delay to ensure config is available
+        if (isMounted && isMountedRef.current) {
+          const locationFilters = { warehouse_id: warehouseId };
+          setFilters(locationFilters);
+          await fetchLocations(locationFilters, 1, 100);
+        }
       } catch (error) {
-        if (!abortController.signal.aborted && isMountedRef.current) {
-          console.error('Failed to load initial data:', error);
+        if (isMounted && isMountedRef.current) {
+          console.error('Failed to load data:', error);
         }
       }
     };
     
-    loadInitialData();
-    
-    return () => {
-      abortController.abort();
-    };
-  }, [warehouseId, fetchWarehouseConfig, fetchTemplates, fetchLocations, clearError, resetStore, currentWarehouseConfig?.warehouse_id]);
-
-  // Refresh locations when warehouse ID changes (but not on config loading state changes)
-  useEffect(() => {
-    console.log('🎯 LOCATIONS FETCH useEffect triggered for warehouse:', warehouseId);
-    
-    let isMounted = true;
-    // eslint-disable-next-line prefer-const
-    let timeoutId: NodeJS.Timeout;
-    
-    const loadLocations = async () => {
-      console.log('⚡ loadLocations CALLED for warehouse:', warehouseId);
-      
-      // Prevent duplicate calls if already loading
-      if (locationsLoading || !isMountedRef.current) {
-        console.log('❌ SKIPPING FETCH - Already loading or unmounted');
-        return;
-      }
-      
-      console.log('✅ PROCEEDING with loadLocations');
-      
-      // Always load locations for the warehouse - this ensures special areas persist
-      if (warehouseId) {
-        const locationFilters = { 
-          warehouse_id: warehouseId
-        };
-        
-        console.log('🔥 CALLING fetchLocations for warehouse:', warehouseId);
-        setFilters(locationFilters);
-        
-        try {
-          await fetchLocations(locationFilters, 1, 100); // Load more to catch special locations
-          console.log('✅ fetchLocations completed');
-        } catch (error) {
-          if (isMounted && isMountedRef.current) {
-            console.error('Failed to load locations:', error);
-          }
-        }
-      }
-    };
-
-    // Debounce to prevent rapid consecutive calls
+    // Debounce to prevent rapid calls during warehouse switching
     timeoutId = setTimeout(() => {
       if (isMounted) {
-        loadLocations();
+        loadData();
       }
-    }, 100);
+    }, 150);
     
     return () => {
       isMounted = false;
@@ -247,17 +195,15 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         clearTimeout(timeoutId);
       }
     };
-  }, [warehouseId, fetchLocations, locationsLoading, setFilters]); // FIXED: Only depend on warehouseId, not configLoading
+  }, [warehouseId]); // Only depend on warehouseId to prevent cascading
 
-  // Refresh locations when switching back to locations tab (after template changes)
+  // Refresh locations only when switching to locations tab
   useEffect(() => {
     if (activeTab === 'locations' && warehouseId && currentWarehouseConfig && !locationsLoading) {
-      console.log('🔄 Tab switched to locations - refreshing to show latest special areas');
       const locationFilters = { warehouse_id: warehouseId };
-      setFilters(locationFilters);
       fetchLocations(locationFilters, 1, 100).catch(console.error);
     }
-  }, [activeTab, warehouseId, currentWarehouseConfig, locationsLoading, setFilters, fetchLocations]);
+  }, [activeTab]); // Only depend on activeTab to prevent loops
 
   // Note: Removed duplicate and looping useEffect to prevent race conditions
 
@@ -301,63 +247,9 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     });
   }, [locations]);
 
-  // Enhanced debug logging for special areas issue
-  console.log('==================================================');
-  console.log('🔍 LOCATION MANAGER DEBUG - VIRTUAL ARCHITECTURE');
-  console.log('==================================================');
-  console.log(`📊 Locations state - Total: ${locations.length}, Special: ${specialLocations.length}`);
-  console.log('🏠 Current warehouse ID:', warehouseId);
-  console.log('⚙️ Locations loading state:', locationsLoading);
-  console.log('🔧 Config loading state:', configLoading);
-  console.log('❗ Current error state:', error);
-  console.log('🏢 Current warehouse config:', currentWarehouseConfig ? {
-    id: currentWarehouseConfig.id,
-    name: currentWarehouseConfig.warehouse_name,
-    warehouse_id: currentWarehouseConfig.warehouse_id,
-    special_areas_configured: {
-      receiving: currentWarehouseConfig.receiving_areas?.length || 0,
-      staging: currentWarehouseConfig.staging_areas?.length || 0,
-      dock: currentWarehouseConfig.dock_areas?.length || 0
-    }
-  } : 'null');
-  
-  if (locations.length > 0) {
-    console.log('📍 First 10 locations:', locations.slice(0, 10).map(loc => ({ 
-      code: loc.code, 
-      type: loc.location_type,
-      warehouse_id: loc.warehouse_id,
-      zone: loc.zone,
-      source: (loc as any).source || 'unknown'  // Track if virtual or physical
-    })));
-    console.log('⭐ Virtual Special locations found:', specialLocations.map(loc => ({ 
-      code: loc.code, 
-      type: loc.location_type, 
-      zone: loc.zone,
-      warehouse_id: loc.warehouse_id,
-      source: (loc as any).source || 'unknown',
-      is_storage: loc.is_storage_location
-    })));
-    
-    // Show all unique location types
-    const locationTypes = [...new Set(locations.map(loc => loc.location_type))];
-    console.log('📊 All location types in data:', locationTypes);
-    
-    // Show all unique warehouse IDs
-    const warehouseIds = [...new Set(locations.map(loc => loc.warehouse_id))];
-    console.log('🏢 All warehouse IDs in data:', warehouseIds);
-  } else {
-    console.log('❌ No locations loaded yet. Check API calls and authentication.');
-  }
-  
-  // Debug warehouse config special areas
-  if (currentWarehouseConfig) {
-    console.log('Warehouse Config Debug:', {
-      configId: currentWarehouseConfig.id,
-      warehouseName: currentWarehouseConfig.warehouse_name,
-      receivingAreas: currentWarehouseConfig.receiving_areas,
-      stagingAreas: currentWarehouseConfig.staging_areas,
-      dockAreas: currentWarehouseConfig.dock_areas
-    });
+  // Minimal debug logging (only when needed)
+  if (process.env.NODE_ENV === 'development' && locations.length > 0 && specialLocations.length === 0) {
+    console.warn('LocationManager: No special areas found despite having locations. Check location_type filtering.');
   }
 
   // Search for specific location to edit (triggered by debounced search code)
@@ -367,11 +259,6 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
     
     setSearchingLocation(true);
     try {
-      // Search for the specific location by code WITHOUT replacing the main locations array
-      
-      console.log('🔍 Searching for location to edit:', codeToSearch);
-      console.log('📊 Before search - Total locations:', locations.length, 'Special:', specialLocations.length);
-      
       // Use the API directly instead of the store to avoid overwriting locations
       const { api } = await import('@/lib/api');
       const params = new URLSearchParams({
@@ -381,21 +268,16 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         search: codeToSearch.trim()
       });
       
-      console.log('🌐 Direct API search call:', `/locations?${params}`);
       const response = await api.get(`/locations?${params}`);
       const searchResults = response.data.locations || [];
-      
-      console.log('🔍 Search results:', searchResults.length, 'locations found');
       
       // If we find exactly one location, open it for editing immediately
       if (searchResults.length === 1) {
         const foundLocation = searchResults[0];
-        console.log('Found location for editing:', foundLocation.code);
         setEditingLocation(foundLocation);
         setShowLocationForm(true);
         setLocationSearchCode(''); // Clear search
       } else if (searchResults.length === 0) {
-        console.log('❌ No location found for code:', codeToSearch);
         
         // Provide helpful suggestions based on search pattern
         let suggestion = '';
@@ -413,7 +295,6 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           variant: "destructive",
         });
       } else {
-        console.log('⚠️ Multiple locations found:', searchResults.length, 'Need more specific search');
         toast({
           title: "Multiple Locations Found",
           description: `Found ${searchResults.length} locations. Please be more specific.`,
@@ -1312,7 +1193,6 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
             
             // Then explicitly fetch first page with fresh filters for consistent behavior
             // This ensures proper location display after reconfiguration
-            console.log('Reconfiguration complete - fetching locations with fresh filters');
             await fetchLocations(freshFilters, 1, 100);
           }}
         />
@@ -1333,8 +1213,6 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
             
             await fetchWarehouseConfig(warehouseId);
             await fetchLocations(freshFilters, 1, 100);
-            
-            console.log('Reconfiguration complete - data refreshed');
           }}
         />
       )}
