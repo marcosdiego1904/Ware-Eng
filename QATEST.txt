@@ -1,0 +1,138 @@
+
+ROLE: Act as a QA Test Data Specialist for warehouse anomaly detection systems.
+
+  OBJECTIVE: Create a dataset for Excel file named [test2].xlsx containing exactly
+  [800] rows, where each row represents a pallet. Generate [5]
+  anomalies for each specified business rule.
+
+  WAREHOUSE LAYOUT:
+  [  Warehouse Name
+Warehouse DEFAULT1
+
+Warehouse ID
+DEFAULT
+
+Structure
+4 aisles × 2 racks × 46 positions × 4 levels
+
+Level Names
+ABCD
+
+Default Capacity
+1 pallet per level
+
+Rack Type
+Single (1 pallet/level)
+Total Locations
+1,481
+1,472 storage + 9 special areas
+
+Storage Capacity
+1,541
+Total pallet capacity (1,472 storage + 69 special)
+Structure
+4A/2R
+46P × 4L per rack
+
+
+]
+
+  ⚠️  CRITICAL: Include capacity information for each location type:
+   Example format:
+  - Storage Locations: A-01-01A, A-01-01B, A-02-01A, B-01-01A, B-01-01B Default Capacity
+1 pallet per level
+  - Special Locations:
+   Location	Type	Zone	Capacity	Structure	Status	
+RECV-01
+Special Area
+RECEIVING	RECEIVING	10	
+—
+Active	
+RECV-02
+Special Area
+RECEIVING	RECEIVING	10	
+—
+Active	
+STAGE-01
+Special Area
+STAGING	STAGING	5	
+—
+Active	
+DOCK-01
+Special Area
+DOCK	DOCK	2	
+—
+Active	
+DOCK-02
+Special Area
+DOCK	DOCK	2	
+—
+Active	
+AISLE-01
+Special Area
+TRANSITIONAL	GENERAL	10	
+—
+Active	
+AISLE-02
+Special Area
+TRANSITIONAL	GENERAL	10	
+—
+Active	
+AISLE-03
+Special Area
+TRANSITIONAL	GENERAL	10	
+—
+Active	
+AISLE-04
+Special Area
+TRANSITIONAL	GENERAL	10	
+
+
+  - Default storage capacity: [1] pallet(s) per location
+
+  CAPACITY-AWARE DISTRIBUTION STRATEGY:
+  IMPORTANT: Distribute pallets respecting capacity constraints to avoid overcapacity explosion
+
+  For storage locations with capacity=1:
+  - Use MOSTLY unique locations (1 pallet per location)
+  - Create INTENTIONAL overcapacity only for specific test cases
+  - Target: <5% of locations should have >1 pallet
+
+  For higher-capacity locations:
+  - Distribute normally but stay under capacity limits
+  - Reserve overcapacity violations for planned test scenarios
+
+  BUSINESS RULES TO TEST:
+  - ✅ STAGNANT_PALLETS (threshold: [X] hours in staging locations)threshold need more than 80% completion
+  - ✅ UNCOORDINATED_LOTS (completion threshold: [X]% before flagging stragglers)
+  - ✅ OVERCAPACITY ⚠️ CONTROLLED (create [X] specific violations, not random distribution)
+  - ✅ INVALID_LOCATION (locations not in warehouse layout)
+  - ✅ LOCATION_SPECIFIC_STAGNANT (threshold: [X] hours in AISLE locations)
+  - ✅ DATA_INTEGRITY (duplicate scans + impossible location formats)
+  - ✅ MISSING_LOCATION (null/empty location fields)
+  - ✅ PRODUCT_INCOMPATIBILITY (restricted products in wrong zones)
+  - ❌ TEMPERATURE_ZONE_MISMATCH (exclude unless specified)
+
+  OVERCAPACITY TEST STRATEGY:
+  Instead of random distribution:
+  1. Create [X] specific overcapacity violations in designated locations
+  2. For remaining pallets, respect capacity constraints:
+     - If capacity=1: Use mostly unique storage locations
+     - If capacity>1: Distribute normally but stay under limits
+  3. Result: Controlled anomaly count instead of hundreds
+
+  ADDITIONAL REQUIREMENTS:
+  - Excel columns: pallet_id, receipt_number, description, location, creation_date
+  - Timestamp format: YYYY-MM-DD HH:MM:SS
+  - CAPACITY VALIDATION: Verify final distribution doesn't create unintended overcapacity
+  - Generate exactly [TOTAL_PALLETS - (RULES_COUNT × ANOMALIES_PER_RULE)] valid records
+  - Provide final dataset as Markdown table sample
+
+  VALIDATION CHECKLIST:
+  - Total pallet count matches target exactly
+  - Overcapacity anomalies match intended count (not hundreds)
+  - Storage locations mostly have ≤capacity pallets
+  - Special locations respect capacity limits
+  - Only planned violations exist
+
+  ---
