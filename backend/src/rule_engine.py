@@ -1519,15 +1519,26 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
         return anomalies
 
 class OvercapacityEvaluator(BaseRuleEvaluator):
-    """Evaluator for smart overcapacity detection with statistical analysis"""
+    """Evaluator for smart overcapacity detection with statistical analysis and location differentiation"""
     
     def __init__(self, app=None):
         super().__init__(app)
         self.debug = True  # Enable debug logging for capacity calculations
+        # Import location classification service for enhanced alerting
+        try:
+            from .location_classification_service import LocationClassificationService
+        except ImportError:
+            from location_classification_service import LocationClassificationService
+        self.location_classifier = LocationClassificationService()
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
         parameters = self._parse_parameters(rule)
+        
+        # LOCATION DIFFERENTIATION ENHANCEMENT - NEW FEATURE
+        # Enables business-context-aware alerting with differentiated strategies
+        # for Storage locations (critical) vs Special areas (operational)
+        use_location_differentiation = parameters.get('use_location_differentiation', False)
         
         # SMART CAPACITY FEATURE DISABLED FOR CORE PRODUCT
         # Smart overcapacity detection moved to premium "Intelligent Analytics" section
@@ -1541,6 +1552,9 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             return self._evaluate_with_statistical_analysis(
                 rule, inventory_df, significance_threshold, min_severity_ratio
             )
+        elif use_location_differentiation:
+            # Enhanced overcapacity detection with location type differentiation
+            return self._evaluate_with_location_differentiation(rule, inventory_df)
         else:
             # Legacy behavior for backward compatibility
             return self._evaluate_legacy(rule, inventory_df)
@@ -1854,6 +1868,117 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                         'priority': rule.priority,
                         'details': f"Location '{location}' has {count} pallets (capacity: {capacity})"
                     })
+        
+        return anomalies
+    
+    def _evaluate_with_location_differentiation(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        ENHANCED OVERCAPACITY DETECTION WITH LOCATION TYPE DIFFERENTIATION
+        
+        Implements business-context-aware alerting strategy that differentiates between:
+        - Storage Locations (CRITICAL): Individual pallet alerts for data integrity
+        - Special Areas (WARNING): Location-level alerts for space management
+        
+        This enhancement reduces alert fatigue while maintaining appropriate granularity
+        where it matters most for operational efficiency.
+        
+        Features:
+        - Location classification using database location_type and pattern matching
+        - Differentiated alert generation (individual vs location-level)
+        - Automatic priority adjustment based on business context
+        - Analytics for measuring alert volume reduction
+        """
+        try:
+            from .location_classification_service import LocationCategory
+        except ImportError:
+            from location_classification_service import LocationCategory
+        
+        conditions = self._parse_conditions(rule)
+        anomalies = []
+        
+        # Count pallets per location
+        location_counts = inventory_df['location'].value_counts()
+        
+        # Separate overcapacity locations by category for differentiated processing
+        storage_overcapacity = {}
+        special_overcapacity = {}
+        
+        # Classify all overcapacity locations
+        for location, count in location_counts.items():
+            location_obj = self._find_location_by_code(str(location))
+            capacity = self._get_location_capacity(location_obj, str(location))
+            
+            if count > capacity:
+                # Classify location for appropriate alert strategy
+                category, priority = self.location_classifier.classify_location(location_obj, str(location))
+                
+                location_info = {
+                    'location': location,
+                    'count': count,
+                    'capacity': capacity,
+                    'location_obj': location_obj,
+                    'priority': priority.value
+                }
+                
+                if category == LocationCategory.STORAGE:
+                    storage_overcapacity[location] = location_info
+                else:  # LocationCategory.SPECIAL
+                    special_overcapacity[location] = location_info
+        
+        # Generate CRITICAL individual pallet alerts for Storage locations
+        for location, info in storage_overcapacity.items():
+            pallets_in_loc = inventory_df[inventory_df['location'] == location]
+            for _, pallet in pallets_in_loc.iterrows():
+                anomalies.append({
+                    'pallet_id': pallet['pallet_id'],
+                    'location': pallet['location'],
+                    'anomaly_type': 'Storage Overcapacity',
+                    'priority': info['priority'],  # Very High (CRITICAL)
+                    'details': f"Storage location '{location}' overcapacity: {info['count']}/{info['capacity']} pallets - investigate pallet {pallet['pallet_id']}",
+                    'business_context': 'CRITICAL - Data integrity requires individual pallet investigation',
+                    'location_category': 'STORAGE'
+                })
+        
+        # Generate WARNING location-level alerts for Special areas
+        for location, info in special_overcapacity.items():
+            # Single alert per overcapacity special area
+            percentage = round((info['count'] / info['capacity']) * 100)
+            excess_pallets = info['count'] - info['capacity']
+            
+            # Use first pallet in location for the alert (required field)
+            pallets_in_loc = inventory_df[inventory_df['location'] == location]
+            representative_pallet = pallets_in_loc.iloc[0]
+            
+            anomalies.append({
+                'pallet_id': representative_pallet['pallet_id'],  # Representative pallet
+                'location': location,
+                'anomaly_type': 'Special Area Capacity',
+                'priority': info['priority'],  # High (WARNING)
+                'details': f"Special area '{location}' at {percentage}% capacity ({info['count']}/{info['capacity']} pallets, +{excess_pallets} over limit) - expedite processing",
+                'business_context': 'WARNING - Space management focus, expedite area processing',
+                'location_category': 'SPECIAL',
+                'affected_pallets': info['count'],
+                'excess_pallets': excess_pallets,
+                'capacity_percentage': percentage
+            })
+        
+        # Add analytics metadata for tracking improvement
+        if hasattr(rule, 'conditions') and rule.conditions:
+            try:
+                import json
+                conditions_dict = json.loads(rule.conditions) if isinstance(rule.conditions, str) else rule.conditions
+                if isinstance(conditions_dict, dict):
+                    conditions_dict['_analytics'] = {
+                        'total_overcapacity_locations': len(storage_overcapacity) + len(special_overcapacity),
+                        'storage_locations': len(storage_overcapacity),
+                        'special_locations': len(special_overcapacity),
+                        'total_alerts_generated': len(anomalies),
+                        'storage_alerts': sum(1 for a in anomalies if a.get('location_category') == 'STORAGE'),
+                        'special_alerts': sum(1 for a in anomalies if a.get('location_category') == 'SPECIAL'),
+                        'enhancement_active': True
+                    }
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Skip analytics if conditions parsing fails
         
         return anomalies
 

@@ -1,8 +1,8 @@
 
 ROLE: Act as a QA Test Data Specialist for warehouse anomaly detection systems.
 
-  OBJECTIVE: Create a dataset for Excel file named [test2].xlsx containing exactly
-  [800] rows, where each row represents a pallet. Generate [5]
+  OBJECTIVE: Create a dataset for Excel file named [test5].xlsx containing exactly
+  [2000] rows, where each row represents a pallet. Generate [30]
   anomalies for each specified business rule.
 
   WAREHOUSE LAYOUT:
@@ -13,7 +13,7 @@ Warehouse ID
 DEFAULT
 
 Structure
-4 aisles × 2 racks × 46 positions × 4 levels
+5 aisles × 2 racks × 63 positions × 4 levels
 
 Level Names
 ABCD
@@ -24,16 +24,16 @@ Default Capacity
 Rack Type
 Single (1 pallet/level)
 Total Locations
-1,481
-1,472 storage + 9 special areas
+2,529
+2,520 storage + 9 special areas
 
 Storage Capacity
-1,541
-Total pallet capacity (1,472 storage + 69 special)
-Structure
-4A/2R
-46P × 4L per rack
+2,588
+Total pallet capacity (2,520 storage + 68 special)
 
+Structure
+5A/2R
+63P × 4L per rack
 
 ]
 
@@ -42,10 +42,10 @@ Structure
   - Storage Locations: A-01-01A, A-01-01B, A-02-01A, B-01-01A, B-01-01B Default Capacity
 1 pallet per level
   - Special Locations:
-   Location	Type	Zone	Capacity	Structure	Status	
+ Location	Type	Zone	Capacity	Structure	Status	
 RECV-01
 Special Area
-RECEIVING	RECEIVING	10	
+RECEIVING	GENERAL	10	
 —
 Active	
 RECV-02
@@ -59,11 +59,6 @@ STAGING	STAGING	5
 —
 Active	
 DOCK-01
-Special Area
-DOCK	DOCK	2	
-—
-Active	
-DOCK-02
 Special Area
 DOCK	DOCK	2	
 —
@@ -86,6 +81,14 @@ Active
 AISLE-04
 Special Area
 TRANSITIONAL	GENERAL	10	
+—
+Active	
+AISLE-05
+Special Area
+TRANSITIONAL	GENERAL	10	
+—
+Active
+
 
 
   - Default storage capacity: [1] pallet(s) per location
@@ -127,6 +130,8 @@ TRANSITIONAL	GENERAL	10
   - CAPACITY VALIDATION: Verify final distribution doesn't create unintended overcapacity
   - Generate exactly [TOTAL_PALLETS - (RULES_COUNT × ANOMALIES_PER_RULE)] valid records
   - Provide final dataset as Markdown table sample
+  - Location format : 2-02-03C 3-01-20C 4-02-16D 3-01-22C 1-02-01D 3-02-22A
+			
 
   VALIDATION CHECKLIST:
   - Total pallet count matches target exactly

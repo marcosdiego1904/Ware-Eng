@@ -146,8 +146,26 @@ class AutoMigrator:
                 "conditions": {
                     "check_all_locations": True
                 },
-                "parameters": {},
+                "parameters": {
+                    "use_location_differentiation": False,
+                    "use_statistical_analysis": False
+                },
                 "priority": "HIGH"
+            },
+            {
+                "name": "Enhanced Overcapacity with Location Differentiation",
+                "rule_type": "OVERCAPACITY", 
+                "category": "SPACE",
+                "description": "Business-context-aware overcapacity detection with differentiated alerting for Storage (critical) vs Special areas (operational)",
+                "conditions": {
+                    "check_all_locations": True
+                },
+                "parameters": {
+                    "use_location_differentiation": True,
+                    "use_statistical_analysis": False
+                },
+                "priority": "HIGH",
+                "is_active": False
             },
             {
                 "name": "Invalid Locations Alert",

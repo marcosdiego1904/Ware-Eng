@@ -1,0 +1,72 @@
+ 📋 Overcapacity Rule Analysis & Enhancement Documentation
+
+  Executive Summary
+
+  This document outlines a strategic enhancement to the overcapacity detection system, transforming it from a single monolithic rule into a differentiated detection framework that provides
+  business-context-aware alerting and opens opportunities for premium warehouse intelligence features.
+
+  ---
+  1. Current System Analysis
+
+  Current Overcapacity Rule Behavior
+
+  - Detection Method: Flags ALL individual pallets in overcapacity locations
+  - Application: Universal across all location types (storage + special)
+  - Alert Volume: High granularity for all locations
+  - Business Logic: Technically accurate but operationally inefficient
+
+  Identified Issues
+
+  - Alert Fatigue: Special area operations generate excessive alerts
+  - Priority Dilution: Critical storage violations buried in operational noise
+  - Operator Confusion: Same alert type for different business scenarios
+  - Missed Business Intelligence: No differentiation between location purposes
+
+  ---
+  2. Storage vs Special Location Differentiation Strategy
+
+  🏗️ Location Type Classification
+
+● | Location Type        | Storage Locations                | Special Locations                 |
+  |----------------------|----------------------------------|-----------------------------------|
+  | Pattern              | X-XX-XXX (e.g., 1-01-01A)        | NAME-XX (e.g., RECV-01, AISLE-01) |
+  | Capacity             | Typically 1 pallet               | 2-10+ pallets                     |
+  | Purpose              | Fixed inventory positions        | Transitional/processing areas     |
+  | Business Criticality | 🔴 CRITICAL - Inventory accuracy | 🟡 OPERATIONAL - Space management |
+  | Overcapacity Impact  | Data integrity crisis            | Workflow efficiency concern       |
+  | Required Action      | Investigate ALL pallets          | Monitor area, expedite processing |
+
+  🔧 Differentiated Alert Strategy
+
+  Rule 1: Critical Storage Overcapacity
+  Rule Name: "Storage Location Accuracy Alert"
+  Target Locations: Storage locations (pattern: X-XX-XXX)
+  Alert Strategy: Individual pallet alerts (maintain current behavior)
+  Priority Level: CRITICAL 🔴
+  Sample Alerts:
+    - "PLT-001 in overcapacity storage 1-01-01A (2/1 pallets)"
+    - "PLT-002 in overcapacity storage 1-01-01A (2/1 pallets)"
+  Business Justification: Inventory accuracy requires investigation of every pallet
+
+  Rule 2: Special Area Capacity Management
+  Rule Name: "Operational Area Capacity Monitor"
+  Target Locations: Special areas (RECV-, AISLE-, STAGE-, DOCK-)
+  Alert Strategy: Single location-level alert per area
+  Priority Level: WARNING 🟡
+  Sample Alerts:
+    - "AISLE-01 at 130% capacity (13/10 pallets) - expedite processing"
+    - "RECV-01 at 120% capacity (12/10 pallets) - monitor intake flow"
+  Business Justification: Space management focus, no individual pallet investigation needed
+
+  📊 Expected Alert Volume Impact
+
+  | Metric              | Current System | Differentiated System | Improvement        |
+  |---------------------|----------------|-----------------------|--------------------|
+  | Total Alerts        | 48 alerts      | ~14 alerts            | 71% reduction      |
+  | Storage Alerts      | 10 individual  | 10 individual         | Same (appropriate) |
+  | Special Area Alerts | 38 individual  | 4 location-level      | 90% reduction      |
+  | Operator Focus      | Diluted        | Clear priority        | Improved           |
+
+  ★ Business Value: Clear separation of critical inventory issues from operational space management, enabling faster response to actual problems.
+
+  ---
