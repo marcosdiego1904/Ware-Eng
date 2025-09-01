@@ -1538,7 +1538,8 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         # LOCATION DIFFERENTIATION ENHANCEMENT - NEW FEATURE
         # Enables business-context-aware alerting with differentiated strategies
         # for Storage locations (critical) vs Special areas (operational)
-        use_location_differentiation = parameters.get('use_location_differentiation', False)
+        # TEMPORARY TESTING OVERRIDE: Force enable location differentiation for demo
+        use_location_differentiation = True  # parameters.get('use_location_differentiation', False)
         
         # SMART CAPACITY FEATURE DISABLED FOR CORE PRODUCT
         # Smart overcapacity detection moved to premium "Intelligent Analytics" section
