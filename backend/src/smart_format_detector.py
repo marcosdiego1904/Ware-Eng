@@ -444,15 +444,16 @@ class ZoneAnalyzer(PatternAnalyzer):
         return FormatPattern(
             pattern_type=self.pattern_type,
             regex_pattern=best_pattern,
-            canonical_converter=f"{zone_prefix}-{{zone_letter}}-{{zone_number:03d}}",
+            canonical_converter=f"{zone_prefix}-{{zone_letter}}-{{zone_number}}",  # Keep original format
             confidence=confidence,
             examples=matched_examples,
             components={
                 'zone_prefix': zone_prefix,
                 'zone_letter_format': 'single_letter',
-                'zone_number_format': f'{len(zone_number)}_digit'
+                'zone_number_format': 'preserve_original',  # Don't force 3 digits
+                'already_standardized': True  # MVP: indicate this format is already good
             },
-            description=f"Zone-based location format detected with {confidence:.1%} confidence"
+            description=f"Zone-based location format detected with {confidence:.1%} confidence (already well-formatted)"
         )
 
 

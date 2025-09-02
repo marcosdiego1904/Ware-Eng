@@ -17,7 +17,6 @@ import { FormatDetectionDisplay } from './FormatDetectionDisplay';
 
 interface LocationFormatStepProps {
   onFormatDetected: (formatConfig: object, patternName: string, examples: string[]) => void;
-  onManualConfiguration: () => void;
   initialExamples?: string;
 }
 
@@ -58,7 +57,6 @@ const EXAMPLE_SUGGESTIONS = [
 
 export function LocationFormatStep({
   onFormatDetected,
-  onManualConfiguration,
   initialExamples = ""
 }: LocationFormatStepProps) {
   const [examples, setExamples] = useState(initialExamples);
@@ -114,9 +112,6 @@ export function LocationFormatStep({
     }
   };
 
-  const handleManualConfiguration = () => {
-    onManualConfiguration();
-  };
 
   const applySuggestion = (suggestion: typeof EXAMPLE_SUGGESTIONS[0]) => {
     setExamples(suggestion.examples);
@@ -214,7 +209,6 @@ export function LocationFormatStep({
             error={error}
             originalExamples={exampleList}
             onAcceptFormat={handleAcceptFormat}
-            onManualConfiguration={handleManualConfiguration}
           />
         </div>
       )}

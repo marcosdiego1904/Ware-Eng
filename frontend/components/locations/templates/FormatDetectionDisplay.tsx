@@ -11,8 +11,7 @@ import {
   AlertTriangle, 
   Zap,
   ArrowRight,
-  Eye,
-  Wrench
+  Eye
 } from 'lucide-react';
 
 interface FormatDetectionResult {
@@ -29,7 +28,6 @@ interface FormatDetectionDisplayProps {
   error: string | null;
   originalExamples: string[];
   onAcceptFormat: () => void;
-  onManualConfiguration: () => void;
 }
 
 export function FormatDetectionDisplay({
@@ -37,8 +35,7 @@ export function FormatDetectionDisplay({
   loading,
   error,
   originalExamples,
-  onAcceptFormat,
-  onManualConfiguration
+  onAcceptFormat
 }: FormatDetectionDisplayProps) {
   if (loading) {
     return (
@@ -161,22 +158,21 @@ export function FormatDetectionDisplay({
           )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex gap-3 pt-2">
+        {/* Status Indicator */}
+        <div className="flex items-center justify-center gap-2 pt-4">
+          <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
+            <CheckCircle className="h-5 w-5 text-green-600" />
+            <span className="text-green-700 font-medium">Looks perfect</span>
+          </div>
+        </div>
+        
+        {/* Accept Button */}
+        <div className="flex justify-center pt-3">
           <Button 
             onClick={onAcceptFormat}
-            className="flex-1 bg-green-600 hover:bg-green-700"
+            className="bg-blue-600 hover:bg-blue-700"
           >
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Looks perfect
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={onManualConfiguration}
-            className="flex-1"
-          >
-            <Wrench className="h-4 w-4 mr-2" />
-            Let me adjust
+            Use this format
           </Button>
         </div>
         
