@@ -309,6 +309,53 @@ def create_template(current_user):
         if 'receiving_areas_template' in data:
             template.set_receiving_areas_template(data['receiving_areas_template'])
         
+        if 'staging_areas_template' in data:
+            template.set_staging_areas_template(data['staging_areas_template'])
+        
+        if 'dock_areas_template' in data:
+            template.set_dock_areas_template(data['dock_areas_template'])
+        
+        # Set location format configuration if provided
+        location_format_data = data.get('location_format')
+        if location_format_data:
+            try:
+                # Handle format configuration from detect-format API
+                if 'format_config' in location_format_data:
+                    format_config = location_format_data['format_config']
+                    template.set_location_format_config(format_config)
+                    template.format_confidence = location_format_data.get('confidence', format_config.get('confidence'))
+                    
+                    # Set examples if provided
+                    examples = location_format_data.get('examples', format_config.get('examples', []))
+                    if examples:
+                        template.set_format_examples(examples)
+                
+                # Handle direct format configuration
+                elif 'examples' in location_format_data:
+                    # Auto-detect format from examples
+                    from smart_format_detector import SmartFormatDetector
+                    
+                    detector = SmartFormatDetector()
+                    detection_result = detector.detect_format(location_format_data['examples'])
+                    
+                    if detection_result.get('detected_pattern'):
+                        warehouse_context = {
+                            'template_name': data['name'],
+                            'template_description': data.get('description')
+                        }
+                        format_config = detector.create_format_config(detection_result, warehouse_context)
+                        
+                        template.set_location_format_config(format_config)
+                        template.format_confidence = detection_result.get('confidence')
+                        template.set_format_examples(location_format_data['examples'])
+                        
+                        current_app.logger.info(f"Auto-detected location format for template '{data['name']}': "
+                                              f"{format_config.get('pattern_type')} with {detection_result.get('confidence', 0):.2%} confidence")
+                
+            except Exception as e:
+                current_app.logger.warning(f"Failed to set location format for template '{data['name']}': {e}")
+                # Don't fail template creation if format detection fails
+        
         # Generate unique template code
         template.generate_template_code()
         
@@ -418,6 +465,55 @@ def update_template(current_user, template_id):
                 template.dock_areas_template = data['dock_areas_template']
             else:
                 template.set_dock_areas_template(data['dock_areas_template'])
+        
+        # Update location format configuration if provided
+        location_format_data = data.get('location_format')
+        if location_format_data:
+            try:
+                # Handle format configuration from detect-format API
+                if 'format_config' in location_format_data:
+                    format_config = location_format_data['format_config']
+                    template.set_location_format_config(format_config)
+                    template.format_confidence = location_format_data.get('confidence', format_config.get('confidence'))
+                    
+                    # Set examples if provided
+                    examples = location_format_data.get('examples', format_config.get('examples', []))
+                    if examples:
+                        template.set_format_examples(examples)
+                
+                # Handle direct format configuration
+                elif 'examples' in location_format_data:
+                    # Auto-detect format from examples
+                    from smart_format_detector import SmartFormatDetector
+                    
+                    detector = SmartFormatDetector()
+                    detection_result = detector.detect_format(location_format_data['examples'])
+                    
+                    if detection_result.get('detected_pattern'):
+                        warehouse_context = {
+                            'template_name': template.name,
+                            'template_id': template.id,
+                            'update_operation': True
+                        }
+                        format_config = detector.create_format_config(detection_result, warehouse_context)
+                        
+                        template.set_location_format_config(format_config)
+                        template.format_confidence = detection_result.get('confidence')
+                        template.set_format_examples(location_format_data['examples'])
+                        
+                        current_app.logger.info(f"Updated location format for template '{template.name}' (ID {template.id}): "
+                                              f"{format_config.get('pattern_type')} with {detection_result.get('confidence', 0):.2%} confidence")
+                
+                # Handle clear format request
+                elif location_format_data.get('clear_format', False):
+                    template.set_location_format_config(None)
+                    template.format_confidence = None
+                    template.set_format_examples([])
+                    current_app.logger.info(f"Cleared location format for template '{template.name}' (ID {template.id})")
+                
+            except Exception as e:
+                current_app.logger.warning(f"Failed to update location format for template '{template.name}': {e}")
+                # Don't fail template update if format processing fails
         
         template.updated_at = datetime.utcnow()
         db.session.commit()
@@ -765,6 +861,216 @@ def get_popular_templates(current_user):
         
     except Exception as e:
         return jsonify({'error': f'Failed to get popular templates: {str(e)}'}), 500
+
+
+@template_bp.route('/detect-format', methods=['POST'])
+@token_required
+def detect_location_format(current_user):
+    """
+    Detect location format from user-provided examples
+    
+    This endpoint analyzes location examples and returns the detected format pattern
+    with confidence scoring and canonical conversion examples. Used during template
+    creation to automatically configure location formats.
+    
+    Expected JSON payload:
+    {
+        "examples": ["010A", "325B", "245D"],
+        "warehouse_context": {  // Optional
+            "name": "Main Warehouse",
+            "description": "Distribution center"
+        }
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "detection_result": {
+            "detected_pattern": {...},
+            "confidence": 0.95,
+            "canonical_examples": [...],
+            "analysis_summary": "...",
+            "recommendations": [...]
+        },
+        "format_config": {...}  // Ready for database storage
+    }
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'JSON payload required'}), 400
+        
+        examples = data.get('examples', [])
+        warehouse_context = data.get('warehouse_context', {})
+        
+        # Validate examples
+        if not examples:
+            return jsonify({'error': 'Location examples are required'}), 400
+        
+        if not isinstance(examples, list):
+            return jsonify({'error': 'Examples must be provided as an array'}), 400
+        
+        if len(examples) > 50:  # Reasonable limit
+            return jsonify({'error': 'Too many examples provided (max 50)'}), 400
+        
+        # Clean examples
+        cleaned_examples = []
+        for example in examples:
+            if isinstance(example, str) and example.strip():
+                cleaned_examples.append(example.strip())
+        
+        if not cleaned_examples:
+            return jsonify({'error': 'No valid location examples provided'}), 400
+        
+        # Import and use SmartFormatDetector
+        from smart_format_detector import SmartFormatDetector
+        
+        detector = SmartFormatDetector()
+        detection_result = detector.detect_format(cleaned_examples)
+        
+        # Create format configuration for storage
+        format_config = detector.create_format_config(detection_result, warehouse_context)
+        
+        # Validate the configuration
+        validation = detector.validate_format_config(format_config)
+        
+        response = {
+            'success': True,
+            'detection_result': detection_result,
+            'format_config': format_config,
+            'validation': validation,
+            'input_summary': {
+                'original_example_count': len(examples),
+                'cleaned_example_count': len(cleaned_examples),
+                'examples_used': cleaned_examples[:10]  # Show first 10 for reference
+            }
+        }
+        
+        # Add performance metadata
+        response['metadata'] = {
+            'detector_version': '1.0.0',
+            'processing_timestamp': datetime.utcnow().isoformat(),
+            'user_id': current_user.id,
+            'patterns_analyzed': len(detection_result.get('all_patterns', []))
+        }
+        
+        return jsonify(response), 200
+    
+    except ImportError as e:
+        return jsonify({
+            'error': 'SmartFormatDetector not available',
+            'details': str(e)
+        }), 500
+    
+    except Exception as e:
+        current_app.logger.error(f"Format detection failed: {e}")
+        return jsonify({
+            'error': 'Format detection failed',
+            'details': str(e)
+        }), 500
+
+
+@template_bp.route('/validate-format', methods=['POST'])
+@token_required
+def validate_location_format(current_user):
+    """
+    Validate a location format configuration
+    
+    This endpoint validates format configurations and provides feedback
+    on compatibility with the canonical location system.
+    
+    Expected JSON payload:
+    {
+        "format_config": {...}  // Format configuration to validate
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "validation": {
+            "valid": true,
+            "errors": [],
+            "warnings": []
+        },
+        "compatibility_check": {...}
+    }
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'JSON payload required'}), 400
+        
+        format_config = data.get('format_config')
+        if not format_config:
+            return jsonify({'error': 'format_config is required'}), 400
+        
+        # Import SmartFormatDetector for validation
+        from smart_format_detector import SmartFormatDetector
+        
+        detector = SmartFormatDetector()
+        validation = detector.validate_format_config(format_config)
+        
+        # Perform additional compatibility checks with canonical system
+        from location_service import get_canonical_service
+        canonical_service = get_canonical_service()
+        
+        compatibility_check = {
+            'canonical_service_available': True,
+            'pattern_type': format_config.get('pattern_type', 'unknown'),
+            'can_convert_to_canonical': False,
+            'sample_conversions': []
+        }
+        
+        # Test conversion with sample examples if available
+        examples = format_config.get('examples', [])
+        if examples:
+            sample_conversions = []
+            for example in examples[:3]:  # Test first 3 examples
+                try:
+                    canonical = canonical_service.to_canonical(example)
+                    sample_conversions.append({
+                        'original': example,
+                        'canonical': canonical,
+                        'success': canonical != example or canonical in canonical_service.special_locations
+                    })
+                except Exception as e:
+                    sample_conversions.append({
+                        'original': example,
+                        'canonical': None,
+                        'success': False,
+                        'error': str(e)
+                    })
+            
+            compatibility_check['sample_conversions'] = sample_conversions
+            compatibility_check['can_convert_to_canonical'] = any(conv['success'] for conv in sample_conversions)
+        
+        response = {
+            'success': True,
+            'validation': validation,
+            'compatibility_check': compatibility_check,
+            'metadata': {
+                'validation_timestamp': datetime.utcnow().isoformat(),
+                'user_id': current_user.id
+            }
+        }
+        
+        return jsonify(response), 200
+    
+    except ImportError as e:
+        return jsonify({
+            'error': 'Validation services not available',
+            'details': str(e)
+        }), 500
+    
+    except Exception as e:
+        current_app.logger.error(f"Format validation failed: {e}")
+        return jsonify({
+            'error': 'Format validation failed',
+            'details': str(e)
+        }), 500
+
 
 # Register error handlers
 @template_bp.errorhandler(404)

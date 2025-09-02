@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { standaloneTemplateAPI, type StandaloneTemplateData } from '@/lib/standalone-template-api';
 import { SpecialAreaEditor } from './special-area-editor';
+import { LocationFormatStep } from './LocationFormatStep';
 
 interface TemplateCreationWizardProps {
   open: boolean;
@@ -97,6 +98,11 @@ interface TemplateData {
     capacity: number;
     zone: string;
   }>;
+  
+  // Location Format Configuration
+  format_config?: object;
+  format_pattern_name?: string;
+  format_examples?: string[];
 }
 
 const INITIAL_TEMPLATE_DATA: TemplateData = {
@@ -119,7 +125,10 @@ const INITIAL_TEMPLATE_DATA: TemplateData = {
   ],
   staging_areas: [],
   dock_areas: [],
-  aisle_areas: []
+  aisle_areas: [],
+  format_config: undefined,
+  format_pattern_name: undefined,
+  format_examples: undefined
 };
 
 const TEMPLATE_CATEGORIES = [
@@ -166,7 +175,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
   const [error, setError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
 
-  const totalSteps = 4;
+  const totalSteps = 5;
   const progress = (currentStep / totalSteps) * 100;
 
   const updateTemplateData = (updates: Partial<TemplateData>) => {
@@ -252,6 +261,19 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     updateTemplateData({ aisle_areas: aisleAreas });
   };
 
+  const handleFormatDetected = (formatConfig: object, patternName: string, examples: string[]) => {
+    updateTemplateData({
+      format_config: formatConfig,
+      format_pattern_name: patternName,
+      format_examples: examples
+    });
+  };
+
+  const handleManualConfiguration = () => {
+    // Skip to next step, allowing manual configuration later
+    setCurrentStep(Math.min(totalSteps, currentStep + 1));
+  };
+
   const applyStarterTemplate = (starter: typeof STARTER_TEMPLATES[0]) => {
     updateTemplateData({
       name: starter.name,
@@ -286,7 +308,10 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
         bidimensional_racks: templateData.bidimensional_racks,
         receiving_areas: templateData.receiving_areas,
         staging_areas: templateData.staging_areas,
-        dock_areas: templateData.dock_areas
+        dock_areas: templateData.dock_areas,
+        format_config: templateData.format_config,
+        format_pattern_name: templateData.format_pattern_name,
+        format_examples: templateData.format_examples
       };
       
       const createdTemplate = await standaloneTemplateAPI.createTemplate(apiData);
@@ -309,8 +334,10 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
         return templateData.num_aisles > 0 && templateData.racks_per_aisle > 0 &&
                templateData.positions_per_rack > 0 && templateData.levels_per_position > 0;
       case 3:
-        return true; // Special areas are optional
+        return true; // Location format is optional (can be configured manually or skipped)
       case 4:
+        return true; // Special areas are optional
+      case 5:
         return true; // Review step
       default:
         return false;
@@ -333,8 +360,10 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
       case 2:
         return renderStructureStep();
       case 3:
-        return renderSpecialAreasStep();
+        return renderLocationFormatStep();
       case 4:
+        return renderSpecialAreasStep();
+      case 5:
         return renderReviewStep();
       default:
         return null;
@@ -619,6 +648,14 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     </div>
   );
 
+  const renderLocationFormatStep = () => (
+    <LocationFormatStep
+      onFormatDetected={handleFormatDetected}
+      onManualConfiguration={handleManualConfiguration}
+      initialExamples=""
+    />
+  );
+
   const renderSpecialAreasStep = () => (
     <div className="space-y-6">
       <div className="text-center mb-6">
@@ -742,6 +779,14 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
                       <Badge key={index} variant="secondary">{tag}</Badge>
                     ))}
                   </div>
+                </div>
+              )}
+              {templateData.format_pattern_name && (
+                <div>
+                  <Label>Location Format</Label>
+                  <Badge variant="outline" className="text-green-600">
+                    {templateData.format_pattern_name}
+                  </Badge>
                 </div>
               )}
             </CardContent>

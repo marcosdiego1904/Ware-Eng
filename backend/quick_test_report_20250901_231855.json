@@ -1,0 +1,53 @@
+{
+  "timestamp": "2025-09-01T23:18:55.620142",
+  "results": {
+    "Core Format Detector": [
+      {
+        "test": "Import & Init",
+        "success": true,
+        "time": 0.012347221374511719
+      },
+      {
+        "test": "Position+Level Detection",
+        "success": true,
+        "time": 0.00026106834411621094
+      },
+      {
+        "test": "Standard Format Detection",
+        "success": true,
+        "time": 3.886222839355469e-05
+      },
+      {
+        "test": "Format Config Creation",
+        "success": true,
+        "time": 2.47955322265625e-05
+      },
+      {
+        "test": "Format Validation",
+        "success": true,
+        "time": 4.76837158203125e-06
+      }
+    ],
+    "Template Models": [
+      {
+        "test": "Enhanced Models Import",
+        "success": false,
+        "time": 0.7190325260162354
+      }
+    ],
+    "API Integration": [
+      {
+        "test": "Template API Import",
+        "success": false,
+        "time": 0.04763460159301758
+      }
+    ],
+    "End-to-End Workflow": [
+      {
+        "test": "E2E Integration Workflow",
+        "success": false,
+        "time": 6.67572021484375e-06
+      }
+    ]
+  }
+}

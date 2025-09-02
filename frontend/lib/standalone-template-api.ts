@@ -39,6 +39,11 @@ export interface StandaloneTemplateData {
     capacity: number;
     zone: string;
   }>;
+  
+  // Location Format Configuration
+  format_config?: object;
+  format_pattern_name?: string;
+  format_examples?: string[];
 }
 
 export interface CreatedTemplate extends StandaloneTemplateData {
@@ -83,6 +88,14 @@ export interface TemplateCategories {
   industries: string[];
 }
 
+export interface FormatDetectionResult {
+  detected: boolean;
+  format_config?: object;
+  confidence: number;
+  pattern_name: string;
+  canonical_examples: string[];
+}
+
 class StandaloneTemplateAPI {
   /**
    * Create a new template from scratch
@@ -117,6 +130,16 @@ class StandaloneTemplateAPI {
    */
   async getCategories(): Promise<TemplateCategories> {
     const response = await api.get('/standalone-templates/categories');
+    return response.data;
+  }
+
+  /**
+   * Detect location format from examples
+   */
+  async detectLocationFormat(examples: string[]): Promise<FormatDetectionResult> {
+    const response = await api.post('/templates/detect-format', {
+      examples: examples.filter(ex => ex.trim().length > 0)
+    });
     return response.data;
   }
 }

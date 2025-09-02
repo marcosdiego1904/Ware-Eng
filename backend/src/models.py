@@ -549,6 +549,12 @@ class WarehouseTemplate(db.Model):
     staging_areas_template = db.Column(db.Text)
     dock_areas_template = db.Column(db.Text)
     
+    # Smart Location Format Configuration
+    location_format_config = db.Column(db.Text)  # JSON configuration from SmartFormatDetector
+    format_confidence = db.Column(db.Float)      # Detection confidence score (0.0-1.0)
+    format_examples = db.Column(db.Text)         # JSON array of original user examples
+    format_learned_date = db.Column(db.DateTime) # When format was detected/learned
+    
     # Template metadata
     based_on_config_id = db.Column(db.Integer, db.ForeignKey('warehouse_config.id'))
     is_public = db.Column(db.Boolean, default=False)  # Public templates available to all
@@ -604,6 +610,49 @@ class WarehouseTemplate(db.Model):
     def set_dock_areas_template(self, areas_list):
         """Set dock areas template from list to JSON string"""
         self.dock_areas_template = json.dumps(areas_list)
+    
+    def get_location_format_config(self):
+        """Parse location format configuration JSON string into dict"""
+        try:
+            return json.loads(self.location_format_config) if self.location_format_config else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_location_format_config(self, format_config_dict):
+        """Set location format configuration from dict to JSON string"""
+        if format_config_dict:
+            self.location_format_config = json.dumps(format_config_dict)
+            self.format_learned_date = datetime.utcnow()
+        else:
+            self.location_format_config = None
+            self.format_learned_date = None
+    
+    def get_format_examples(self):
+        """Parse format examples JSON string into list"""
+        try:
+            return json.loads(self.format_examples) if self.format_examples else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_format_examples(self, examples_list):
+        """Set format examples from list to JSON string"""
+        self.format_examples = json.dumps(examples_list) if examples_list else None
+    
+    def has_location_format(self):
+        """Check if template has a learned location format configuration"""
+        return bool(self.location_format_config and self.format_confidence)
+    
+    def get_format_summary(self):
+        """Get human-readable format summary for display"""
+        if not self.has_location_format():
+            return "No location format configured"
+        
+        config = self.get_location_format_config()
+        pattern_type = config.get('pattern_type', 'unknown')
+        confidence = self.format_confidence or 0
+        example_count = len(self.get_format_examples())
+        
+        return f"{pattern_type.title()} format ({confidence:.1%} confidence, {example_count} examples)"
     
     def generate_template_code(self):
         """Generate unique shareable template code"""
@@ -667,6 +716,12 @@ class WarehouseTemplate(db.Model):
             'receiving_areas_template': self.get_receiving_areas_template(),
             'staging_areas_template': self.get_staging_areas_template(),
             'dock_areas_template': self.get_dock_areas_template(),
+            'location_format_config': self.get_location_format_config(),
+            'format_confidence': self.format_confidence,
+            'format_examples': self.get_format_examples(),
+            'format_learned_date': self.format_learned_date.isoformat() if self.format_learned_date else None,
+            'has_location_format': self.has_location_format(),
+            'format_summary': self.get_format_summary(),
             'based_on_config_id': self.based_on_config_id,
             'is_public': self.is_public,
             'usage_count': self.usage_count,

@@ -1,0 +1,36 @@
+{
+  "total_tests": 3,
+  "total_time": 0.006371,
+  "status_counts": {
+    "PASS": 1,
+    "FAIL": 1,
+    "ERROR": 1
+  },
+  "pass_rate": 33.33333333333333,
+  "results": [
+    {
+      "test_name": "SmartFormatDetector Import & Init",
+      "status": "PASS",
+      "details": "Successfully imported and initialized SmartFormatDetector",
+      "execution_time": 0.0045092105865478516,
+      "error": "",
+      "timestamp": "2025-09-01T23:17:42.096341"
+    },
+    {
+      "test_name": "SmartFormatDetector Import & Init",
+      "status": "FAIL",
+      "details": "",
+      "execution_time": 0.004541158676147461,
+      "error": "'charmap' codec can't encode character '\\u2713' in position 0: character maps to <undefined>",
+      "timestamp": "2025-09-01T23:17:42.096373"
+    },
+    {
+      "test_name": "CRITICAL_ERROR",
+      "status": "ERROR",
+      "details": "",
+      "execution_time": 0,
+      "error": "Test suite failed: 'charmap' codec can't encode character '\\u2717' in position 0: character maps to <undefined>",
+      "timestamp": "2025-09-01T23:17:42.096385"
+    }
+  ]
+}
