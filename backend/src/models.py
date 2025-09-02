@@ -550,10 +550,11 @@ class WarehouseTemplate(db.Model):
     dock_areas_template = db.Column(db.Text)
     
     # Smart Location Format Configuration
-    location_format_config = db.Column(db.Text)  # JSON configuration from SmartFormatDetector
-    format_confidence = db.Column(db.Float)      # Detection confidence score (0.0-1.0)
-    format_examples = db.Column(db.Text)         # JSON array of original user examples
-    format_learned_date = db.Column(db.DateTime) # When format was detected/learned
+    location_format_config = db.Column(db.Text, nullable=True)  # JSON configuration from SmartFormatDetector
+    format_confidence = db.Column(db.Float, nullable=True, default=0.0)      # Detection confidence score (0.0-1.0)
+    format_examples = db.Column(db.Text, nullable=True)         # JSON array of original user examples
+    format_learned_date = db.Column(db.DateTime, nullable=True) # When format was detected/learned
+    # SMART_CONFIG_HOTFIX_APPLIED - Columns made nullable for production compatibility
     
     # Template metadata
     based_on_config_id = db.Column(db.Integer, db.ForeignKey('warehouse_config.id'))

@@ -1777,6 +1777,14 @@ try:
 except ImportError as e:
     print(f"User Warehouse API not available: {e}")
 
+# Register Admin Migration API (for Smart Configuration deployment)
+try:
+    from admin_migration_endpoint import admin_migration_bp
+    app.register_blueprint(admin_migration_bp)
+    print("Admin Migration API registered successfully")
+except ImportError as e:
+    print(f"Admin Migration API not available: {e}")
+
 # ==================== PRODUCTION DATABASE DIAGNOSTIC ====================
 
 def run_warehouse_migration():
