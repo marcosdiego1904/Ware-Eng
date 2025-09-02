@@ -143,23 +143,27 @@ class StandaloneTemplateAPI {
     
     const backendData = response.data;
     
-    // Debug logging to help troubleshoot
-    console.log('Smart Configuration API Response:', {
-      success: backendData.success,
-      hasDetectionResult: !!backendData.detection_result,
-      hasDetectedPattern: !!backendData.detection_result?.detected_pattern,
-      patternType: backendData.detection_result?.detected_pattern?.pattern_type,
-      confidence: backendData.detection_result?.confidence
-    });
-    
     // Transform backend response to frontend interface
     const detectionResult = backendData.detection_result || {};
     const detectedPattern = detectionResult.detected_pattern;
     
+    // Debug logging to help troubleshoot
+    const rawConfidence = detectionResult.confidence || 0;
+    const convertedConfidence = Math.round(rawConfidence * 100);
+    
+    console.log('Smart Configuration API Response:', {
+      success: backendData.success,
+      hasDetectionResult: !!backendData.detection_result,
+      hasDetectedPattern: !!detectedPattern,
+      patternType: detectedPattern?.pattern_type,
+      confidenceRaw: rawConfidence,
+      confidenceDisplay: convertedConfidence + '%'
+    });
+    
     return {
       detected: backendData.success && !!detectedPattern,
       format_config: backendData.format_config,
-      confidence: detectionResult.confidence || 0,
+      confidence: Math.round((detectionResult.confidence || 0) * 100), // Convert 0-1 to 0-100
       pattern_name: detectedPattern?.pattern_type || 'unknown',
       canonical_examples: detectionResult.canonical_examples || []
     };
