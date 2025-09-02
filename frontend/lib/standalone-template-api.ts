@@ -140,7 +140,29 @@ class StandaloneTemplateAPI {
     const response = await api.post('/templates/detect-format', {
       examples: examples.filter(ex => ex.trim().length > 0)
     });
-    return response.data;
+    
+    const backendData = response.data;
+    
+    // Debug logging to help troubleshoot
+    console.log('Smart Configuration API Response:', {
+      success: backendData.success,
+      hasDetectionResult: !!backendData.detection_result,
+      hasDetectedPattern: !!backendData.detection_result?.detected_pattern,
+      patternType: backendData.detection_result?.detected_pattern?.pattern_type,
+      confidence: backendData.detection_result?.confidence
+    });
+    
+    // Transform backend response to frontend interface
+    const detectionResult = backendData.detection_result || {};
+    const detectedPattern = detectionResult.detected_pattern;
+    
+    return {
+      detected: backendData.success && !!detectedPattern,
+      format_config: backendData.format_config,
+      confidence: detectionResult.confidence || 0,
+      pattern_name: detectedPattern?.pattern_type || 'unknown',
+      canonical_examples: detectionResult.canonical_examples || []
+    };
   }
 }
 
