@@ -1072,6 +1072,240 @@ def validate_location_format(current_user):
         }), 500
 
 
+@template_bp.route('/format-evolution', methods=['GET'])
+@token_required
+def get_format_evolution_history(current_user):
+    """
+    Get format evolution history for user's templates
+    
+    Query parameters:
+    - template_id: Filter by specific template (optional)
+    - status: 'pending', 'approved', 'rejected', 'all' (default: 'pending')
+    - limit: Number of results to return (default: 20)
+    """
+    try:
+        from models import LocationFormatHistory, WarehouseTemplate
+        
+        template_id = request.args.get('template_id', type=int)
+        status = request.args.get('status', 'pending')
+        limit = min(int(request.args.get('limit', 20)), 100)
+        
+        # Build query
+        query = LocationFormatHistory.query.join(WarehouseTemplate).filter(
+            WarehouseTemplate.created_by == current_user.id,
+            WarehouseTemplate.is_active == True
+        )
+        
+        # Filter by template if specified
+        if template_id:
+            query = query.filter(LocationFormatHistory.warehouse_template_id == template_id)
+        
+        # Filter by status
+        if status == 'pending':
+            query = query.filter(
+                LocationFormatHistory.user_confirmed == False,
+                LocationFormatHistory.reviewed_at.is_(None)
+            )
+        elif status == 'approved':
+            query = query.filter(
+                LocationFormatHistory.user_confirmed == True,
+                LocationFormatHistory.applied == True
+            )
+        elif status == 'rejected':
+            query = query.filter(
+                LocationFormatHistory.user_confirmed == False,
+                LocationFormatHistory.reviewed_at.is_not(None)
+            )
+        # 'all' - no additional filter
+        
+        # Order by detection date (newest first) and apply limit
+        evolutions = query.order_by(
+            LocationFormatHistory.detected_at.desc()
+        ).limit(limit).all()
+        
+        # Get summary statistics
+        stats = {
+            'total_evolutions': LocationFormatHistory.query.join(WarehouseTemplate).filter(
+                WarehouseTemplate.created_by == current_user.id
+            ).count(),
+            'pending_evolutions': LocationFormatHistory.query.join(WarehouseTemplate).filter(
+                WarehouseTemplate.created_by == current_user.id,
+                LocationFormatHistory.user_confirmed == False,
+                LocationFormatHistory.reviewed_at.is_(None)
+            ).count()
+        }
+        
+        return jsonify({
+            'evolutions': [evolution.to_dict() for evolution in evolutions],
+            'stats': stats,
+            'query_info': {
+                'template_id': template_id,
+                'status': status,
+                'limit': limit,
+                'results_count': len(evolutions)
+            }
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Failed to get format evolution history: {e}")
+        return jsonify({
+            'error': 'Failed to get format evolution history',
+            'details': str(e)
+        }), 500
+
+
+@template_bp.route('/format-evolution/<int:evolution_id>/review', methods=['POST'])
+@token_required
+def review_format_evolution(current_user, evolution_id):
+    """
+    Review and approve/reject a format evolution
+    
+    Expected JSON payload:
+    {
+        "approved": true/false,
+        "notes": "Optional user notes"
+    }
+    """
+    try:
+        from models import LocationFormatHistory, WarehouseTemplate
+        from format_evolution_tracker import FormatEvolutionTracker
+        
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'JSON payload required'}), 400
+        
+        approved = data.get('approved')
+        if approved is None:
+            return jsonify({'error': 'approved field is required'}), 400
+        
+        # Get the evolution record
+        evolution = LocationFormatHistory.query.get_or_404(evolution_id)
+        
+        # Check ownership - user must own the template
+        if evolution.warehouse_template.created_by != current_user.id:
+            return jsonify({'error': 'Access denied to this format evolution'}), 403
+        
+        # Check if already reviewed
+        if evolution.reviewed_at is not None:
+            return jsonify({
+                'error': 'This format evolution has already been reviewed',
+                'reviewed_at': evolution.reviewed_at.isoformat(),
+                'reviewer': evolution.reviewer.username if evolution.reviewer else None
+            }), 409
+        
+        # Apply the review decision
+        tracker = FormatEvolutionTracker(evolution.warehouse_template)
+        success = tracker.apply_evolution(evolution_id, current_user.id, bool(approved))
+        
+        if not success:
+            return jsonify({'error': 'Failed to apply evolution decision'}), 500
+        
+        # Log the action
+        action = 'approved' if approved else 'rejected'
+        current_app.logger.info(f"User {current_user.id} {action} format evolution {evolution_id}")
+        
+        # Refresh the evolution object to get updated data
+        db.session.refresh(evolution)
+        
+        response_data = {
+            'message': f'Format evolution {action} successfully',
+            'evolution': evolution.to_dict(),
+            'action': action
+        }
+        
+        # If approved and applied, include updated template info
+        if approved and evolution.applied:
+            response_data['template_updated'] = True
+            response_data['new_format'] = evolution.warehouse_template.get_location_format_config()
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Failed to review format evolution {evolution_id}: {e}")
+        return jsonify({
+            'error': 'Failed to review format evolution',
+            'details': str(e)
+        }), 500
+
+
+@template_bp.route('/format-evolution/check', methods=['POST'])
+@token_required
+def check_format_evolution(current_user):
+    """
+    Manually trigger format evolution check on location examples
+    
+    This is useful for testing or when users want to preview potential
+    evolution before it's detected during inventory upload.
+    
+    Expected JSON payload:
+    {
+        "template_id": 123,
+        "location_examples": ["010A", "325B", "RECV-01", ...]
+    }
+    """
+    try:
+        from models import WarehouseTemplate
+        from format_evolution_tracker import FormatEvolutionTracker
+        
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'JSON payload required'}), 400
+        
+        template_id = data.get('template_id')
+        location_examples = data.get('location_examples', [])
+        
+        if not template_id:
+            return jsonify({'error': 'template_id is required'}), 400
+        
+        if not location_examples or not isinstance(location_examples, list):
+            return jsonify({'error': 'location_examples must be a non-empty list'}), 400
+        
+        # Get the template
+        template = WarehouseTemplate.query.get_or_404(template_id)
+        
+        # Check ownership
+        if template.created_by != current_user.id:
+            return jsonify({'error': 'Access denied to this template'}), 403
+        
+        # Run evolution check
+        tracker = FormatEvolutionTracker(template, evolution_threshold=0.6)  # Lower threshold for manual check
+        candidates = tracker.check_for_evolution(location_examples)
+        
+        # Format response
+        evolution_preview = []
+        for candidate in candidates:
+            evolution_preview.append({
+                'change_type': candidate.change_type,
+                'description': candidate.change_description,
+                'confidence_score': candidate.confidence_score,
+                'affected_count': candidate.affected_count,
+                'new_pattern_type': candidate.new_pattern_type,
+                'sample_locations': candidate.sample_locations[:5]  # Show first 5
+            })
+        
+        return jsonify({
+            'template_id': template_id,
+            'template_name': template.name,
+            'current_format': template.get_location_format_config(),
+            'evolution_candidates': evolution_preview,
+            'candidates_found': len(candidates),
+            'analysis_info': {
+                'location_count': len(location_examples),
+                'evolution_threshold': 0.6
+            }
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Failed to check format evolution: {e}")
+        return jsonify({
+            'error': 'Failed to check format evolution',
+            'details': str(e)
+        }), 500
+
+
 # Register error handlers
 @template_bp.errorhandler(404)
 def template_not_found(error):

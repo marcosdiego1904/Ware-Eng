@@ -732,6 +732,134 @@ class WarehouseTemplate(db.Model):
             'is_active': self.is_active
         }
 
+
+class LocationFormatHistory(db.Model):
+    """
+    Format evolution tracking for Smart Configuration system
+    Monitors and logs changes to location format patterns over time
+    """
+    __tablename__ = 'location_format_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    warehouse_template_id = db.Column(db.Integer, db.ForeignKey('warehouse_template.id'), nullable=False)
+    
+    # Format change tracking
+    original_format = db.Column(db.Text)  # JSON of previous format configuration
+    new_format = db.Column(db.Text)       # JSON of detected new format configuration
+    detected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    confidence_score = db.Column(db.Float, nullable=False)  # Confidence of new pattern detection
+    
+    # User interaction
+    user_confirmed = db.Column(db.Boolean, default=False)  # User approved the change
+    applied = db.Column(db.Boolean, default=False)         # Change was applied to template
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # User who reviewed
+    reviewed_at = db.Column(db.DateTime)
+    
+    # Supporting data
+    sample_locations = db.Column(db.Text)  # JSON array of sample locations that triggered detection
+    trigger_report_id = db.Column(db.Integer, db.ForeignKey('analysis_report.id'))  # Report that triggered detection
+    
+    # Evolution metadata
+    pattern_change_type = db.Column(db.String(50))  # 'new_pattern', 'format_drift', 'special_locations'
+    affected_location_count = db.Column(db.Integer, default=0)  # How many locations matched the new pattern
+    
+    # Relationships
+    warehouse_template = db.relationship('WarehouseTemplate', backref='format_history')
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by])
+    
+    def get_original_format(self):
+        """Parse original format JSON string into dict"""
+        try:
+            return json.loads(self.original_format) if self.original_format else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_original_format(self, format_dict):
+        """Set original format from dict to JSON string"""
+        self.original_format = json.dumps(format_dict) if format_dict else None
+    
+    def get_new_format(self):
+        """Parse new format JSON string into dict"""
+        try:
+            return json.loads(self.new_format) if self.new_format else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_new_format(self, format_dict):
+        """Set new format from dict to JSON string"""
+        self.new_format = json.dumps(format_dict) if format_dict else None
+    
+    def get_sample_locations(self):
+        """Parse sample locations JSON string into list"""
+        try:
+            return json.loads(self.sample_locations) if self.sample_locations else []
+        except json.JSONDecodeError:
+            return []
+    
+    def set_sample_locations(self, locations_list):
+        """Set sample locations from list to JSON string"""
+        self.sample_locations = json.dumps(locations_list) if locations_list else None
+    
+    def confirm_change(self, user_id):
+        """Confirm the format evolution and apply it to the template"""
+        self.user_confirmed = True
+        self.reviewed_by = user_id
+        self.reviewed_at = datetime.utcnow()
+        
+        # Apply the new format to the warehouse template
+        if self.warehouse_template and not self.applied:
+            new_format = self.get_new_format()
+            if new_format:
+                self.warehouse_template.set_location_format_config(new_format)
+                self.warehouse_template.format_confidence = self.confidence_score
+                self.applied = True
+    
+    def reject_change(self, user_id):
+        """Reject the format evolution"""
+        self.user_confirmed = False
+        self.reviewed_by = user_id
+        self.reviewed_at = datetime.utcnow()
+        # applied remains False
+    
+    def is_pending(self):
+        """Check if this evolution is pending user review"""
+        return not self.user_confirmed and self.reviewed_at is None
+    
+    def get_change_summary(self):
+        """Get human-readable summary of the format change"""
+        original = self.get_original_format()
+        new = self.get_new_format()
+        
+        original_pattern = original.get('pattern_type', 'Unknown')
+        new_pattern = new.get('pattern_type', 'Unknown')
+        
+        if original_pattern != new_pattern:
+            return f"Pattern change: {original_pattern} → {new_pattern}"
+        else:
+            return f"Format refinement in {new_pattern} pattern"
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'warehouse_template_id': self.warehouse_template_id,
+            'template_name': self.warehouse_template.name if self.warehouse_template else None,
+            'original_format': self.get_original_format(),
+            'new_format': self.get_new_format(),
+            'detected_at': self.detected_at.isoformat(),
+            'confidence_score': self.confidence_score,
+            'user_confirmed': self.user_confirmed,
+            'applied': self.applied,
+            'reviewed_by': self.reviewed_by,
+            'reviewer_name': self.reviewer.username if self.reviewer else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'sample_locations': self.get_sample_locations(),
+            'pattern_change_type': self.pattern_change_type,
+            'affected_location_count': self.affected_location_count,
+            'change_summary': self.get_change_summary(),
+            'is_pending': self.is_pending()
+        }
+
+
 # ==== ENHANCED EXISTING MODELS ====
 
 # Extend Anomaly model to include rule relationship

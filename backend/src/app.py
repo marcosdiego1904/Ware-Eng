@@ -1154,6 +1154,146 @@ def create_analysis_report(current_user):
         else:
             print(f"[WARNING] 'creation_date' column not found after mapping!")
         
+        # ===== SMART CONFIGURATION INTEGRATION =====
+        # Apply location format normalization using Smart Configuration system
+        try:
+            # Get warehouse template if warehouse_id is provided
+            warehouse_template = None
+            if warehouse_id:
+                from models import WarehouseTemplate, WarehouseConfig
+                
+                # Try to get template from warehouse config
+                warehouse_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+                if warehouse_config and warehouse_config.template_id:
+                    warehouse_template = WarehouseTemplate.query.get(warehouse_config.template_id)
+                    print(f"[SMART_CONFIG] Found template for warehouse {warehouse_id}: {warehouse_template.name}")
+                
+                # If no template found via config, try to find template directly
+                if not warehouse_template:
+                    warehouse_template = WarehouseTemplate.query.filter_by(
+                        created_by=current_user.id,
+                        is_active=True
+                    ).first()  # Get user's most recent template as fallback
+            
+            # Apply Smart Configuration format normalization if template has format config
+            if warehouse_template and warehouse_template.location_format_config:
+                location_column = 'location_code'  # Assuming this is the standard column name after mapping
+                
+                if location_column in inventory_df.columns:
+                    print(f"[SMART_CONFIG] Applying format normalization using template: {warehouse_template.name}")
+                    
+                    # Import the smart format system
+                    from smart_format_detector import SmartFormatDetector
+                    from location_service import get_canonical_service
+                    
+                    format_config = warehouse_template.get_location_format_config()
+                    canonical_service = get_canonical_service()
+                    
+                    # Track conversion statistics
+                    conversion_stats = {
+                        'total_locations': len(inventory_df),
+                        'converted_locations': 0,
+                        'unchanged_locations': 0,
+                        'failed_conversions': 0,
+                        'pattern_type': format_config.get('pattern_type', 'unknown')
+                    }
+                    
+                    # Apply format conversion to each location
+                    converted_locations = []
+                    for idx, location_code in inventory_df[location_column].items():
+                        try:
+                            if pd.isna(location_code) or location_code == '':
+                                converted_locations.append(location_code)
+                                conversion_stats['unchanged_locations'] += 1
+                                continue
+                            
+                            # Convert to string and clean
+                            original_location = str(location_code).strip().upper()
+                            
+                            # Use canonical service for conversion (it now supports format configs)
+                            canonical_location = canonical_service.to_canonical(original_location)
+                            
+                            converted_locations.append(canonical_location)
+                            
+                            if canonical_location != original_location:
+                                conversion_stats['converted_locations'] += 1
+                            else:
+                                conversion_stats['unchanged_locations'] += 1
+                                
+                        except Exception as loc_error:
+                            print(f"[SMART_CONFIG] WARNING: Failed to convert location '{location_code}': {loc_error}")
+                            converted_locations.append(str(location_code))  # Keep original on error
+                            conversion_stats['failed_conversions'] += 1
+                    
+                    # Apply converted locations back to dataframe
+                    inventory_df[location_column] = converted_locations
+                    
+                    # Log conversion results
+                    print(f"[SMART_CONFIG] Location format conversion completed:")
+                    print(f"  Pattern Type: {conversion_stats['pattern_type']}")
+                    print(f"  Total: {conversion_stats['total_locations']:,}")
+                    print(f"  Converted: {conversion_stats['converted_locations']:,}")
+                    print(f"  Unchanged: {conversion_stats['unchanged_locations']:,}")
+                    print(f"  Failed: {conversion_stats['failed_conversions']:,}")
+                    
+                    # Store conversion stats for later use in analysis report
+                    inventory_df.attrs['smart_config_stats'] = conversion_stats
+                    
+                    # ===== FORMAT EVOLUTION TRACKING =====
+                    # Check for format evolution during upload
+                    try:
+                        from format_evolution_tracker import FormatEvolutionTracker
+                        
+                        print(f"[SMART_CONFIG] Checking for format evolution...")
+                        evolution_tracker = FormatEvolutionTracker(warehouse_template)
+                        
+                        # Get original location codes for evolution analysis
+                        original_locations = [str(loc).strip().upper() for loc in inventory_df[location_column].dropna() if str(loc).strip()]
+                        
+                        # Check for evolution patterns
+                        evolution_candidates = evolution_tracker.check_for_evolution(original_locations)
+                        
+                        if evolution_candidates:
+                            print(f"[SMART_CONFIG] Found {len(evolution_candidates)} format evolution candidates")
+                            for candidate in evolution_candidates:
+                                print(f"  - {candidate.change_type}: {candidate.change_description} "
+                                     f"({candidate.confidence_score:.1%} confidence, {candidate.affected_count} locations)")
+                            
+                            # Store evolution info for later display to user
+                            inventory_df.attrs['format_evolution'] = {
+                                'candidates_found': len(evolution_candidates),
+                                'evolution_summary': [
+                                    {
+                                        'type': c.change_type,
+                                        'description': c.change_description,
+                                        'confidence': c.confidence_score,
+                                        'affected_count': c.affected_count
+                                    } for c in evolution_candidates
+                                ]
+                            }
+                        else:
+                            print(f"[SMART_CONFIG] No format evolution detected")
+                            
+                    except ImportError:
+                        print(f"[SMART_CONFIG] Format evolution tracking not available")
+                    except Exception as evolution_error:
+                        print(f"[SMART_CONFIG] WARNING: Format evolution tracking failed: {evolution_error}")
+                        # Don't fail the entire process if evolution tracking has issues
+                    
+                else:
+                    print(f"[SMART_CONFIG] WARNING: Location column '{location_column}' not found in inventory data")
+                    print(f"[SMART_CONFIG] Available columns: {list(inventory_df.columns)}")
+            
+            else:
+                print(f"[SMART_CONFIG] No format configuration found - using standard location processing")
+                if warehouse_template:
+                    print(f"[SMART_CONFIG] Template '{warehouse_template.name}' has no location format config")
+                
+        except Exception as smart_config_error:
+            print(f"[SMART_CONFIG] ERROR: Smart Configuration failed: {smart_config_error}")
+            print(f"[SMART_CONFIG] Falling back to standard location processing...")
+            # Continue with standard processing - don't fail the entire analysis
+        
         # Load enhanced engine if not already loaded
         load_enhanced_engine()
         
