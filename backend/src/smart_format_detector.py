@@ -237,6 +237,68 @@ class StandardAnalyzer(PatternAnalyzer):
         )
 
 
+class LetterPrefixedAnalyzer(PatternAnalyzer):
+    """
+    Analyzes letter-prefixed patterns like "A01-R02-P15"
+    """
+    
+    def __init__(self):
+        super().__init__(PatternType.STANDARD)  # Use STANDARD type for letter-prefixed
+    
+    def analyze(self, examples: List[str]) -> Optional[FormatPattern]:
+        """
+        Detect letter-prefixed patterns: A01-R02-P15, B05-R01-P03, etc.
+        """
+        # Pattern for letter-prefixed segments with optional level
+        patterns = [
+            r'^([A-Z]\d{1,2})-([A-Z]\d{1,2})-([A-Z]\d{1,3})([A-Z])?$',  # With level: A01-R02-P15A
+            r'^([A-Z]\d{1,2})-([A-Z]\d{1,2})-([A-Z]\d{1,3})$'            # Without level: A01-R02-P15
+        ]
+        
+        best_matches = []
+        best_pattern = None
+        
+        for pattern in patterns:
+            matched_examples = []
+            for example in examples:
+                if re.match(pattern, example.strip().upper()):
+                    matched_examples.append(example.strip().upper())
+            
+            if len(matched_examples) > len(best_matches):
+                best_matches = matched_examples
+                best_pattern = pattern
+        
+        if not best_matches:
+            return None
+        
+        confidence = self._calculate_confidence(examples, best_matches)
+        
+        if confidence < 0.6:  # Slightly lower threshold for letter-prefixed
+            return None
+        
+        # Determine if pattern has level suffix
+        has_level = r'([A-Z])\)?\$$' in best_pattern
+        
+        return FormatPattern(
+            pattern_type=self.pattern_type,
+            regex_pattern=best_pattern,
+            canonical_converter="{aisle_prefix}{aisle:02d}-{rack_prefix}{rack:02d}-{position_prefix}{position:02d}" + ("{level}" if has_level else ""),
+            confidence=confidence,
+            examples=best_matches[:5],
+            components={
+                'aisle_prefix': True,
+                'rack_prefix': True,
+                'position_prefix': True,
+                'aisle_digits': 2,
+                'rack_digits': 2,
+                'position_digits': 2,
+                'level_format': 'single_letter' if has_level else 'none',
+                'separators': ['-', '-']
+            },
+            description=f"Letter-prefixed format (A##-R##-P##) detected with {confidence:.1%} confidence"
+        )
+
+
 class CompactAnalyzer(PatternAnalyzer):
     """
     Analyzes compact patterns like "01A01A"
@@ -333,6 +395,7 @@ class SmartFormatDetector:
         self.analyzers = [
             SpecialAnalyzer(),      # Check special locations first
             StandardAnalyzer(),     # Then standard canonical format
+            LetterPrefixedAnalyzer(), # Then letter-prefixed format (A01-R02-P15)
             PositionLevelAnalyzer(), # Then position+level
             CompactAnalyzer()       # Finally compact format
         ]
