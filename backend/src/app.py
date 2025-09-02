@@ -1786,6 +1786,14 @@ except ImportError as e:
 # except ImportError as e:
 #     print(f"Admin Migration API not available: {e}")
 
+# Register Debug Format API (for Smart Configuration troubleshooting)
+try:
+    from debug_format_endpoint import debug_format_bp
+    app.register_blueprint(debug_format_bp)
+    print("Debug Format API registered successfully")
+except ImportError as e:
+    print(f"Debug Format API not available: {e}")
+
 # ==================== PRODUCTION DATABASE DIAGNOSTIC ====================
 
 def run_warehouse_migration():
