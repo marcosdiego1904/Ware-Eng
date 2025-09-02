@@ -11,7 +11,8 @@ import {
   AlertTriangle, 
   Zap,
   ArrowRight,
-  Eye
+  Eye,
+  Wrench
 } from 'lucide-react';
 
 interface FormatDetectionResult {
@@ -28,6 +29,7 @@ interface FormatDetectionDisplayProps {
   error: string | null;
   originalExamples: string[];
   onAcceptFormat: () => void;
+  onManualConfiguration: () => void;
 }
 
 export function FormatDetectionDisplay({
@@ -35,7 +37,8 @@ export function FormatDetectionDisplay({
   loading,
   error,
   originalExamples,
-  onAcceptFormat
+  onAcceptFormat,
+  onManualConfiguration
 }: FormatDetectionDisplayProps) {
   if (loading) {
     return (
