@@ -36,6 +36,7 @@ class PatternType(Enum):
     POSITION_LEVEL = "position_level"  # "010A" - position + level
     COMPACT = "compact"            # "01A01A" - aisle + level + position + level
     SPECIAL = "special"            # "RECV-01", "STAGE-01" - special areas
+    ZONE = "zone"                  # "ZONE-A-001", "AREA-B-125" - zone-based locations
     UNKNOWN = "unknown"            # Unparseable patterns
 
 
@@ -385,6 +386,76 @@ class SpecialAnalyzer(PatternAnalyzer):
         )
 
 
+class ZoneAnalyzer(PatternAnalyzer):
+    """
+    Analyzes zone-based location patterns like "ZONE-A-001", "SECTOR-B-125"
+    """
+    
+    def __init__(self):
+        super().__init__(PatternType.ZONE)
+    
+    def analyze(self, examples: List[str]) -> Optional[FormatPattern]:
+        """
+        Detect zone-based location patterns
+        """
+        # Zone patterns: ZONE-A-001, SECTOR-B-125, AREA-C-075, etc.
+        patterns = [
+            r'^(ZONE|AREA|SECTOR|REGION|BLOCK)-([A-Z])-(\d{3})$',
+            r'^(ZONE|AREA|SECTOR|REGION|BLOCK)-([A-Z])(\d{2,3})$',
+            r'^([A-Z]{3,6})-([A-Z])-(\d{2,3})$'
+        ]
+        
+        matched_examples = []
+        best_pattern = None
+        best_pattern_matches = 0
+        
+        for pattern in patterns:
+            current_matches = []
+            for example in examples:
+                clean_example = example.strip().upper()
+                if re.match(pattern, clean_example):
+                    current_matches.append(clean_example)
+            
+            if len(current_matches) > best_pattern_matches:
+                best_pattern_matches = len(current_matches)
+                matched_examples = current_matches
+                best_pattern = pattern
+        
+        if not matched_examples:
+            return None
+        
+        confidence = self._calculate_confidence(examples, matched_examples)
+        
+        if confidence < 0.7:  # Moderate threshold for zone patterns
+            return None
+        
+        # Extract components for canonical conversion
+        sample_match = re.match(best_pattern, matched_examples[0])
+        if sample_match:
+            groups = sample_match.groups()
+            zone_prefix = groups[0]
+            zone_letter = groups[1]
+            zone_number = groups[2]
+        else:
+            zone_prefix = "ZONE"
+            zone_letter = "A"
+            zone_number = "001"
+        
+        return FormatPattern(
+            pattern_type=self.pattern_type,
+            regex_pattern=best_pattern,
+            canonical_converter=f"{zone_prefix}-{{zone_letter}}-{{zone_number:03d}}",
+            confidence=confidence,
+            examples=matched_examples,
+            components={
+                'zone_prefix': zone_prefix,
+                'zone_letter_format': 'single_letter',
+                'zone_number_format': f'{len(zone_number)}_digit'
+            },
+            description=f"Zone-based location format detected with {confidence:.1%} confidence"
+        )
+
+
 class SmartFormatDetector:
     """
     Main format detection engine that analyzes location examples and 
@@ -394,6 +465,7 @@ class SmartFormatDetector:
     def __init__(self):
         self.analyzers = [
             SpecialAnalyzer(),      # Check special locations first
+            ZoneAnalyzer(),         # Then zone-based patterns (ZONE-A-001)
             StandardAnalyzer(),     # Then standard canonical format
             LetterPrefixedAnalyzer(), # Then letter-prefixed format (A01-R02-P15)
             PositionLevelAnalyzer(), # Then position+level
