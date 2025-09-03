@@ -105,7 +105,7 @@ export function LocationFormatStep({
 
   // Auto-apply high-confidence detections
   useEffect(() => {
-    if (detectionResult && detectionResult.detected && detectionResult.confidence >= 90) {
+    if (detectionResult && detectionResult.detected && detectionResult.confidence >= 90 && detectionResult.format_config) {
       const exampleList = parseExamples(examples);
       onFormatDetected(detectionResult.format_config, detectionResult.pattern_name, exampleList);
     }
