@@ -1108,6 +1108,16 @@ def create_analysis_report(current_user):
     if warehouse_id:
         print(f"[APPLY_TEMPLATE] Using explicit warehouse: {warehouse_id}")
     
+    # NEW: Get explicit template_id from form data (from applied template)
+    template_id = request.form.get('template_id')
+    if template_id:
+        print(f"[APPLY_TEMPLATE] Using explicit template: {template_id}")
+        try:
+            template_id = int(template_id)
+        except ValueError:
+            print(f"[APPLY_TEMPLATE] Invalid template_id format: {template_id}")
+            template_id = None
+    
     # Validate inventory file
     is_valid, error_msg = validate_file_upload(inventory_file)
     if not is_valid:
@@ -1162,30 +1172,49 @@ def create_analysis_report(current_user):
             if warehouse_id:
                 from models import WarehouseTemplate, WarehouseConfig
                 
-                # Try to get template from warehouse config
-                warehouse_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
-                if warehouse_config:
-                    # Look for templates that were created from this warehouse config
-                    all_user_templates = WarehouseTemplate.query.filter_by(
-                        created_by=current_user.id,
-                        is_active=True
-                    ).all()  # Get ALL user's active templates for debugging
-                    
-                    print(f"[SMART_CONFIG] Found {len(all_user_templates)} active templates for user {current_user.username}:")
-                    for idx, tmpl in enumerate(all_user_templates):
-                        has_format_config = bool(tmpl.location_format_config)
-                        based_on_current_warehouse = tmpl.based_on_config_id == warehouse_config.id
-                        marker = " ★ APPLIED" if based_on_current_warehouse else ""
-                        print(f"  {idx+1}. '{tmpl.name}' (ID: {tmpl.id}) - Format Config: {has_format_config}, Based on warehouse: {tmpl.based_on_config_id}{marker}")
-                        if has_format_config:
-                            print(f"     Created: {tmpl.created_at}, Updated: {tmpl.updated_at}")
-                    
-                    # PRIORITY 1: Look for template based on this warehouse config WITH format configuration
+                # PRIORITY 0: Use explicit template_id if provided (from applied template)
+                if template_id:
                     warehouse_template = WarehouseTemplate.query.filter_by(
-                        based_on_config_id=warehouse_config.id,
+                        id=template_id,
                         created_by=current_user.id,
                         is_active=True
-                    ).filter(WarehouseTemplate.location_format_config.isnot(None)).first()
+                    ).first()
+                    
+                    if warehouse_template:
+                        has_format_config = bool(warehouse_template.location_format_config)
+                        print(f"[SMART_CONFIG] Using EXPLICIT applied template: {warehouse_template.name} (ID: {template_id}) - Format Config: {has_format_config}")
+                    else:
+                        print(f"[SMART_CONFIG] Explicit template {template_id} not found or not accessible")
+                        warehouse_template = None
+                else:
+                    warehouse_template = None
+                
+                # FALLBACK: If no explicit template or template not found, use warehouse config approach
+                if not warehouse_template:
+                    # Try to get template from warehouse config
+                    warehouse_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+                    if warehouse_config:
+                        # Look for templates that were created from this warehouse config
+                        all_user_templates = WarehouseTemplate.query.filter_by(
+                            created_by=current_user.id,
+                            is_active=True
+                        ).all()  # Get ALL user's active templates for debugging
+                        
+                        print(f"[SMART_CONFIG] Found {len(all_user_templates)} active templates for user {current_user.username}:")
+                        for idx, tmpl in enumerate(all_user_templates):
+                            has_format_config = bool(tmpl.location_format_config)
+                            based_on_current_warehouse = tmpl.based_on_config_id == warehouse_config.id
+                            marker = " ★ APPLIED" if based_on_current_warehouse else ""
+                            print(f"  {idx+1}. '{tmpl.name}' (ID: {tmpl.id}) - Format Config: {has_format_config}, Based on warehouse: {tmpl.based_on_config_id}{marker}")
+                            if has_format_config:
+                                print(f"     Created: {tmpl.created_at}, Updated: {tmpl.updated_at}")
+                    
+                        # PRIORITY 1: Look for template based on this warehouse config WITH format configuration
+                        warehouse_template = WarehouseTemplate.query.filter_by(
+                            based_on_config_id=warehouse_config.id,
+                            created_by=current_user.id,
+                            is_active=True
+                        ).filter(WarehouseTemplate.location_format_config.isnot(None)).first()
                     
                     if warehouse_template:
                         print(f"[SMART_CONFIG] Using APPLIED template WITH format config: {warehouse_template.name} (based on warehouse {warehouse_id})")
