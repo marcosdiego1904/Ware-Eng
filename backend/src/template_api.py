@@ -4,6 +4,7 @@ Handles warehouse template creation, sharing, and application
 """
 
 import json
+import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy import and_, or_
@@ -12,6 +13,9 @@ from database import db
 from models import WarehouseTemplate, WarehouseConfig, Location
 from core_models import User
 from virtual_template_integration import get_virtual_template_manager
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Create the template API blueprint
 template_bp = Blueprint('template_api', __name__, url_prefix='/api/v1/templates')
