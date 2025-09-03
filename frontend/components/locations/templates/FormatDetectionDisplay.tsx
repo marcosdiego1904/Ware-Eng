@@ -166,22 +166,26 @@ export function FormatDetectionDisplay({
           <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
             <CheckCircle className="h-5 w-5 text-green-600" />
             <span className="text-green-700 font-medium">
-              {result.confidence >= 90 ? "Perfect match - automatically applied!" : "Looks perfect"}
+              {result.confidence >= 95 ? "Perfect match!" : 
+               result.confidence >= 80 ? "Excellent match!" : "Good match"}
             </span>
           </div>
         </div>
         
-        {/* Conditional Accept Button - only show for medium confidence */}
-        {result.confidence < 90 && (
-          <div className="flex justify-center pt-3">
-            <Button 
-              onClick={onAcceptFormat}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Use this format
-            </Button>
-          </div>
-        )}
+        {/* Accept Button - always show but with different styling based on confidence */}
+        <div className="flex justify-center pt-3">
+          <Button 
+            onClick={onAcceptFormat}
+            className={
+              result.confidence >= 95 
+                ? "bg-green-600 hover:bg-green-700 text-white font-medium" 
+                : "bg-blue-600 hover:bg-blue-700"
+            }
+            size={result.confidence >= 95 ? "lg" : "default"}
+          >
+            {result.confidence >= 95 ? "✓ Use this perfect format" : "Use this format"}
+          </Button>
+        </div>
         
         {result.confidence < 80 && (
           <Alert>

@@ -103,13 +103,8 @@ export function LocationFormatStep({
     detectFormat(exampleList);
   }, [debouncedExamples, parseExamples, detectFormat]);
 
-  // Auto-apply high-confidence detections
-  useEffect(() => {
-    if (detectionResult && detectionResult.detected && detectionResult.confidence >= 90 && detectionResult.format_config) {
-      const exampleList = parseExamples(examples);
-      onFormatDetected(detectionResult.format_config, detectionResult.pattern_name, exampleList);
-    }
-  }, [detectionResult, examples, parseExamples, onFormatDetected]);
+  // Note: Auto-application removed to prevent wizard state conflicts
+  // High-confidence detections are now handled through improved UI feedback
 
   const handleExamplesChange = (value: string) => {
     setExamples(value);

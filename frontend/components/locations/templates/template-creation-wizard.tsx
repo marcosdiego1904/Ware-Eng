@@ -262,11 +262,27 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
   };
 
   const handleFormatDetected = (formatConfig: object, patternName: string, examples: string[]) => {
-    updateTemplateData({
-      format_config: formatConfig,
-      format_pattern_name: patternName,
-      format_examples: examples
-    });
+    try {
+      // Validate the format config before applying
+      if (!formatConfig || !patternName || !examples || examples.length === 0) {
+        console.warn('Invalid format detection data received:', { formatConfig, patternName, examples });
+        return;
+      }
+
+      updateTemplateData({
+        format_config: formatConfig,
+        format_pattern_name: patternName,
+        format_examples: examples
+      });
+      
+      // Optional: Auto-advance to next step only if user explicitly clicks the button
+      // This prevents automatic navigation that might cause state conflicts
+      console.log('Format detected and applied:', patternName);
+      
+    } catch (error) {
+      console.error('Error applying format detection:', error);
+      setError('Failed to apply format configuration. Please try again.');
+    }
   };
 
   const handleManualConfiguration = () => {
