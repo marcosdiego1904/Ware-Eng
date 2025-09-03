@@ -492,6 +492,8 @@ class SmartFormatDetector:
                 'recommendations': List[str]
             }
         """
+        logger.info("[SMART_CONFIG] Starting format detection for %d examples: %s", 
+                   len(examples), str(examples[:3]) + ('...' if len(examples) > 3 else ''))
         if not examples:
             return self._empty_result("No examples provided")
         
@@ -537,9 +539,10 @@ class SmartFormatDetector:
             'input_examples': cleaned_examples
         }
         
-        logger.info("Format detection completed. Best pattern: %s (confidence: %.2f)",
+        logger.info("[SMART_CONFIG] Detection completed. Pattern: %s, Confidence: %.1f%%, Canonical examples: %d",
                    best_pattern.pattern_type.value if best_pattern else "None",
-                   best_pattern.confidence if best_pattern else 0.0)
+                   best_pattern.confidence if best_pattern else 0.0,
+                   len(canonical_examples))
         
         return result
     
@@ -767,9 +770,11 @@ class SmartFormatDetector:
             Complete format configuration ready for database storage
         """
         if not detection_result.get('detected_pattern'):
+            logger.info("[SMART_CONFIG] No pattern detected, returning empty format config")
             return {}
         
         pattern = detection_result['detected_pattern']
+        logger.info("[SMART_CONFIG] Creating format config for pattern: %s", pattern['pattern_type'])
         
         config = {
             'pattern_type': pattern['pattern_type'],

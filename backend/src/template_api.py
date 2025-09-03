@@ -923,6 +923,10 @@ def detect_location_format(current_user):
         if not cleaned_examples:
             return jsonify({'error': 'No valid location examples provided'}), 400
         
+        # Log the API request
+        logger.info("[SMART_CONFIG] Format detection API called with %d examples by user %s", 
+                   len(cleaned_examples), current_user.username)
+        
         # Import and use SmartFormatDetector
         from smart_format_detector import SmartFormatDetector
         

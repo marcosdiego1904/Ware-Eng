@@ -1164,22 +1164,39 @@ def create_analysis_report(current_user):
                 
                 # Try to get template from warehouse config
                 warehouse_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
-                if warehouse_config and warehouse_config.template_id:
-                    warehouse_template = WarehouseTemplate.query.get(warehouse_config.template_id)
-                    print(f"[SMART_CONFIG] Found template for warehouse {warehouse_id}: {warehouse_template.name}")
+                if warehouse_config:
+                    # Look for templates that were created from this warehouse config
+                    warehouse_template = WarehouseTemplate.query.filter_by(
+                        created_by=current_user.id,
+                        is_active=True
+                    ).first()  # Get user's most recent active template
+                    
+                    if warehouse_template:
+                        print(f"[SMART_CONFIG] Found template for warehouse {warehouse_id}: {warehouse_template.name}")
+                    else:
+                        print(f"[SMART_CONFIG] No active template found for warehouse {warehouse_id}")
+                else:
+                    print(f"[SMART_CONFIG] No warehouse config found for warehouse_id: {warehouse_id}")
                 
-                # If no template found via config, try to find template directly
+                # If still no template found, try to find any template by the user
                 if not warehouse_template:
                     warehouse_template = WarehouseTemplate.query.filter_by(
                         created_by=current_user.id,
                         is_active=True
-                    ).first()  # Get user's most recent template as fallback
+                    ).first()
+                    if warehouse_template:
+                        print(f"[SMART_CONFIG] Using fallback template: {warehouse_template.name}")
             
             # Apply Smart Configuration format normalization if template has format config
             if warehouse_template and warehouse_template.location_format_config:
-                location_column = 'location_code'  # Assuming this is the standard column name after mapping
+                # Try to find the location column (could be 'location', 'location_code', etc.)
+                location_column = None
+                for col_name in ['location', 'location_code', 'Location', 'LOCATION']:
+                    if col_name in inventory_df.columns:
+                        location_column = col_name
+                        break
                 
-                if location_column in inventory_df.columns:
+                if location_column:
                     print(f"[SMART_CONFIG] Applying format normalization using template: {warehouse_template.name}")
                     
                     # Import the smart format system
@@ -1281,8 +1298,9 @@ def create_analysis_report(current_user):
                         # Don't fail the entire process if evolution tracking has issues
                     
                 else:
-                    print(f"[SMART_CONFIG] WARNING: Location column '{location_column}' not found in inventory data")
+                    print(f"[SMART_CONFIG] WARNING: No location column found in inventory data")
                     print(f"[SMART_CONFIG] Available columns: {list(inventory_df.columns)}")
+                    print(f"[SMART_CONFIG] Expected one of: location, location_code, Location, LOCATION")
             
             else:
                 print(f"[SMART_CONFIG] No format configuration found - using standard location processing")
