@@ -100,6 +100,12 @@ def create_standalone_template(current_user):
         industry = data.get('industry', '')
         tags = data.get('tags', [])
         
+        # Smart Location Format Configuration
+        format_config = data.get('format_config')
+        format_pattern_name = data.get('format_pattern_name', '')
+        format_examples = data.get('format_examples', [])
+        format_confidence = 1.0  # Set high confidence for user-configured formats
+        
         # Legacy compatibility
         is_public = (visibility == 'PUBLIC')
         
@@ -131,6 +137,11 @@ def create_standalone_template(current_user):
             receiving_areas_template=json.dumps(receiving_areas) if receiving_areas else None,
             staging_areas_template=json.dumps(staging_areas) if staging_areas else None,
             dock_areas_template=json.dumps(dock_areas) if dock_areas else None,
+            # Smart Location Format Configuration
+            location_format_config=json.dumps(format_config) if format_config else None,
+            format_confidence=format_confidence if format_config else 0.0,
+            format_examples=json.dumps(format_examples) if format_examples else None,
+            format_learned_date=datetime.utcnow() if format_config else None,
             # Privacy settings
             is_public=is_public,
             created_by=current_user.id,
