@@ -103,6 +103,14 @@ export function LocationFormatStep({
     detectFormat(exampleList);
   }, [debouncedExamples, parseExamples, detectFormat]);
 
+  // Auto-apply high-confidence detections
+  useEffect(() => {
+    if (detectionResult && detectionResult.detected && detectionResult.confidence >= 90) {
+      const exampleList = parseExamples(examples);
+      onFormatDetected(detectionResult.format_config, detectionResult.pattern_name, exampleList);
+    }
+  }, [detectionResult, examples, parseExamples, onFormatDetected]);
+
   const handleExamplesChange = (value: string) => {
     setExamples(value);
   };

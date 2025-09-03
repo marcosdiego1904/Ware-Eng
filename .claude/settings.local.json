@@ -51,7 +51,9 @@
       "WebFetch(domain:localhost)",
       "Bash(copy virtual_invalid_location_evaluator_fixed.py virtual_invalid_location_evaluator.py)",
       "Bash(cp:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(start http://localhost:3000)",
+      "Bash(del test_zone_fix.py)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",

@@ -590,10 +590,36 @@ class SmartFormatDetector:
                         canonical = f"{int(aisle):02d}-01-{int(position):03d}{level}"
                         canonical_examples.append(f"{example} -> {canonical}")
             
+            elif pattern.pattern_type == PatternType.ZONE:
+                # Convert zone patterns to canonical format
+                for example in examples[:5]:
+                    # Try to match zone patterns like "ZONE-A-001", "AREA-B-125", etc.
+                    zone_patterns = [
+                        r'^(ZONE|AREA|SECTOR|REGION|BLOCK)-([A-Z])-(\d{2,3})$',
+                        r'^([A-Z]{3,6})-([A-Z])-(\d{2,3})$'
+                    ]
+                    
+                    matched = False
+                    for zone_pattern in zone_patterns:
+                        match = re.match(zone_pattern, example)
+                        if match:
+                            zone_prefix, zone_letter, zone_number = match.groups()
+                            # Convert to canonical: zone becomes aisle, letter becomes rack, number becomes position
+                            zone_hash = hash(zone_prefix) % 99 + 1  # Convert zone name to aisle number
+                            rack_num = ord(zone_letter) - ord('A') + 1  # Convert letter to rack number
+                            canonical = f"{zone_hash:02d}-{rack_num:02d}-{int(zone_number):03d}A"
+                            canonical_examples.append(canonical)
+                            matched = True
+                            break
+                    
+                    if not matched:
+                        # Fallback: treat as special location
+                        canonical_examples.append(example)
+            
             elif pattern.pattern_type == PatternType.SPECIAL:
                 # Special locations pass through
                 for example in examples[:5]:
-                    canonical_examples.append(f"{example} -> {example}")
+                    canonical_examples.append(example)
         
         except Exception as e:
             logger.error("Failed to generate canonical examples: %s", e)
