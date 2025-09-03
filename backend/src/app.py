@@ -1174,28 +1174,50 @@ def create_analysis_report(current_user):
                     print(f"[SMART_CONFIG] Found {len(all_user_templates)} active templates for user {current_user.username}:")
                     for idx, tmpl in enumerate(all_user_templates):
                         has_format_config = bool(tmpl.location_format_config)
-                        print(f"  {idx+1}. '{tmpl.name}' (ID: {tmpl.id}) - Format Config: {has_format_config}")
+                        based_on_current_warehouse = tmpl.based_on_config_id == warehouse_config.id
+                        marker = " ★ APPLIED" if based_on_current_warehouse else ""
+                        print(f"  {idx+1}. '{tmpl.name}' (ID: {tmpl.id}) - Format Config: {has_format_config}, Based on warehouse: {tmpl.based_on_config_id}{marker}")
                         if has_format_config:
                             print(f"     Created: {tmpl.created_at}, Updated: {tmpl.updated_at}")
                     
-                    # Look for template with format configuration first
+                    # PRIORITY 1: Look for template based on this warehouse config WITH format configuration
                     warehouse_template = WarehouseTemplate.query.filter_by(
+                        based_on_config_id=warehouse_config.id,
                         created_by=current_user.id,
                         is_active=True
                     ).filter(WarehouseTemplate.location_format_config.isnot(None)).first()
                     
                     if warehouse_template:
-                        print(f"[SMART_CONFIG] Using template WITH format config: {warehouse_template.name}")
+                        print(f"[SMART_CONFIG] Using APPLIED template WITH format config: {warehouse_template.name} (based on warehouse {warehouse_id})")
                     else:
-                        # Fallback to any active template
+                        # PRIORITY 2: Look for template based on this warehouse config (even without format config)
                         warehouse_template = WarehouseTemplate.query.filter_by(
+                            based_on_config_id=warehouse_config.id,
                             created_by=current_user.id,
                             is_active=True
                         ).first()
+                        
                         if warehouse_template:
-                            print(f"[SMART_CONFIG] Using fallback template (NO format config): {warehouse_template.name}")
+                            print(f"[SMART_CONFIG] Using APPLIED template (NO format config): {warehouse_template.name} (based on warehouse {warehouse_id})")
                         else:
-                            print(f"[SMART_CONFIG] No active template found for warehouse {warehouse_id}")
+                            # PRIORITY 3: Fallback to ANY template with format configuration
+                            warehouse_template = WarehouseTemplate.query.filter_by(
+                                created_by=current_user.id,
+                                is_active=True
+                            ).filter(WarehouseTemplate.location_format_config.isnot(None)).first()
+                            
+                            if warehouse_template:
+                                print(f"[SMART_CONFIG] Using fallback template WITH format config: {warehouse_template.name} (NOT from applied warehouse)")
+                            else:
+                                # PRIORITY 4: Last resort - any active template  
+                                warehouse_template = WarehouseTemplate.query.filter_by(
+                                    created_by=current_user.id,
+                                    is_active=True
+                                ).first()
+                                if warehouse_template:
+                                    print(f"[SMART_CONFIG] Using last resort template: {warehouse_template.name} (NO format config, NOT from applied warehouse)")
+                                else:
+                                    print(f"[SMART_CONFIG] No active template found for warehouse {warehouse_id}")
                 else:
                     print(f"[SMART_CONFIG] No warehouse config found for warehouse_id: {warehouse_id}")
                 
