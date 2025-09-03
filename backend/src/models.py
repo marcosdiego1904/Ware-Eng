@@ -438,6 +438,12 @@ class WarehouseConfig(db.Model):
     position_numbering_start = db.Column(db.Integer, default=1)
     position_numbering_split = db.Column(db.Boolean, default=True)  # Split per rack (0-49, 50-99)
     
+    # Smart Configuration System - Location format detection and management
+    location_format_config = db.Column(db.Text)  # JSON configuration from SmartFormatDetector
+    format_confidence = db.Column(db.Float, default=0.0)      # Detection confidence score (0.0-1.0)
+    format_examples = db.Column(db.Text)         # JSON array of original user examples
+    format_learned_date = db.Column(db.DateTime) # When format was detected/learned
+    
     # Metadata
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -517,6 +523,12 @@ class WarehouseConfig(db.Model):
             'position_numbering_split': self.position_numbering_split,
             'total_storage_locations': self.calculate_total_storage_locations(),
             'total_capacity': self.calculate_total_capacity(),
+            # Smart Configuration System fields
+            'location_format_config': json.loads(self.location_format_config) if self.location_format_config else None,
+            'format_confidence': self.format_confidence,
+            'format_examples': json.loads(self.format_examples) if self.format_examples else None,
+            'format_learned_date': self.format_learned_date.isoformat() if self.format_learned_date else None,
+            # Metadata
             'created_by': self.created_by,
             'creator_username': self.creator.username if self.creator else None,
             'created_at': self.created_at.isoformat(),
