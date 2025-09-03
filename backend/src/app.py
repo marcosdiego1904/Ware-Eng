@@ -2243,6 +2243,94 @@ def fix_remove_default_warehouse():
             'message': 'Failed to remove DEFAULT warehouse'
         }), 500
 
+@app.route('/api/v1/fix/smart-config-migration', methods=['POST'])
+def fix_smart_config_migration():
+    """Apply Smart Configuration migration to warehouse_config table"""
+    try:
+        from sqlalchemy import text, inspect
+        
+        # Check if we're using PostgreSQL
+        engine_name = db.engine.dialect.name
+        if engine_name != 'postgresql':
+            return jsonify({
+                'success': False,
+                'error': f'This migration is for PostgreSQL only. Current database: {engine_name}',
+                'message': 'Migration skipped - not PostgreSQL'
+            }), 400
+        
+        # Check current schema
+        inspector = inspect(db.engine)
+        columns = inspector.get_columns('warehouse_config')
+        column_names = [col['name'] for col in columns]
+        
+        smart_config_columns = [
+            'location_format_config',
+            'format_confidence', 
+            'format_examples',
+            'format_learned_date'
+        ]
+        
+        missing_columns = [col for col in smart_config_columns if col not in column_names]
+        
+        if not missing_columns:
+            return jsonify({
+                'success': True,
+                'message': 'All Smart Configuration columns already exist!',
+                'existing_columns': column_names,
+                'migration_needed': False
+            })
+        
+        # Apply the migration
+        migration_sql = [
+            "ALTER TABLE warehouse_config ADD COLUMN IF NOT EXISTS location_format_config TEXT",
+            "ALTER TABLE warehouse_config ADD COLUMN IF NOT EXISTS format_confidence FLOAT DEFAULT 0.0",
+            "ALTER TABLE warehouse_config ADD COLUMN IF NOT EXISTS format_examples TEXT",
+            "ALTER TABLE warehouse_config ADD COLUMN IF NOT EXISTS format_learned_date TIMESTAMP",
+            "UPDATE warehouse_config SET format_confidence = 0.0 WHERE format_confidence IS NULL"
+        ]
+        
+        executed_statements = []
+        for sql_statement in migration_sql:
+            try:
+                db.session.execute(text(sql_statement))
+                executed_statements.append(sql_statement)
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    executed_statements.append(f"SKIPPED: {sql_statement} (already exists)")
+                else:
+                    raise e
+        
+        db.session.commit()
+        
+        # Verify the migration
+        updated_columns = inspector.get_columns('warehouse_config')
+        updated_column_names = [col['name'] for col in updated_columns]
+        
+        verification = {}
+        for col in smart_config_columns:
+            verification[col] = "EXISTS" if col in updated_column_names else "MISSING"
+        
+        return jsonify({
+            'success': True,
+            'message': 'Smart Configuration migration completed successfully!',
+            'missing_columns_before': missing_columns,
+            'executed_statements': executed_statements,
+            'verification': verification,
+            'next_steps': [
+                'Restart application servers',
+                'Run: python apply_smart_config_to_warehouse.py DEFAULT',
+                'Test rule engine - location 006B should now be VALID'
+            ]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Smart Configuration migration failed'
+        }), 500
+
 @app.route('/api/v1/debug/user-testf-locations', methods=['GET'])
 def debug_user_testf_locations():
     """Check what locations exist in USER_TESTF warehouse"""
