@@ -137,36 +137,47 @@ class StandaloneTemplateAPI {
    * Detect location format from examples
    */
   async detectLocationFormat(examples: string[]): Promise<FormatDetectionResult> {
-    const response = await api.post('/templates/detect-format', {
-      examples: examples.filter(ex => ex.trim().length > 0)
-    });
-    
-    const backendData = response.data;
-    
-    // Transform backend response to frontend interface
-    const detectionResult = backendData.detection_result || {};
-    const detectedPattern = detectionResult.detected_pattern;
-    
-    // Debug logging to help troubleshoot
-    const rawConfidence = detectionResult.confidence || 0;
-    const convertedConfidence = Math.round(rawConfidence * 100);
-    
-    console.log('Smart Configuration API Response:', {
-      success: backendData.success,
-      hasDetectionResult: !!backendData.detection_result,
-      hasDetectedPattern: !!detectedPattern,
-      patternType: detectedPattern?.pattern_type,
-      confidenceRaw: rawConfidence,
-      confidenceDisplay: convertedConfidence + '%'
-    });
-    
-    return {
-      detected: backendData.success && !!detectedPattern,
-      format_config: backendData.format_config,
-      confidence: Math.round((detectionResult.confidence || 0) * 100), // Convert 0-1 to 0-100
-      pattern_name: detectedPattern?.pattern_type || 'unknown',
-      canonical_examples: detectionResult.canonical_examples || []
-    };
+    try {
+      console.log('Calling format detection API with examples:', examples);
+      const response = await api.post('/templates/detect-format', {
+        examples: examples.filter(ex => ex.trim().length > 0)
+      });
+      
+      console.log('Format detection API response status:', response.status);
+      console.log('Format detection API response data:', response.data);
+      
+      const backendData = response.data;
+      
+      // Transform backend response to frontend interface
+      const detectionResult = backendData.detection_result || {};
+      const detectedPattern = detectionResult.detected_pattern;
+      
+      // Debug logging to help troubleshoot
+      const rawConfidence = detectionResult.confidence || 0;
+      const convertedConfidence = Math.round(rawConfidence * 100);
+      
+      console.log('Smart Configuration API Response:', {
+        success: backendData.success,
+        hasDetectionResult: !!backendData.detection_result,
+        hasDetectedPattern: !!detectedPattern,
+        patternType: detectedPattern?.pattern_type,
+        confidenceRaw: rawConfidence,
+        confidenceDisplay: convertedConfidence + '%'
+      });
+      
+      return {
+        detected: backendData.success && !!detectedPattern,
+        format_config: backendData.format_config,
+        confidence: Math.round((detectionResult.confidence || 0) * 100), // Convert 0-1 to 0-100
+        pattern_name: detectedPattern?.pattern_type || 'unknown',
+        canonical_examples: detectionResult.canonical_examples || []
+      };
+    } catch (error: any) {
+      console.error('Format detection API error:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      throw error;
+    }
   }
 }
 
