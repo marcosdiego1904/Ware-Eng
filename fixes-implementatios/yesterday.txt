@@ -24,52 +24,50 @@
 ● The explicit template ID approach should work even with the indentation issue, because it hits the first priority check before reaching the problematic code section.
 
 
-here are the results Incoming request: POST /api/v1/reports
-  Origin: https://ware-eng.vercel.app
-  Authorization: Present
-  Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryg7t0LSppxAyOW345
-  User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb...
-  [APPLY_TEMPLATE] Using explicit warehouse: DEFAULT
-  [ANALYSIS] Processing inventory_report.xlsx (300 records)
-  [SMART_CONFIG] Found 19 active templates for user marcos9:
-    1. 'hola1' (ID: 70) - Format Config: False, Based on warehouse: None
-    2. 'E-commerce Fulfillment' (ID: 71) - Format Config: False, Based on warehouse: None
-    3. 's2' (ID: 72) - Format Config: False, Based on warehouse: None
-    4. 's3' (ID: 73) - Format Config: False, Based on warehouse: None
-    5. 'Small Warehouse12' (ID: 74) - Format Config: False, Based on warehouse: None
-    6. 'tpob3' (ID: 58) - Format Config: False, Based on warehouse: None
-    7. 's5' (ID: 75) - Format Config: True, Based on warehouse: None
-       Created: 2025-09-03 03:31:42.148320, Updated: 2025-09-03 03:31:45.035292
-    8. 'stress1' (ID: 65) - Format Config: False, Based on warehouse: None
-    9. 'fak5' (ID: 55) - Format Config: False, Based on warehouse: None
-    10. 'Standard Distribution33' (ID: 60) - Format Config: False, Based on warehouse: None
-    11. 'fake3' (ID: 54) - Format Config: False, Based on warehouse: None
-    12. 'fak6' (ID: 56) - Format Config: False, Based on warehouse: None
-    13. 'probando1' (ID: 57) - Format Config: False, Based on warehouse: None
-    14. 'behTest' (ID: 63) - Format Config: False, Based on warehouse: None
-    15. 'estre3.1' (ID: 66) - Format Config: False, Based on warehouse: None
-    16. 'Estres4' (ID: 67) - Format Config: False, Based on warehouse: None
-    17. 'Estres5' (ID: 68) - Format Config: False, Based on warehouse: None
-    18. 'Estres6 2000' (ID: 69) - Format Config: False, Based on warehouse: None
-    19. 's6' (ID: 76) - Format Config: True, Based on warehouse: None
-       Created: 2025-09-03 03:36:57.458658, Updated: 2025-09-03 03:39:08.738624
-  [SMART_CONFIG] Using fallback template WITH format config: s5 (NOT from applied warehouse)
-  [SMART_CONFIG] Applying format normalization using template: s5
-  [SMART_CONFIG] Location format conversion completed:
-    Pattern Type: position_level
-    Total: 300
-    Converted: 0
-    Unchanged: 300
-    Failed: 0
-  [SMART_CONFIG] Checking for format evolution...
-  [SMART_CONFIG] Found 1 format evolution candidates
-    - special_locations: New special location patterns detected (28 locations) (80.0% confidence, 28 locations)
-  [ANALYSIS] Starting rule engine evaluation...
-  [LOG_FILTER] Noise reduction active - verbose debug output suppressed
-  [ENGINE] Starting enhanced warehouse intelligence engine...
-  [APPLY_TEMPLATE_FIX] Using explicit warehouse_id: DEFAULT
-  [RULE_ENGINE_DEBUG] ==================== RULE EVALUATION START ====================
-  [RULE_ENGINE_DEBUG] Evaluating 7 rules on 300 records
-  [RULE_ENGINE_DEBUG] Available columns: ['location', 'pallet_id', 'description', 'Category', 'Brand', 'Quantity', 'Unit_Cost', 'Total_Value', 'receipt_number', 'creation_date', 'Expiry_Date', 'Zone']
-  [RULE_ENGINE_DEBUG] Sample locations: ['006B', '007A', '008D', '013C', '032E', '035A', '039A', '046D', '048B', '061C']
-  [RULE_ENGINE_DEBUG] Using explicit warehouse context: {'warehouse_id': 'DEFAULT', 'detection_method': 'explicit_template', 'confidence': 'EXPLICIT', 'co the template that is acutal applied in the app is s6
+here are the results Incoming request: Incoming request: POST /api/v1/reports
+Origin: https://ware-eng.vercel.app
+Authorization: Present
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryBcgR27dEBQABBQZA
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb...
+[APPLY_TEMPLATE] Using explicit warehouse: DEFAULT
+[ANALYSIS] Processing inventory_report.xlsx (300 records)
+[SMART_CONFIG] Found 21 active templates for user marcos9:
+  1. 'hola1' (ID: 70) - Format Config: False, Based on warehouse: None
+  2. 's7' (ID: 77) - Format Config: False, Based on warehouse: None
+  3. 's8' (ID: 78) - Format Config: True, Based on warehouse: None
+     Created: 2025-09-03 13:03:37.481326, Updated: 2025-09-03 13:03:40.612247
+  4. 'E-commerce Fulfillment' (ID: 71) - Format Config: False, Based on warehouse: None
+  5. 's2' (ID: 72) - Format Config: False, Based on warehouse: None
+  6. 's3' (ID: 73) - Format Config: False, Based on warehouse: None
+  7. 'Small Warehouse12' (ID: 74) - Format Config: False, Based on warehouse: None
+  8. 'tpob3' (ID: 58) - Format Config: False, Based on warehouse: None
+  9. 's5' (ID: 75) - Format Config: True, Based on warehouse: None
+     Created: 2025-09-03 03:31:42.148320, Updated: 2025-09-03 03:31:45.035292
+  10. 'stress1' (ID: 65) - Format Config: False, Based on warehouse: None
+  11. 'fak5' (ID: 55) - Format Config: False, Based on warehouse: None
+  12. 'Standard Distribution33' (ID: 60) - Format Config: False, Based on warehouse: None
+  13. 'fake3' (ID: 54) - Format Config: False, Based on warehouse: None
+  14. 'fak6' (ID: 56) - Format Config: False, Based on warehouse: None
+  15. 'probando1' (ID: 57) - Format Config: False, Based on warehouse: None
+  16. 'behTest' (ID: 63) - Format Config: False, Based on warehouse: None
+  17. 'estre3.1' (ID: 66) - Format Config: False, Based on warehouse: None
+  18. 'Estres4' (ID: 67) - Format Config: False, Based on warehouse: None
+  19. 'Estres5' (ID: 68) - Format Config: False, Based on warehouse: None
+  20. 'Estres6 2000' (ID: 69) - Format Config: False, Based on warehouse: None
+  21. 's6' (ID: 76) - Format Config: True, Based on warehouse: None
+     Created: 2025-09-03 03:36:57.458658, Updated: 2025-09-03 03:39:08.738624
+[SMART_CONFIG] Using fallback template WITH format config: s8 (NOT from applied warehouse)
+[SMART_CONFIG] Applying format normalization using template: s8
+[SMART_CONFIG] Location format conversion completed:
+  Pattern Type: position_level
+  Total: 300
+  Converted: 0
+  Unchanged: 300
+  Failed: 0
+[SMART_CONFIG] Checking for format evolution...
+[SMART_CONFIG] Found 1 format evolution candidates
+  - special_locations: New special location patterns detected (28 locations) (80.0% confidence, 28 locations)
+[ANALYSIS] Starting rule engine evaluation...
+[LOG_FILTER] Noise reduction active - verbose debug output suppressed
+[ENGINE] Starting enhanced warehouse intelligence engine...
+[APPLY_TEMPLATE_FIX] Using explicit warehouse_id: DEFAULT  the actual template Im using is s8

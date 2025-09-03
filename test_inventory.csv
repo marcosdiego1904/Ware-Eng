@@ -1,0 +1,8 @@
+Location,Pallet_ID,Product,Quantity
+010A,PAL001,Widget A,100
+325B,PAL002,Widget B,150
+245D,PAL003,Widget C,200
+156C,PAL004,Widget D,75
+087A,PAL005,Widget E,300
+RECV-01,PAL006,Incoming,50
+STAGE-02,PAL007,Outgoing,25
