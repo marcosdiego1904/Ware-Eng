@@ -51,11 +51,17 @@ class VirtualLocationEngine:
                     'default_pallet_capacity': 1,
                     'receiving_areas': [{'code': 'RECV-01', 'capacity': 10}, ...],
                     'staging_areas': [{'code': 'STAGE-01', 'capacity': 5}, ...],
-                    'dock_areas': [{'code': 'DOCK-01', 'capacity': 2}, ...]
+                    'dock_areas': [{'code': 'DOCK-01', 'capacity': 2}, ...],
+                    'location_format_config': {...}  # NEW: Smart Configuration format
                 }
         """
         self.config = warehouse_config
         self.warehouse_id = warehouse_config.get('warehouse_id', 'DEFAULT')
+        
+        # NEW: Smart Configuration format patterns
+        self.location_format_config = warehouse_config.get('location_format_config')
+        if self.location_format_config:
+            print(f"[VIRTUAL_ENGINE] Smart Configuration format detected: {self.location_format_config.get('pattern_type', 'unknown')}")
         
         # Define the mathematical location universe
         self.storage_space = {
@@ -72,6 +78,8 @@ class VirtualLocationEngine:
         print(f"  Storage universe: {len(self.storage_space['aisles'])} aisles × {len(self.storage_space['racks'])} racks × {len(self.storage_space['positions'])} positions × {len(self.storage_space['levels'])} levels")
         print(f"  Total storage locations: {self.calculate_total_storage_locations():,}")
         print(f"  Special areas: {len(self.special_areas)}")
+        if self.location_format_config:
+            print(f"  Smart Configuration: {self.location_format_config.get('pattern_type', 'unknown')} format enabled")
     
     def _get_rack_identifiers(self, config: Dict[str, Any]) -> List[str]:
         """Generate rack identifiers (A, B, C, etc.) based on warehouse config"""
@@ -181,6 +189,61 @@ class VirtualLocationEngine:
     def _validate_storage_location(self, location_code: str) -> Tuple[bool, str]:
         """
         Validate storage location against warehouse dimensions
+        
+        NEW: Smart Configuration Integration - supports custom format patterns
+        """
+        # PRIORITY 1: Use Smart Configuration format if available
+        if self.location_format_config:
+            return self._validate_with_smart_configuration(location_code)
+        
+        # PRIORITY 2: Fall back to standard canonical formats
+        return self._validate_standard_formats(location_code)
+    
+    def _validate_with_smart_configuration(self, location_code: str) -> Tuple[bool, str]:
+        """
+        Validate location using Smart Configuration format patterns
+        """
+        pattern_type = self.location_format_config.get('pattern_type')
+        pattern_regex = self.location_format_config.get('regex_pattern')
+        
+        if not pattern_regex:
+            return False, "Smart Configuration pattern not available"
+        
+        # Apply the Smart Configuration pattern
+        import re
+        match = re.match(pattern_regex, location_code)
+        if not match:
+            return False, f"Location '{location_code}' doesn't match {pattern_type} format pattern"
+        
+        # For position_level format (like 010A), validate against warehouse bounds
+        if pattern_type == 'position_level':
+            try:
+                groups = match.groups()
+                if len(groups) >= 2:
+                    position_str = groups[0]
+                    level = groups[1].upper()
+                    
+                    position = int(position_str)
+                    
+                    # Validate position and level against warehouse dimensions
+                    if position < 1 or position > max(self.storage_space['positions']):
+                        return False, f"Position {position} exceeds warehouse capacity (1-{max(self.storage_space['positions'])})"
+                    
+                    if level not in self.storage_space['levels']:
+                        return False, f"Level '{level}' not valid (available: {', '.join(self.storage_space['levels'])})"
+                    
+                    return True, f"Valid {pattern_type} location"
+                    
+            except (ValueError, IndexError) as e:
+                return False, f"Error parsing {pattern_type} location: {e}"
+        
+        # For other format types, assume valid if pattern matches
+        # (Additional format types can be implemented here)
+        return True, f"Valid {pattern_type} location"
+    
+    def _validate_standard_formats(self, location_code: str) -> Tuple[bool, str]:
+        """
+        Validate using standard canonical formats (fallback)
         
         Expected formats:
         - 01-A01-A (aisle-rack+position-level)
