@@ -17,13 +17,21 @@ sys.path.insert(0, src_dir)
 
 def identify_production_warehouse():
     """Identify which warehouse needs Smart Configuration"""
+    
+    # Force PostgreSQL connection
+    os.environ['DATABASE_URL'] = "postgresql://ware_eng_db_user:fqvKdOGZEt1CGIeLF4J1AG8RTtCv0Zdu@dpg-d23244fg127c73fga10g-a.ohio-postgres.render.com/ware_eng_db"
+    
     print("=" * 60)
     print("IDENTIFYING PRODUCTION WAREHOUSE FOR SMART CONFIGURATION")
     print("=" * 60)
+    print(f"Using DATABASE_URL: PostgreSQL")
     
     try:
         from app import app, db
         from models import WarehouseConfig
+        
+        # Force the app to use PostgreSQL by overriding the config
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
         
         with app.app_context():
             print(f"Database engine: {db.engine.dialect.name}")

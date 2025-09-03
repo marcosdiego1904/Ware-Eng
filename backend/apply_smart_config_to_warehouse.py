@@ -19,6 +19,9 @@ sys.path.insert(0, src_dir)
 def apply_smart_config_to_warehouse(warehouse_id, examples=None):
     """Apply Smart Configuration to a specific warehouse"""
     
+    # Force PostgreSQL connection
+    os.environ['DATABASE_URL'] = "postgresql://ware_eng_db_user:fqvKdOGZEt1CGIeLF4J1AG8RTtCv0Zdu@dpg-d23244fg127c73fga10g-a.ohio-postgres.render.com/ware_eng_db"
+    
     if examples is None:
         # Use the examples that match your inventory format
         examples = ['006B', '010A', '325B', '245D', '156C', '087A', '123A', '999B']
@@ -28,11 +31,15 @@ def apply_smart_config_to_warehouse(warehouse_id, examples=None):
     print("=" * 70)
     print(f"Target warehouse: {warehouse_id}")
     print(f"Format examples: {examples}")
+    print(f"Using DATABASE_URL: PostgreSQL")
     
     try:
         from app import app, db
         from models import WarehouseConfig
         from smart_format_detector import SmartFormatDetector
+        
+        # Force the app to use PostgreSQL by overriding the config
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
         
         with app.app_context():
             # Get the target warehouse

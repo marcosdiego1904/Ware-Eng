@@ -53,7 +53,9 @@
       "Bash(cp:*)",
       "Bash(npm run:*)",
       "Bash(start http://localhost:3000)",
-      "Bash(del test_zone_fix.py)"
+      "Bash(del test_zone_fix.py)",
+      "Bash(set DATABASE_URL=postgresql://ware_eng_db_user:fqvKdOGZEt1CGIeLF4J1AG8RTtCv0Zdu@dpg-d23244fg127c73fga10g-a.ohio-postgres.render.com/ware_eng_db)",
+      "Bash(set)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",
