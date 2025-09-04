@@ -152,6 +152,27 @@ class VirtualTemplateManager:
         config.dock_areas = template.dock_areas_template
         config.updated_at = datetime.utcnow()
         
+        # CRITICAL FIX: Copy smart configuration format fields from template
+        # This ensures virtual engines have access to format configuration
+        if template.location_format_config:
+            print(f"[VIRTUAL_TEMPLATE] Copying format configuration from template to warehouse config")
+            config.location_format_config = template.location_format_config
+            config.format_confidence = template.format_confidence
+            config.format_examples = template.format_examples
+            config.format_learned_date = template.format_learned_date
+            
+            # Parse and log format details for debugging
+            try:
+                import json
+                format_config = json.loads(template.location_format_config)
+                pattern_type = format_config.get('pattern_type', 'unknown')
+                confidence = template.format_confidence or 0
+                print(f"[VIRTUAL_TEMPLATE] Format: {pattern_type} (confidence: {confidence:.1%})")
+            except (json.JSONDecodeError, TypeError):
+                print(f"[VIRTUAL_TEMPLATE] Format configuration copied (parsing failed)")
+        else:
+            print(f"[VIRTUAL_TEMPLATE] No format configuration to copy from template")
+        
         # Apply any customizations
         if customizations:
             for field, value in customizations.items():

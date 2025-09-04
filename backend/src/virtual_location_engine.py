@@ -225,10 +225,13 @@ class VirtualLocationEngine:
                     
                     position = int(position_str)
                     
-                    # Validate position and level against warehouse dimensions
-                    if position < 1 or position > max(self.storage_space['positions']):
-                        return False, f"Position {position} exceeds warehouse capacity (1-{max(self.storage_space['positions'])})"
+                    # CRITICAL FIX: For position_level format, position is a direct identifier, not rack position
+                    # The position number can be any valid number (e.g., 001-999), not limited by rack capacity
+                    # Only validate that it's a reasonable position number and level exists
+                    if position < 1 or position > 999:  # Allow positions 1-999 for position_level format
+                        return False, f"Position {position} out of reasonable range (1-999)"
                     
+                    # Validate level against available levels (A, B, C, D, etc.)
                     if level not in self.storage_space['levels']:
                         return False, f"Level '{level}' not valid (available: {', '.join(self.storage_space['levels'])})"
                     

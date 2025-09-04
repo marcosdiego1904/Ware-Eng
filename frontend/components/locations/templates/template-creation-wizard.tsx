@@ -174,6 +174,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
+  const [formatApplied, setFormatApplied] = useState(false);
 
   const totalSteps = 5;
   const progress = (currentStep / totalSteps) * 100;
@@ -350,7 +351,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
         return templateData.num_aisles > 0 && templateData.racks_per_aisle > 0 &&
                templateData.positions_per_rack > 0 && templateData.levels_per_position > 0;
       case 3:
-        return true; // Location format is optional (can be configured manually or skipped)
+        return formatApplied; // CRITICAL: Format configuration must be applied to proceed
       case 4:
         return true; // Special areas are optional
       case 5:
@@ -668,6 +669,7 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
     <LocationFormatStep
       onFormatDetected={handleFormatDetected}
       onManualConfiguration={handleManualConfiguration}
+      onFormatApplied={setFormatApplied}
       initialExamples=""
     />
   );
@@ -901,13 +903,21 @@ export function TemplateCreationWizard({ open, onClose, onTemplateCreated }: Tem
               </Button>
               
               {currentStep < totalSteps ? (
-                <Button
-                  onClick={() => setCurrentStep(Math.min(totalSteps, currentStep + 1))}
-                  disabled={!canProceed()}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4 ml-2" />
-                </Button>
+                <div className="flex flex-col items-end gap-2">
+                  <Button
+                    onClick={() => setCurrentStep(Math.min(totalSteps, currentStep + 1))}
+                    disabled={!canProceed()}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-2" />
+                  </Button>
+                  {currentStep === 3 && !formatApplied && (
+                    <div className="text-xs text-amber-600 flex items-center gap-1">
+                      <Info className="h-3 w-3" />
+                      Apply format configuration to continue
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Button 
                   onClick={handleSubmit} 

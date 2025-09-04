@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,8 @@ import {
   Zap,
   ArrowRight,
   Eye,
-  Wrench
+  Wrench,
+  Loader2
 } from 'lucide-react';
 
 interface FormatDetectionResult {
@@ -30,6 +31,7 @@ interface FormatDetectionDisplayProps {
   originalExamples: string[];
   onAcceptFormat: () => void;
   onManualConfiguration: () => void;
+  isApplied?: boolean;
 }
 
 export function FormatDetectionDisplay({
@@ -38,8 +40,21 @@ export function FormatDetectionDisplay({
   error,
   originalExamples,
   onAcceptFormat,
-  onManualConfiguration
+  onManualConfiguration,
+  isApplied = false
 }: FormatDetectionDisplayProps) {
+  const [isApplying, setIsApplying] = useState(false);
+  
+  const handleApplyFormat = () => {
+    setIsApplying(true);
+    // Call the callback immediately to update parent state
+    onAcceptFormat();
+    // Brief delay just for visual feedback
+    setTimeout(() => {
+      setIsApplying(false);
+    }, 500);
+  };
+
   if (loading) {
     return (
       <Card className="border-dashed">
@@ -70,12 +85,6 @@ export function FormatDetectionDisplay({
     return null;
   }
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-green-600';
-    if (confidence >= 60) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
   const getConfidenceBadgeVariant = (confidence: number) => {
     if (confidence >= 80) return 'default';
     if (confidence >= 60) return 'secondary';
@@ -83,48 +92,66 @@ export function FormatDetectionDisplay({
   };
 
   const renderDetectionSuccess = () => (
-    <Card className="border-green-200 bg-green-50/50">
+    <Card className={`transition-all duration-300 ${
+      isApplied 
+        ? "border-green-200 bg-green-50/50" 
+        : "border-blue-200 bg-blue-50/50"
+    }`}>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-green-700">
-          <CheckCircle className="h-5 w-5" />
-          Pattern detected: {result.pattern_name}
-        </CardTitle>
-        <CardDescription className="flex items-center gap-2">
-          <span>Confidence:</span>
+        <div className="flex items-center justify-between">
+          <CardTitle className={`flex items-center gap-2 ${
+            isApplied ? "text-green-700" : "text-blue-700"
+          }`}>
+            {isApplied ? (
+              <>
+                <CheckCircle className="h-5 w-5" />
+                Format Configuration Applied
+              </>
+            ) : (
+              <>
+                <Zap className="h-5 w-5" />
+                Pattern detected: {result.pattern_name}
+              </>
+            )}
+          </CardTitle>
           <Badge 
             variant={getConfidenceBadgeVariant(result.confidence)}
             className="font-medium"
           >
             {result.confidence}%
           </Badge>
+        </div>
+        <CardDescription className={isApplied ? "text-green-600" : "text-blue-600"}>
+          {isApplied 
+            ? "Your template is now configured with this location format pattern."
+            : "High-confidence format detection complete. Apply to configure your template."
+          }
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      
+      <CardContent className="space-y-6">
+        {/* Simplified Progress Indicator */}
         <Progress 
           value={result.confidence} 
           className="w-full h-2"
         />
         
-        {/* Before/After Examples */}
-        <div className="space-y-3">
-          <div className="text-sm font-medium text-green-700">
-            Conversion Preview
-          </div>
-          
+        {/* Condensed Before/After Examples (max 3 items) */}
+        {!isApplied && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
                 Your Examples
               </div>
               <div className="bg-white rounded-lg p-3 border">
-                {originalExamples.slice(0, 5).map((example, index) => (
+                {originalExamples.slice(0, 3).map((example, index) => (
                   <div key={index} className="font-mono text-sm py-1">
                     {example}
                   </div>
                 ))}
-                {originalExamples.length > 5 && (
+                {originalExamples.length > 3 && (
                   <div className="text-xs text-muted-foreground">
-                    +{originalExamples.length - 5} more...
+                    +{originalExamples.length - 3} more...
                   </div>
                 )}
               </div>
@@ -135,59 +162,54 @@ export function FormatDetectionDisplay({
                 Standardized Format
               </div>
               <div className="bg-white rounded-lg p-3 border">
-                {result.canonical_examples.slice(0, 5).map((example, index) => (
+                {result.canonical_examples.slice(0, 3).map((example, index) => (
                   <div key={index} className="font-mono text-sm py-1 text-green-700">
                     {example}
                   </div>
                 ))}
-                {result.canonical_examples.length > 5 && (
+                {result.canonical_examples.length > 3 && (
                   <div className="text-xs text-muted-foreground">
-                    +{result.canonical_examples.length - 5} more...
+                    +{result.canonical_examples.length - 3} more...
                   </div>
                 )}
               </div>
             </div>
           </div>
-          
-          {originalExamples.length > 0 && result.canonical_examples.length > 0 && (
-            <div className="flex items-center justify-center py-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Eye className="h-4 w-4" />
-                <ArrowRight className="h-4 w-4" />
-                <Zap className="h-4 w-4" />
-                <span>Automatically converted</span>
-              </div>
+        )}
+        
+        {/* Clean Action Button with State Management */}
+        <div className="flex justify-center pt-4">
+          {isApplied ? (
+            <div className="flex items-center gap-2 px-6 py-3 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <span className="text-green-700 font-medium">
+                Successfully Applied!
+              </span>
             </div>
+          ) : (
+            <Button 
+              onClick={handleApplyFormat}
+              disabled={isApplying}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-4 text-base"
+              size="lg"
+            >
+              {isApplying ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-5 w-5 mr-2" />
+                  Apply Format Configuration →
+                </>
+              )}
+            </Button>
           )}
         </div>
-
-        {/* Status Indicator */}
-        <div className="flex items-center justify-center gap-2 pt-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            <span className="text-green-700 font-medium">
-              {result.confidence >= 95 ? "Perfect match!" : 
-               result.confidence >= 80 ? "Excellent match!" : "Good match"}
-            </span>
-          </div>
-        </div>
         
-        {/* Accept Button - always show but with different styling based on confidence */}
-        <div className="flex justify-center pt-3">
-          <Button 
-            onClick={onAcceptFormat}
-            className={
-              result.confidence >= 95 
-                ? "bg-green-600 hover:bg-green-700 text-white font-medium" 
-                : "bg-blue-600 hover:bg-blue-700"
-            }
-            size={result.confidence >= 95 ? "lg" : "default"}
-          >
-            {result.confidence >= 95 ? "✓ Use this perfect format" : "Use this format"}
-          </Button>
-        </div>
-        
-        {result.confidence < 80 && (
+        {/* Low confidence warning - only show if not applied and confidence is low */}
+        {!isApplied && result.confidence < 80 && (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>

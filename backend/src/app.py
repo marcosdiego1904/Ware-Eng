@@ -1210,38 +1210,51 @@ def create_analysis_report(current_user):
                                 print(f"     Created: {tmpl.created_at}, Updated: {tmpl.updated_at}")
                     
                         # PRIORITY 1: Look for template based on this warehouse config WITH format configuration
+                        # FIX: Order by updated_at DESC to ensure consistent template selection across databases
                         warehouse_template = WarehouseTemplate.query.filter_by(
                             based_on_config_id=warehouse_config.id,
                             created_by=current_user.id,
                             is_active=True
-                        ).filter(WarehouseTemplate.location_format_config.isnot(None)).first()
+                        ).filter(WarehouseTemplate.location_format_config.isnot(None)).order_by(
+                            WarehouseTemplate.updated_at.desc()
+                        ).first()
                     
                     if warehouse_template:
                         print(f"[SMART_CONFIG] Using APPLIED template WITH format config: {warehouse_template.name} (based on warehouse {warehouse_id})")
                     else:
                         # PRIORITY 2: Look for template based on this warehouse config (even without format config)
+                        # FIX: Order by updated_at DESC to ensure consistent template selection across databases
                         warehouse_template = WarehouseTemplate.query.filter_by(
                             based_on_config_id=warehouse_config.id,
                             created_by=current_user.id,
                             is_active=True
+                        ).order_by(
+                            WarehouseTemplate.updated_at.desc()
                         ).first()
                         
                         if warehouse_template:
                             print(f"[SMART_CONFIG] Using APPLIED template (NO format config): {warehouse_template.name} (based on warehouse {warehouse_id})")
                         else:
                             # PRIORITY 3: Fallback to ANY template with format configuration
+                            # CRITICAL FIX: Order by updated_at DESC to select most recently updated template
+                            # This ensures 's12' (updated more recently) is selected over 's8'
                             warehouse_template = WarehouseTemplate.query.filter_by(
                                 created_by=current_user.id,
                                 is_active=True
-                            ).filter(WarehouseTemplate.location_format_config.isnot(None)).first()
+                            ).filter(WarehouseTemplate.location_format_config.isnot(None)).order_by(
+                                WarehouseTemplate.updated_at.desc()
+                            ).first()
                             
                             if warehouse_template:
                                 print(f"[SMART_CONFIG] Using fallback template WITH format config: {warehouse_template.name} (NOT from applied warehouse)")
                             else:
                                 # PRIORITY 4: Last resort - any active template  
+                                # FIX: Order by updated_at DESC to ensure consistent template selection
                                 warehouse_template = WarehouseTemplate.query.filter_by(
                                     created_by=current_user.id,
                                     is_active=True
+                                ).order_by(
+                                    WarehouseTemplate.updated_at.desc()
                                 ).first()
                                 if warehouse_template:
                                     print(f"[SMART_CONFIG] Using last resort template: {warehouse_template.name} (NO format config, NOT from applied warehouse)")
@@ -1251,10 +1264,13 @@ def create_analysis_report(current_user):
                     print(f"[SMART_CONFIG] No warehouse config found for warehouse_id: {warehouse_id}")
                 
                 # If still no template found, try to find any template by the user
+                # FIX: Order by updated_at DESC to ensure consistent template selection
                 if not warehouse_template:
                     warehouse_template = WarehouseTemplate.query.filter_by(
                         created_by=current_user.id,
                         is_active=True
+                    ).order_by(
+                        WarehouseTemplate.updated_at.desc()
                     ).first()
                     if warehouse_template:
                         print(f"[SMART_CONFIG] Using fallback template: {warehouse_template.name}")
@@ -1270,6 +1286,59 @@ def create_analysis_report(current_user):
                 
                 if location_column:
                     print(f"[SMART_CONFIG] Applying format normalization using template: {warehouse_template.name}")
+                    
+                    # CRITICAL FIX: Ensure WarehouseConfig exists with format configuration
+                    # This completes the data flow: Template → WarehouseConfig → Virtual Engine
+                    if warehouse_id:
+                        print(f"[SMART_CONFIG] Ensuring WarehouseConfig for warehouse {warehouse_id} has format configuration")
+                        
+                        warehouse_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+                        
+                        if not warehouse_config:
+                            # Create new WarehouseConfig with template configuration
+                            print(f"[SMART_CONFIG] Creating new WarehouseConfig for {warehouse_id}")
+                            warehouse_config = WarehouseConfig(
+                                warehouse_id=warehouse_id,
+                                warehouse_name=f"Auto-created from template {warehouse_template.name}",
+                                created_by=current_user.id
+                            )
+                            db.session.add(warehouse_config)
+                        else:
+                            print(f"[SMART_CONFIG] Updating existing WarehouseConfig for {warehouse_id}")
+                        
+                        # Copy template configuration to warehouse config
+                        warehouse_config.num_aisles = warehouse_template.num_aisles
+                        warehouse_config.racks_per_aisle = warehouse_template.racks_per_aisle
+                        warehouse_config.positions_per_rack = warehouse_template.positions_per_rack
+                        warehouse_config.levels_per_position = warehouse_template.levels_per_position
+                        warehouse_config.level_names = warehouse_template.level_names
+                        warehouse_config.default_pallet_capacity = warehouse_template.default_pallet_capacity
+                        warehouse_config.bidimensional_racks = warehouse_template.bidimensional_racks
+                        warehouse_config.receiving_areas = warehouse_template.receiving_areas_template
+                        warehouse_config.staging_areas = warehouse_template.staging_areas_template
+                        warehouse_config.dock_areas = warehouse_template.dock_areas_template
+                        
+                        # CRITICAL: Copy format configuration fields
+                        warehouse_config.location_format_config = warehouse_template.location_format_config
+                        warehouse_config.format_confidence = warehouse_template.format_confidence
+                        warehouse_config.format_examples = warehouse_template.format_examples
+                        warehouse_config.format_learned_date = warehouse_template.format_learned_date
+                        
+                        from datetime import datetime as dt
+                        warehouse_config.updated_at = dt.utcnow()
+                        
+                        # Commit the warehouse config changes
+                        db.session.commit()
+                        print(f"[SMART_CONFIG] WarehouseConfig updated with format configuration from template {warehouse_template.name}")
+                        
+                        # CRITICAL: Clear virtual engine cache after updating WarehouseConfig
+                        # This ensures the next virtual engine request will use the updated configuration
+                        try:
+                            from virtual_template_integration import virtual_location_cache
+                            virtual_location_cache.clear_cache(warehouse_id)
+                            print(f"[SMART_CONFIG] Virtual engine cache cleared for warehouse {warehouse_id}")
+                        except Exception as cache_error:
+                            print(f"[SMART_CONFIG] Warning: Could not clear virtual engine cache: {cache_error}")
                     
                     # Import the smart format system
                     from smart_format_detector import SmartFormatDetector
@@ -1411,16 +1480,25 @@ def create_analysis_report(current_user):
             # Add timeout protection for production
             import signal
             import time
+            import platform
             start_time = time.time()
             
+            # Cross-platform timeout handling
+            timeout_active = False
+            
             try:
-                # Set maximum execution time to prevent worker timeout
-                def timeout_handler(signum, frame):
-                    raise TimeoutError("Rule execution exceeded maximum time limit")
-                
-                # Set 120 second timeout (less than gunicorn worker timeout)
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(120)
+                # Only use signal.alarm on Unix-like systems (not Windows)
+                if platform.system() != 'Windows' and hasattr(signal, 'alarm'):
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("Rule execution exceeded maximum time limit")
+                    
+                    # Set 120 second timeout (less than gunicorn worker timeout)
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(120)
+                    timeout_active = True
+                    print("[TIMEOUT] Unix signal timeout enabled (120s)")
+                else:
+                    print("[TIMEOUT] Windows detected - using alternative timeout mechanism")
                 
                 # Run analysis with clean logging if available
                 if use_clean_logs:
@@ -1447,20 +1525,23 @@ def create_analysis_report(current_user):
                         warehouse_id=warehouse_id  # NEW: Pass explicit warehouse_id from applied template
                     )
                 
-                # Clear timeout
-                signal.alarm(0)
+                # Clear timeout if it was set
+                if timeout_active:
+                    signal.alarm(0)
                 execution_time = time.time() - start_time
                 print(f"[ANALYSIS] Found {len(anomalies)} anomalies in {execution_time:.2f}s")
                 
             except TimeoutError:
-                signal.alarm(0)  # Clear timeout
+                if timeout_active:
+                    signal.alarm(0)  # Clear timeout
                 print(f"[ERROR] Rule execution timed out after 120 seconds")
                 return jsonify({
                     'error': 'Rule execution timed out. Please try with a smaller dataset or fewer rules.',
                     'status': 'timeout'
                 }), 408
             except Exception as e:
-                signal.alarm(0)  # Clear timeout
+                if timeout_active:
+                    signal.alarm(0)  # Clear timeout
                 print(f"[ERROR] Rule execution failed: {str(e)}")
                 raise
         else:

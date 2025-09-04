@@ -10,7 +10,8 @@ import {
   Sparkles, 
   Info,
   Copy,
-  FileText
+  FileText,
+  CheckCircle
 } from 'lucide-react';
 import { standaloneTemplateAPI, type FormatDetectionResult } from '@/lib/standalone-template-api';
 import { FormatDetectionDisplay } from './FormatDetectionDisplay';
@@ -19,6 +20,7 @@ interface LocationFormatStepProps {
   onFormatDetected: (formatConfig: object, patternName: string, examples: string[]) => void;
   onManualConfiguration?: () => void;
   initialExamples?: string;
+  onFormatApplied?: (applied: boolean) => void; // New callback to notify parent about format application status
 }
 
 // Debounce hook for API calls
@@ -59,12 +61,14 @@ const EXAMPLE_SUGGESTIONS = [
 export function LocationFormatStep({
   onFormatDetected,
   onManualConfiguration,
-  initialExamples = ""
+  initialExamples = "",
+  onFormatApplied
 }: LocationFormatStepProps) {
   const [examples, setExamples] = useState(initialExamples);
   const [detectionResult, setDetectionResult] = useState<FormatDetectionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formatApplied, setFormatApplied] = useState(false);
   
   // Debounce the examples input to avoid excessive API calls
   const debouncedExamples = useDebounce(examples, 800);
@@ -103,17 +107,25 @@ export function LocationFormatStep({
     detectFormat(exampleList);
   }, [debouncedExamples, parseExamples, detectFormat]);
 
-  // Note: Auto-application removed to prevent wizard state conflicts
-  // High-confidence detections are now handled through improved UI feedback
-
+  // Reset format applied state when user manually changes examples
   const handleExamplesChange = (value: string) => {
     setExamples(value);
+    // Reset format applied state when user changes examples
+    if (formatApplied && value !== examples) {
+      setFormatApplied(false);
+      onFormatApplied?.(false);
+    }
   };
+
+  // Note: Auto-application removed to prevent wizard state conflicts
+  // High-confidence detections are now handled through improved UI feedback
 
   const handleAcceptFormat = () => {
     if (detectionResult && detectionResult.detected && detectionResult.format_config) {
       const exampleList = parseExamples(examples);
       onFormatDetected(detectionResult.format_config, detectionResult.pattern_name, exampleList);
+      setFormatApplied(true);
+      onFormatApplied?.(true);
     }
   };
 
@@ -143,13 +155,23 @@ export function LocationFormatStep({
         </p>
       </div>
 
-      <Alert>
-        <Sparkles className="h-4 w-4" />
-        <AlertDescription>
-          <strong>How it works:</strong> Enter 3-10 location examples from your warehouse. 
-          Our AI will detect the pattern and standardize the format automatically.
-        </AlertDescription>
-      </Alert>
+      {/* Format Application Status */}
+      {formatApplied ? (
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800">
+            <strong>Format Configuration Applied!</strong> Your template will use the detected location format pattern.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert>
+          <Sparkles className="h-4 w-4" />
+          <AlertDescription>
+            <strong>How it works:</strong> Enter 3-10 location examples from your warehouse. 
+            Our AI will detect the pattern for your template.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Example Input */}
       <Card>
@@ -224,6 +246,7 @@ export function LocationFormatStep({
             originalExamples={exampleList}
             onAcceptFormat={handleAcceptFormat}
             onManualConfiguration={handleManualConfiguration}
+            isApplied={formatApplied}
           />
         </div>
       )}

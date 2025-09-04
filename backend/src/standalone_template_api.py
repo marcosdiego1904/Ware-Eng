@@ -106,6 +106,15 @@ def create_standalone_template(current_user):
         format_examples = data.get('format_examples', [])
         format_confidence = 1.0  # Set high confidence for user-configured formats
         
+        # DEBUG: Log format configuration details
+        print(f"[STANDALONE_TEMPLATE_DEBUG] Format Configuration Details:")
+        print(f"  format_config received: {format_config}")
+        print(f"  format_config type: {type(format_config)}")
+        print(f"  format_config bool: {bool(format_config)}")
+        print(f"  format_pattern_name: {format_pattern_name}")
+        print(f"  format_examples: {format_examples}")
+        print(f"  format_examples length: {len(format_examples) if format_examples else 0}")
+        
         # Legacy compatibility
         is_public = (visibility == 'PUBLIC')
         
@@ -163,6 +172,15 @@ def create_standalone_template(current_user):
         
         db.session.add(template)
         db.session.commit()
+        
+        # DEBUG: Verify format configuration was saved correctly
+        db.session.refresh(template)
+        print(f"[STANDALONE_TEMPLATE_DEBUG] Post-commit verification:")
+        print(f"  Template ID: {template.id}")
+        print(f"  location_format_config saved: {template.location_format_config}")
+        print(f"  format_confidence: {template.format_confidence}")
+        print(f"  format_examples: {template.format_examples}")
+        print(f"  has_location_format(): {template.has_location_format()}")
         
         # Return the created template
         template_dict = {
