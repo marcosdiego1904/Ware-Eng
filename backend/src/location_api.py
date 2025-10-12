@@ -200,8 +200,11 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
         # Debug info (only for first page to reduce spam)
         if page == 1:
             try:
-                total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
-                print(f"DEBUG: Total physical locations in warehouse {warehouse_id}: {total_for_warehouse}")
+                total_for_warehouse = Location.query.filter_by(
+                    warehouse_id=warehouse_id,
+                    created_by=current_user.id
+                ).count()
+                print(f"DEBUG: Total physical locations in warehouse {warehouse_id} for user {current_user.id}: {total_for_warehouse}")
             except Exception as debug_error:
                 # CRITICAL FIX: Debug query failed - rollback transaction and continue
                 print(f"DEBUG: Count query failed (non-critical): {str(debug_error)}")
@@ -214,16 +217,24 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
         if page == 1:
             print(f"DEBUG: Physical query returned {len(locations)} locations")
         
-        # Get summary statistics
-        total_locations = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
-        storage_locations = Location.query.filter_by(
-            warehouse_id=warehouse_id, 
-            location_type='STORAGE', 
-            is_active=True
+        # Get summary statistics - CRITICAL: Filter by created_by for multi-tenancy
+        total_locations = Location.query.filter_by(
+            warehouse_id=warehouse_id,
+            is_active=True,
+            created_by=current_user.id
         ).count()
-        total_capacity = db.session.query(db.func.sum(Location.pallet_capacity)).filter_by(
-            warehouse_id=warehouse_id, 
-            is_active=True
+        storage_locations = Location.query.filter_by(
+            warehouse_id=warehouse_id,
+            location_type='STORAGE',
+            is_active=True,
+            created_by=current_user.id
+        ).count()
+        total_capacity = db.session.query(db.func.sum(Location.pallet_capacity)).filter(
+            and_(
+                Location.warehouse_id == warehouse_id,
+                Location.is_active == True,
+                Location.created_by == current_user.id
+            )
         ).scalar() or 0
         
         return jsonify({
@@ -513,9 +524,13 @@ def update_location(current_user, location_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Check if code is being changed and if it conflicts
+        # Check if code is being changed and if it conflicts within user's locations
         if 'code' in data and data['code'] != location.code:
-            existing = Location.query.filter_by(code=data['code']).first()
+            existing = Location.query.filter_by(
+                code=data['code'],
+                warehouse_id=location.warehouse_id,
+                created_by=current_user.id
+            ).first()
             if existing:
                 return jsonify({'error': f'Location with code {data["code"]} already exists'}), 409
         
@@ -599,8 +614,12 @@ def bulk_create_locations(current_user):
                     errors.append(f'Location {i + 1}: Missing required fields (code, location_type)')
                     continue
                 
-                # Check for duplicate codes
-                existing = Location.query.filter_by(code=location_data['code']).first()
+                # Check for duplicate codes within user's locations
+                existing = Location.query.filter_by(
+                    code=location_data['code'],
+                    warehouse_id=location_data.get('warehouse_id', 'DEFAULT'),
+                    created_by=current_user.id
+                ).first()
                 if existing:
                     errors.append(f'Location {i + 1}: Code {location_data["code"]} already exists')
                     continue
@@ -958,8 +977,12 @@ def generate_warehouse_locations(current_user):
         zone = data.get('zone', 'GENERAL')
         position_numbering_split = data.get('position_numbering_split', True)
         
-        # Check if warehouse already has locations
-        existing_count = Location.query.filter_by(warehouse_id=warehouse_id, is_active=True).count()
+        # Check if warehouse already has locations for this user
+        existing_count = Location.query.filter_by(
+            warehouse_id=warehouse_id,
+            is_active=True,
+            created_by=current_user.id
+        ).count()
         if existing_count > 0 and not data.get('force_recreate', False):
             return jsonify({
                 'error': f'Warehouse {warehouse_id} already has {existing_count} locations. Use force_recreate=true to override.'
@@ -1135,7 +1158,10 @@ def validate_locations(current_user):
             # Check required fields
             if 'code' not in location_data:
                 result['errors'].append('Missing required field: code')
-            elif Location.query.filter_by(code=location_data['code']).first():
+            elif Location.query.filter_by(
+                code=location_data['code'],
+                created_by=current_user.id
+            ).first():
                 result['errors'].append(f'Location code {location_data["code"]} already exists')
             
             if 'location_type' not in location_data:

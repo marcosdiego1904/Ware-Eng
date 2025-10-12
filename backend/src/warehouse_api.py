@@ -46,13 +46,14 @@ def get_warehouse_config(current_user):
     try:
         warehouse_id = request.args.get('warehouse_id', 'DEFAULT')
         config = WarehouseConfig.query.filter_by(
-            warehouse_id=warehouse_id, 
-            is_active=True
+            warehouse_id=warehouse_id,
+            is_active=True,
+            created_by=current_user.id
         ).first()
-        
+
         if not config:
             return jsonify({'error': 'No warehouse configuration found'}), 404
-        
+
         return jsonify({'config': config.to_dict()}), 200
         
     except Exception as e:
@@ -74,8 +75,11 @@ def create_warehouse_config(current_user):
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
-        # Check if warehouse config already exists
-        existing = WarehouseConfig.query.filter_by(warehouse_id=data['warehouse_id']).first()
+        # Check if warehouse config already exists for this user
+        existing = WarehouseConfig.query.filter_by(
+            warehouse_id=data['warehouse_id'],
+            created_by=current_user.id
+        ).first()
         if existing:
             return jsonify({'error': f'Configuration for warehouse {data["warehouse_id"]} already exists'}), 409
         
@@ -262,10 +266,13 @@ def setup_warehouse(current_user):
         config_data = data.get('configuration', {})
         config_data['warehouse_id'] = warehouse_id
         
-        # Check if config already exists
-        existing_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+        # Check if config already exists for this user
+        existing_config = WarehouseConfig.query.filter_by(
+            warehouse_id=warehouse_id,
+            created_by=current_user.id
+        ).first()
         print(f"[WAREHOUSE_SETUP_DEBUG] Existing config found: {existing_config is not None}")
-        
+
         if existing_config and not data.get('force_recreate', False):
             print(f"[WAREHOUSE_SETUP_DEBUG] BLOCKED: Existing config without force_recreate")
             return jsonify({
@@ -676,12 +683,13 @@ def list_warehouses(current_user):
         
         warehouses = []
         for config in configs:
-            # Get location count for this warehouse
+            # Get location count for this warehouse (user's own locations only)
             location_count = Location.query.filter_by(
-                warehouse_id=config.warehouse_id, 
-                is_active=True
+                warehouse_id=config.warehouse_id,
+                is_active=True,
+                created_by=current_user.id
             ).count()
-            
+
             warehouse_info = config.to_dict()
             warehouse_info['location_count'] = location_count
             warehouses.append(warehouse_info)
