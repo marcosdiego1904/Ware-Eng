@@ -199,8 +199,14 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
         
         # Debug info (only for first page to reduce spam)
         if page == 1:
-            total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
-            print(f"DEBUG: Total physical locations in warehouse {warehouse_id}: {total_for_warehouse}")
+            try:
+                total_for_warehouse = Location.query.filter_by(warehouse_id=warehouse_id).count()
+                print(f"DEBUG: Total physical locations in warehouse {warehouse_id}: {total_for_warehouse}")
+            except Exception as debug_error:
+                # CRITICAL FIX: Debug query failed - rollback transaction and continue
+                print(f"DEBUG: Count query failed (non-critical): {str(debug_error)}")
+                db.session.rollback()
+                # Continue with main query despite debug failure
         
         # Paginate
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
@@ -240,7 +246,11 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
         }), 200
         
     except Exception as e:
+        # CRITICAL FIX: Always rollback failed transactions in PostgreSQL
+        db.session.rollback()
         print(f"[LOCATION_API] Physical locations error: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print full stack trace for debugging
         return jsonify({'error': f'Failed to retrieve physical locations: {str(e)}'}), 500
 
 def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_active, aisle_number, search, page, per_page):
