@@ -8,11 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2 } from 'lucide-react'
+import Image from 'next/image'
 
 interface RegisterFormData {
   username: string
   password: string
   confirmPassword: string
+  invitationCode: string
 }
 
 interface RegisterFormProps {
@@ -39,7 +41,7 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
     setError(null)
 
     try {
-      await registerUser(data.username, data.password)
+      await registerUser(data.username, data.password, data.invitationCode)
       onSuccess()
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } }
@@ -50,13 +52,26 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
-        <CardDescription>
-          Join the Warehouse Intelligence Dashboard
-        </CardDescription>
-      </CardHeader>
+    <div className="w-full max-w-md space-y-6">
+      {/* RackHawk Logo */}
+      <div className="flex justify-center">
+        <Image
+          src="/logo-auth.png"
+          alt="RackHawk"
+          width={320}
+          height={80}
+          priority
+          className="w-[280px] sm:w-[320px] h-auto"
+        />
+      </div>
+
+      <Card className="w-full">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+          <CardDescription>
+            Join RackHawk - Warehouse Intelligence Platform
+          </CardDescription>
+        </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {error && (
@@ -66,6 +81,31 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
           )}
 
           <div className="space-y-2">
+            <label htmlFor="invitationCode" className="text-sm font-medium">
+              Invitation Code
+            </label>
+            <Input
+              id="invitationCode"
+              type="text"
+              placeholder="Enter your invitation code"
+              {...register('invitationCode', {
+                required: 'Invitation code is required',
+                minLength: { value: 8, message: 'Invalid invitation code format' }
+              })}
+              className="uppercase"
+              onChange={(e) => {
+                e.target.value = e.target.value.toUpperCase()
+              }}
+            />
+            {errors.invitationCode && (
+              <p className="text-sm text-red-600">{errors.invitationCode.message}</p>
+            )}
+            <p className="text-xs text-gray-500">
+              Don't have a code? Contact an existing user to get an invitation.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <label htmlFor="username" className="text-sm font-medium">
               Username
             </label>
@@ -73,7 +113,7 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
               id="username"
               type="text"
               placeholder="Choose a username"
-              {...register('username', { 
+              {...register('username', {
                 required: 'Username is required',
                 minLength: { value: 3, message: 'Username must be at least 3 characters' }
               })}
@@ -119,7 +159,7 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full bg-[#F08A5D] hover:bg-[#E67A4D] text-white" disabled={isLoading}>
             {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Create Account
           </Button>
@@ -136,5 +176,6 @@ export function RegisterForm({ onSwitchToLogin, onSuccess }: RegisterFormProps) 
         </form>
       </CardContent>
     </Card>
+    </div>
   )
 }

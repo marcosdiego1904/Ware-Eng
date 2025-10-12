@@ -55,7 +55,7 @@ Each `rule_type` corresponds to a specific evaluator class in `rule_engine.py`. 
 ---
 
 ### `OVERCAPACITY`
-- **Purpose:** Identifies locations holding more pallets than their designated capacity.
+- **Purpose:** Identifies locations systematically holding more pallets than their designated capacity.
 - **Logic:** Counts the number of pallets in each location and compares it to the `capacity` defined for that location in the `Location` database table.
 - **Configurable Conditions (JSON):**
   - This rule currently has no specific JSON conditions. It operates based on the `Location` table's capacity data.

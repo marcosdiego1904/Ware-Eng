@@ -19,12 +19,14 @@ class LocationCategory(Enum):
     """Location categories for differentiated overcapacity handling"""
     STORAGE = "STORAGE"      # Critical inventory accuracy - individual pallet alerts
     SPECIAL = "SPECIAL"      # Operational space management - location-level alerts
+    INVALID = "INVALID"      # Invalid locations - should be excluded from overcapacity analysis
 
 
 class BusinessPriority(Enum):
     """Business priority mapping for location categories"""
     CRITICAL = "Very High"   # Storage locations - data integrity crisis
-    WARNING = "High"         # Special locations - workflow efficiency concern
+    WARNING = "High"         # Special locations - workflow efficiency concern  
+    EXCLUDED = "EXCLUDED"    # Invalid locations - excluded from processing
 
 
 class LocationClassificationService:
@@ -72,17 +74,41 @@ class LocationClassificationService:
         """Initialize the location classification service"""
         pass
     
-    def classify_location(self, location_obj=None, location_code: str = "") -> Tuple[LocationCategory, BusinessPriority]:
+    def classify_location(self, location_obj=None, location_code: str = "", validation_result: tuple = None) -> Tuple[LocationCategory, BusinessPriority]:
         """
-        Classify a location as Storage or Special based on business context.
+        Classify a location as Storage, Special, or Invalid based on business context.
         
         Args:
             location_obj: Database location object (if available)
             location_code: String location code for pattern matching
+            validation_result: Optional (is_valid, reason) tuple from virtual location validation
             
         Returns:
             Tuple of (LocationCategory, BusinessPriority)
         """
+        
+        # Priority 0: Check if location is invalid (new enhancement)
+        if validation_result is not None:
+            is_valid, validation_reason = validation_result
+            if not is_valid:
+                return LocationCategory.INVALID, BusinessPriority.EXCLUDED
+        
+        # Priority 0.5: Basic invalid location patterns (fallback if no validation_result)
+        if validation_result is None:
+            location_upper = location_code.upper()
+            invalid_patterns = ['NOWHERE', 'INVALID', 'ERROR', 'NULL', 'UNKNOWN', 'TEMP', 'TEST']
+            if any(invalid_pattern in location_upper for invalid_pattern in invalid_patterns):
+                return LocationCategory.INVALID, BusinessPriority.EXCLUDED
+            
+            # Invalid aisle patterns (AISLE-05+ are typically invalid in most configurations)
+            if location_upper.startswith('AISLE-') and not location_upper.startswith('AISLE-0'):
+                # Allow AISLE-01 through AISLE-04, exclude AISLE-05+
+                try:
+                    aisle_num = int(location_upper.split('-')[1])
+                    if aisle_num >= 5:
+                        return LocationCategory.INVALID, BusinessPriority.EXCLUDED
+                except (ValueError, IndexError):
+                    pass
         
         # Priority 1: Use database location_type if available
         if location_obj and hasattr(location_obj, 'location_type'):
@@ -142,7 +168,7 @@ class LocationClassificationService:
                 'business_justification': 'Inventory accuracy requires investigation of every pallet',
                 'action_required': 'Investigate ALL pallets immediately'
             }
-        else:  # SPECIAL
+        elif category == LocationCategory.SPECIAL:
             return {
                 'alert_level': 'location_summary',
                 'priority': BusinessPriority.WARNING.value, 
@@ -150,6 +176,15 @@ class LocationClassificationService:
                 'message_format': '{location} at {percentage}% capacity ({count}/{capacity} pallets) - expedite processing',
                 'business_justification': 'Space management focus, no individual pallet investigation needed',
                 'action_required': 'Monitor area and expedite processing'
+            }
+        else:  # INVALID
+            return {
+                'alert_level': 'exclude',
+                'priority': BusinessPriority.EXCLUDED.value,
+                'alert_template': 'Invalid Location Exclusion',
+                'message_format': 'Location {location} excluded from overcapacity analysis - invalid location pattern',
+                'business_justification': 'Invalid locations should be handled by separate invalid location rules',
+                'action_required': 'No overcapacity alert needed - location validation required'
             }
     
     def analyze_location_distribution(self, location_counts: Dict[str, int], 

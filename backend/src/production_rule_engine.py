@@ -102,10 +102,9 @@ class ProductionRuleEngine:
     def _validate_inventory_locations(self, inventory_df: pd.DataFrame, warehouse_id: str) -> Dict:
         """Validate inventory locations against warehouse template"""
         try:
-            # Ensure column name consistency
-            if 'Location' in inventory_df.columns:
-                inventory_df = inventory_df.rename(columns={'Location': 'location'})
-            
+            # Note: Column normalization is handled by rule engine's comprehensive _normalize_dataframe_columns()
+            # No manual column renaming needed here - the rule engine handles all column variations
+
             # Run inventory validation
             validation_results = self.inventory_validator.validate_inventory_locations(
                 inventory_df, 

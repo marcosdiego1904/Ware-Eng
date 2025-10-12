@@ -1,0 +1,42 @@
+SUBJECT: Quick question about QPSI inventory team
+
+---
+
+[Boss Name],
+
+Hope you're doing well. It's been a couple years but I've been
+thinking about the work we did rescuing that 50K deficit at QPSI.
+
+Quick context: I built a warehouse intelligence platform that
+automates what I used to do manually for inventory analysis.
+
+It analyzes WMS/Excel exports and flags the same patterns we
+hunted for:
+- Pallets stuck in receiving >10 hours
+- Incomplete lots with stragglers
+- Overcapacity scanning errors
+- Invalid location scans
+- All the ghosts we used to track down
+
+Instead of spending 4-8 hours combing through spreadsheets,
+the inventory team uploads the file and gets prioritized alerts
+in ~2 minutes.
+
+I'm piloting it with real warehouses now. Given QPSI's complexity
+(retail packaging operations, high SKU counts, seasonal spikes),
+it'd be perfect validation.
+
+Would the inventory team be interested in testing it? Free for
+3 months - I handle setup, training, everything. Just need their
+honest feedback on what works and what doesn't.
+
+My dad and brother still work there, so I know the operation's
+probably evolved since I left. That's actually why I think it'd
+be a great test case.
+
+Free to chat this week if you want details.
+
+Diego
+
+P.S. - No pressure if timing isn't right. Just thought of you
+guys first since you gave me my start in inventory management.

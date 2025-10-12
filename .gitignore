@@ -9,6 +9,10 @@
 Thumbs.db
 .cache
 
+# Windows null device files (accidentally created by redirecting to nul)
+nul
+**/nul
+
 # Python / Flask Backend
 # ======================
 # Ignore Python virtual environment

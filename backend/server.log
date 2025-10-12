@@ -1,0 +1,42 @@
+[LOG_FILTER] Noise reduction active - verbose debug output suppressed
+[LOG_OPTIMIZER] Clean logging enabled - debug noise reduced by 95%
+CORS allowed origins: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'https://ware-eng-ft.vercel.app', 'https://ware-eng.vercel.app', 'https://*.vercel.app']
+Database is up to date.
+Location Management API registered successfully
+Warehouse Configuration API registered successfully
+Scope Management API registered successfully
+Template Management API registered successfully
+Standalone Template Creation API registered successfully
+[RULE_ENGINE] Pattern resolver initialized successfully
+[PATTERN_INTEGRATION] LocationSpecificStagnantEvaluator initialized with pattern_resolver: True
+[PATTERN_INTEGRATION] LocationMappingErrorEvaluator initialized with pattern_resolver: True
+Rules API registered successfully
+User Warehouse API registered successfully
+Debug Format API registered successfully
+Production database diagnostic endpoint added: /api/v1/test/warehouse-check
+Production database fix endpoint added: /api/v1/fix/remove-default-warehouse
+USER_TESTF debug endpoint added: /api/v1/debug/user-testf-locations
+Monitoring system not available: No module named 'psutil'
+API debugging system not available: No module named 'psutil'
+Deployment health checker not available: No module named 'psutil'
+Debug test framework not available: No module named 'psutil'
+Migration debugger not available: No module named 'psutil'
+
+============================================================
+WAREHOUSE RULES MANAGEMENT SERVER STARTING
+============================================================
+Rules Management Interface: http://localhost:5000/rules
+API Endpoints: http://localhost:5000/api/v1/rules
+Dashboard: http://localhost:5000/dashboard
+============================================================
+
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://10.0.0.213:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 288-457-622

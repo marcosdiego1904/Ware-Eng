@@ -1,0 +1,79 @@
+Issue Analysis: Rule Precedence System Integration Failure
+
+  Root Cause Identified
+
+  The rule precedence system has a critical architecture flaw: there are two separate precedence
+  manager instances that don't communicate with each other.
+
+  ★ Insight ─────────────────────────────────────
+  The core issue is architectural: the main rule engine creates a precedence manager and uses it to
+   register anomalies, but the OvercapacityEvaluator creates its own separate precedence manager
+  instance inside the evaluate() method. These two instances have separate registries, so the
+  exclusion data registered by the main engine is invisible to the evaluator's exclusion checks.
+  ─────────────────────────────────────────────────
+
+  Evidence from the Code
+
+  1. Main Rule Engine (evaluate_all_rules method):
+  # Creates precedence manager at rule engine level
+  precedence_manager = create_precedence_manager()
+
+  # Registers anomalies after each rule
+  precedence_manager.register_anomalies(rule, result.anomalies)
+  2. OvercapacityEvaluator (evaluate method):
+  # Creates SEPARATE precedence manager inside evaluator
+  try:
+      from rule_precedence_system import create_precedence_manager
+      precedence_manager = create_precedence_manager()  # NEW INSTANCE!
+  3. Result: The evaluator's precedence manager has an empty registry because it never received the
+   anomalies registered by the main engine.
+
+  Why the Direct Test Worked
+
+  The direct precedence test worked because it manually registered anomalies and checked exclusions
+   using the same precedence manager instance. The real-world integration fails because of instance
+   separation.
+
+  Why We Didn't See Exclusion Messages
+
+  The exclusion logic runs but finds no registered anomalies because it's checking an empty
+  registry in the evaluator's separate instance.
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Ready to code?                                                                                      │
+│                                                                                                     │
+│ Here is Claude's plan:                                                                              │
+│ ╭─────────────────────────────────────────────────────────────────────────────────────────────────╮ │
+│ │ Rule Precedence System Fix Plan                                                                 │ │
+│ │                                                                                                 │ │
+│ │ Problem Summary                                                                                 │ │
+│ │                                                                                                 │ │
+│ │ The precedence system creates separate manager instances in the main rule engine vs. individual │ │
+│ │  evaluators, causing exclusion data to be lost. Invalid location pallets are still being        │ │
+│ │ double-counted by overcapacity rules.                                                           │ │
+│ │                                                                                                 │ │
+│ │ Solution: Pass Precedence Manager to Evaluators                                                 │ │
+│ │                                                                                                 │ │
+│ │ Phase 1: Fix Architecture (Core Issue)                                                          │ │
+│ │                                                                                                 │ │
+│ │ 1. Modify rule engine to pass the precedence manager instance to evaluators                     │ │
+│ │ 2. Update evaluator interface to accept precedence manager parameter                            │ │
+│ │ 3. Remove duplicate manager creation from OvercapacityEvaluator                                 │ │
+│ │                                                                                                 │ │
+│ │ Phase 2: Update All Evaluators                                                                  │ │
+│ │                                                                                                 │ │
+│ │ 4. Update OvercapacityEvaluator to use passed precedence manager instead of creating its own    │ │
+│ │ 5. Update other evaluators that might need precedence checking in the future                    │ │
+│ │ 6. Add parameter validation to ensure precedence manager is properly passed                     │ │
+│ │                                                                                                 │ │
+│ │ Phase 3: Testing & Validation                                                                   │ │
+│ │                                                                                                 │ │
+│ │ 7. Test with custom inventory to verify exclusion works                                         │ │
+│ │ 8. Add debug logging to confirm exclusions are happening                                        │ │
+│ │ 9. Verify no performance impact from the architecture change                                    │ │
+│ │                                                                                                 │ │
+│ │ Expected Outcome                                                                                │ │
+│ │                                                                                                 │ │
+│ │ - Zero double-counting between INVALID_LOCATION and OVERCAPACITY rules                          │ │
+│ │ - Clear exclusion debug messages in logs                                                        │ │
+│ │ - Reduced total anomaly count (eliminating ~15 false positives in test scenario)          

@@ -18,8 +18,12 @@ from dataclasses import dataclass
 
 # Import models (will be imported from app context)
 from models import Rule, RuleCategory, RulePerformance, Location
+from rule_precedence_system import create_precedence_manager
 from session_manager import RequestScopedSessionManager, ensure_session_bound
 from virtual_invalid_location_evaluator import VirtualInvalidLocationEvaluator
+
+# Import unit-agnostic scope service
+from services.simple_scope_service import SimpleScopeService
 
 @dataclass
 class RuleEvaluationResult:
@@ -57,16 +61,33 @@ class RuleEngine:
                 return None
         
     def _initialize_evaluators(self):
-        """Initialize rule evaluator registry with virtual location support"""
+        """Initialize rule evaluator registry with pattern resolver integration"""
+        # ENHANCED: Create pattern resolver for dynamic format adaptation
+        try:
+            from rule_pattern_resolver import RulePatternResolver
+            pattern_resolver = RulePatternResolver(self.db, self.app)
+            print(f"[RULE_ENGINE] Pattern resolver initialized successfully")
+        except Exception as e:
+            print(f"[RULE_ENGINE] Warning: Pattern resolver initialization failed: {e}")
+            pattern_resolver = None
+
         return {
-            'STAGNANT_PALLETS': StagnantPalletsEvaluator(app=self.app),
-            'UNCOORDINATED_LOTS': UncoordinatedLotsEvaluator(app=self.app),
+            'STAGNANT_PALLETS': StagnantPalletsEvaluator(app=self.app, rule_engine=self),
+            'UNCOORDINATED_LOTS': UncoordinatedLotsEvaluator(app=self.app, rule_engine=self),
             'OVERCAPACITY': OvercapacityEvaluator(app=self.app),
             'INVALID_LOCATION': VirtualInvalidLocationEvaluator(app=self.app),  # VIRTUAL: Enhanced evaluator
-            'LOCATION_SPECIFIC_STAGNANT': LocationSpecificStagnantEvaluator(app=self.app),
+            # ENHANCED: Inject pattern resolver for dynamic format support
+            'LOCATION_SPECIFIC_STAGNANT': LocationSpecificStagnantEvaluator(
+                app=self.app,
+                pattern_resolver=pattern_resolver
+            ),
             'TEMPERATURE_ZONE_MISMATCH': TemperatureZoneMismatchEvaluator(app=self.app),
             'DATA_INTEGRITY': DataIntegrityEvaluator(app=self.app),
-            'LOCATION_MAPPING_ERROR': LocationMappingErrorEvaluator(app=self.app),
+            # ENHANCED: Inject pattern resolver for dynamic format support
+            'LOCATION_MAPPING_ERROR': LocationMappingErrorEvaluator(
+                app=self.app,
+                pattern_resolver=pattern_resolver
+            ),
             'MISSING_LOCATION': MissingLocationEvaluator(app=self.app),
             'PRODUCT_INCOMPATIBILITY': ProductIncompatibilityEvaluator(app=self.app)
         }
@@ -178,6 +199,7 @@ class RuleEngine:
         # Define column mapping from common variations to expected names
         column_mapping = {
             'Pallet ID': 'pallet_id',
+            'Pallet number': 'pallet_id',  # Added for test generator compatibility
             'pallet_id': 'pallet_id',
             'PALLET_ID': 'pallet_id',
             'PalletID': 'pallet_id',
@@ -197,25 +219,160 @@ class RuleEngine:
             'Date Created': 'creation_date',
             'Last Activity': 'creation_date',
             'LastActivity': 'creation_date',
-            'Timestamp': 'creation_date'
+            'Timestamp': 'creation_date',
+
+            # Receipt/Lot Number mappings
+            'Receipt Number': 'receipt_number',
+            'Receipt number': 'receipt_number',  # Added for test generator compatibility
+            'ReceiptNumber': 'receipt_number',
+            'receipt_number': 'receipt_number',
+            'RECEIPT_NUMBER': 'receipt_number',
+            'Lot Number': 'receipt_number',
+            'LotNumber': 'receipt_number',
+            'LOT_NUMBER': 'receipt_number',
+            'Batch Number': 'receipt_number',
+            'BatchNumber': 'receipt_number',
+            'BATCH_NUMBER': 'receipt_number',
+            'Batch': 'receipt_number',
+            'Lot': 'receipt_number',
+            'Receipt': 'receipt_number',
+
+            # Product/Description mappings
+            'Product': 'product',
+            'product': 'product',
+            'PRODUCT': 'product',
+            'Description': 'product',
+            'description': 'product',
+            'DESCRIPTION': 'product',
+            'Product Description': 'product',
+            'ProductDescription': 'product',
+            'Item': 'product',
+            'Item Description': 'product'
         }
         
         # Apply column mapping
         df = df.rename(columns=column_mapping)
         
-        # CRITICAL FIX: Ensure creation_date is properly parsed as datetime
+        # CRITICAL FIX: Ensure creation_date is properly parsed as datetime using smart parser
         if 'creation_date' in df.columns:
             # Convert to datetime if it's not already
             if not pd.api.types.is_datetime64_any_dtype(df['creation_date']):
                 try:
-                    df['creation_date'] = pd.to_datetime(df['creation_date'])
+                    from date_parser import SmartDateParser, DateFormatDetector
+
+                    # Use smart date parser
+                    detector = DateFormatDetector()
+                    format_info = detector.detect_format(df['creation_date'])
+
+                    parser = SmartDateParser()
+                    parse_result = parser.parse_dates(df['creation_date'], format_info)
+                    df['creation_date'] = parse_result.parsed_series
+
+                    # Log results (quieter than app.py)
+                    if parse_result.success_rate < 1.0:
+                        print(f"[DATE_PARSING] {format_info['format_type']}: {parse_result.success_rate:.1%} success rate")
+
                 except Exception as e:
-                    print(f"[WARNING] Failed to convert creation_date to datetime: {e}")
+                    print(f"[WARNING] Smart date parsing failed, falling back to basic parsing: {e}")
+                    # Fallback to basic parsing
+                    df['creation_date'] = pd.to_datetime(df['creation_date'], errors='coerce')
         
         # Column normalization completed silently
-        
+
         return df
-    
+
+    def _apply_scope_filtering(self, inventory_df: pd.DataFrame) -> dict:
+        """
+        Apply unit-agnostic scope filtering to focus analysis on tracked locations.
+
+        This method integrates the SimpleScopeService to filter inventory data
+        based on warehouse scope configuration, ensuring only relevant locations
+        are analyzed for anomalies.
+
+        Args:
+            inventory_df (pd.DataFrame): Raw inventory data
+
+        Returns:
+            dict: Scope filtering results with filtered dataframe and metrics
+        """
+        try:
+            # Determine warehouse context for scope filtering
+            warehouse_id = self._get_warehouse_context_for_scope()
+
+            if not warehouse_id:
+                # No warehouse context - return original data with no filtering
+                return {
+                    'filtered_df': inventory_df,
+                    'scope_applied': False,
+                    'total_records': len(inventory_df),
+                    'in_scope_records': len(inventory_df),
+                    'out_of_scope_records': 0,
+                    'excluded_patterns': [],
+                    'warehouse_id': None
+                }
+
+            # Initialize scope service for the warehouse
+            scope_service = SimpleScopeService(warehouse_id)
+
+            # Apply scope filtering
+            filtered_df, scope_metrics = scope_service.filter_inventory_to_scope(inventory_df)
+
+            # Add filtered dataframe to metrics for easy access
+            scope_metrics['filtered_df'] = filtered_df
+            scope_metrics['warehouse_id'] = warehouse_id
+
+            return scope_metrics
+
+        except Exception as e:
+            print(f"[SCOPE_FILTERING] Error during scope filtering: {e}")
+            # Return original data on error - graceful fallback
+            return {
+                'filtered_df': inventory_df,
+                'scope_applied': False,
+                'total_records': len(inventory_df),
+                'in_scope_records': len(inventory_df),
+                'out_of_scope_records': 0,
+                'excluded_patterns': [],
+                'warehouse_id': None,
+                'error': str(e)
+            }
+
+    def _get_warehouse_context_for_scope(self) -> str:
+        """
+        Get warehouse context for scope filtering operations.
+
+        This method provides a centralized way to determine the warehouse ID
+        for scope filtering, with multiple fallback strategies.
+
+        Returns:
+            str: Warehouse ID or None if not determinable
+        """
+        # Strategy 1: Use explicit warehouse context if set
+        if hasattr(self, '_warehouse_context') and self._warehouse_context:
+            warehouse_id = self._warehouse_context.get('warehouse_id')
+            if warehouse_id:
+                return str(warehouse_id)
+
+        # Strategy 2: Use current warehouse context from evaluation
+        if hasattr(self, 'current_warehouse_context') and self.current_warehouse_context:
+            warehouse_id = self.current_warehouse_context.get('warehouse_id')
+            if warehouse_id:
+                return str(warehouse_id)
+
+        # Strategy 3: Use user context to resolve warehouse
+        if hasattr(self, 'user_context') and self.user_context:
+            try:
+                from warehouse_context_resolver import resolve_warehouse_context_for_user
+                resolved_context = resolve_warehouse_context_for_user(self.user_context)
+                warehouse_id = resolved_context.get('warehouse_id')
+                if warehouse_id:
+                    return str(warehouse_id)
+            except Exception as e:
+                print(f"[SCOPE_FILTERING] Failed to resolve warehouse from user context: {e}")
+
+        # No warehouse context available
+        return None
+
     def _evaluate_all_rules_internal(self, inventory_df: pd.DataFrame, 
                                    rule_ids: List[int] = None) -> List[RuleEvaluationResult]:
         """Internal method to evaluate rules"""
@@ -224,13 +381,56 @@ class RuleEngine:
         else:
             rules = self.load_active_rules()
         
+        # Initialize rule precedence system
+        precedence_manager = create_precedence_manager()
+        precedence_manager.reset_for_new_evaluation()
+        
+        # Sort rules by precedence level (higher precedence rules run first)
+        original_rule_count = len(rules)
+        rules = precedence_manager.sort_rules_by_precedence(rules)
+        
         # Normalize column names before processing
         inventory_df = self._normalize_dataframe_columns(inventory_df)
-        
+
+        # Apply scope filtering to focus analysis on tracked locations only
+        scope_metrics = self._apply_scope_filtering(inventory_df)
+        if scope_metrics['scope_applied']:
+            # Update inventory_df to the filtered version
+            inventory_df = scope_metrics['filtered_df']
+            print(f"\n[SCOPE_FILTERING] Applied scope filtering:")
+            print(f"[SCOPE_FILTERING] Total records: {scope_metrics['total_records']:,}")
+            print(f"[SCOPE_FILTERING] In-scope records: {scope_metrics['in_scope_records']:,}")
+            print(f"[SCOPE_FILTERING] Out-of-scope records: {scope_metrics['out_of_scope_records']:,}")
+            print(f"[SCOPE_FILTERING] Excluded patterns: {scope_metrics['excluded_patterns']}")
+        else:
+            print(f"\n[SCOPE_FILTERING] No scope filtering applied - analyzing all locations")
+
         print(f"\n[RULE_ENGINE_DEBUG] ==================== RULE EVALUATION START ====================")
         print(f"[RULE_ENGINE_DEBUG] Evaluating {len(rules)} rules on {inventory_df.shape[0]:,} records")
         print(f"[RULE_ENGINE_DEBUG] Available columns: {list(inventory_df.columns)}")
-        print(f"[RULE_ENGINE_DEBUG] Sample locations: {list(inventory_df['location'].dropna().unique()[:10])}")
+
+        # Handle duplicate 'location' columns safely
+        try:
+            location_col = inventory_df['location']
+            # If duplicate columns exist, pandas returns a DataFrame - take first column
+            if isinstance(location_col, pd.DataFrame):
+                location_col = location_col.iloc[:, 0]
+            sample_locations = location_col.dropna().unique()[:10].tolist()
+            print(f"[RULE_ENGINE_DEBUG] Sample locations: {sample_locations}")
+        except Exception as e:
+            print(f"[RULE_ENGINE_DEBUG] Could not extract sample locations: {e}")
+        
+        # Log precedence system status
+        if precedence_manager.enable_precedence:
+            print(f"[RULE_PRECEDENCE] Rule precedence system ENABLED")
+            print(f"[RULE_PRECEDENCE] Rules sorted by precedence (original count: {original_rule_count})")
+            for i, rule in enumerate(rules[:3]):  # Show first 3 rules
+                precedence = getattr(rule, 'precedence_level', 4)
+                print(f"[RULE_PRECEDENCE]   {i+1}. {rule.name} (precedence: {precedence})")
+            if len(rules) > 3:
+                print(f"[RULE_PRECEDENCE]   ... and {len(rules) - 3} more rules")
+        else:
+            print(f"[RULE_PRECEDENCE] Rule precedence system DISABLED - rules run in original order")
         
         results = []
         total_anomalies = 0
@@ -267,10 +467,14 @@ class RuleEngine:
                 warehouse_context = {'warehouse_id': None, 'confidence': 'RESOLVER_ERROR', 'coverage': 0.0}
         
         for i, rule in enumerate(rules, 1):
+            rule_precedence = getattr(rule, 'precedence_level', 4)
+            precedence_name = getattr(rule, 'get_precedence_name', lambda: f"Level {rule_precedence}")()
+            
             print(f"\n[RULE_ENGINE_DEBUG] -------------------- RULE {i}/{len(rules)} --------------------")
             print(f"[RULE_ENGINE_DEBUG] Rule: {rule.name} (ID: {rule.id})")
             print(f"[RULE_ENGINE_DEBUG] Type: {rule.rule_type}")
             print(f"[RULE_ENGINE_DEBUG] Priority: {rule.priority}")
+            print(f"[RULE_ENGINE_DEBUG] Precedence: {rule_precedence} ({precedence_name})")
             print(f"[RULE_ENGINE_DEBUG] Conditions: {rule.conditions[:200]}..." if rule.conditions and len(rule.conditions) > 200 else f"[RULE_ENGINE_DEBUG] Conditions: {rule.conditions}")
             
             result = self.evaluate_rule(rule, inventory_df, warehouse_context)
@@ -279,6 +483,12 @@ class RuleEngine:
             if result.success:
                 anomaly_count = len(result.anomalies)
                 total_anomalies += anomaly_count
+                
+                # Register anomalies with precedence system for subsequent rules
+                if precedence_manager.enable_precedence and anomaly_count > 0:
+                    precedence_manager.register_anomalies(rule, result.anomalies)
+                    print(f"[RULE_PRECEDENCE] Registered {anomaly_count} anomalies from {rule.rule_type}")
+                
                 print(f"[RULE_ENGINE_DEBUG] Result: SUCCESS - {anomaly_count} anomalies in {result.execution_time_ms}ms")
                 if anomaly_count > 0:
                     print(f"[RULE_ENGINE_DEBUG] Sample anomaly: {result.anomalies[0] if result.anomalies else 'N/A'}")
@@ -291,6 +501,21 @@ class RuleEngine:
         print(f"[RULE_ENGINE_DEBUG] Total anomalies found: {total_anomalies}")
         print(f"[RULE_ENGINE_DEBUG] Successful rules: {sum(1 for r in results if r.success)}")
         print(f"[RULE_ENGINE_DEBUG] Failed rules: {sum(1 for r in results if not r.success)}")
+        
+        # Log precedence system summary
+        if precedence_manager.enable_precedence:
+            precedence_summary = precedence_manager.get_exclusion_summary()
+            exclusion_stats = precedence_summary['exclusion_stats']
+            print(f"\n[RULE_PRECEDENCE] ==================== PRECEDENCE SUMMARY ====================")
+            print(f"[RULE_PRECEDENCE] Precedence system: ENABLED")
+            print(f"[RULE_PRECEDENCE] Total exclusions registered: {exclusion_stats['total_exclusions']}")
+            print(f"[RULE_PRECEDENCE] Unique pallets excluded: {exclusion_stats['unique_pallets_excluded']}")
+            print(f"[RULE_PRECEDENCE] Rules with exclusions: {exclusion_stats['rules_with_exclusions']}")
+            if exclusion_stats['exclusions_by_rule_type']:
+                print(f"[RULE_PRECEDENCE] Exclusions by rule type:")
+                for rule_type, count in exclusion_stats['exclusions_by_rule_type'].items():
+                    print(f"[RULE_PRECEDENCE]   {rule_type}: {count}")
+            print(f"[RULE_PRECEDENCE] =================================================================")
         
         # Show breakdown by anomaly type
         anomaly_types = {}
@@ -922,14 +1147,121 @@ class RuleEngine:
         else:
             return "No detections - check rule conditions or data compatibility"
 
+    def _assign_location_types_with_context(self, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> pd.DataFrame:
+        """Enhanced location type assignment using comprehensive classification system"""
+        if not warehouse_context or not warehouse_context.get('warehouse_id'):
+            print(f"[ENHANCED_CLASSIFIER] No warehouse context, using enhanced classifier without context")
+        else:
+            print(f"[ENHANCED_CLASSIFIER] Using warehouse context: {warehouse_context['warehouse_id']}")
+
+        df = inventory_df.copy()
+
+        # Initialize enhanced classifier with virtual engine support
+        virtual_engine = None
+        try:
+            from virtual_template_integration import get_virtual_engine_for_warehouse
+            if warehouse_context and warehouse_context.get('warehouse_id'):
+                virtual_engine = get_virtual_engine_for_warehouse(warehouse_context['warehouse_id'])
+
+            # Fallback virtual engine creation if needed
+            if not virtual_engine and warehouse_context:
+                print(f"[ENHANCED_CLASSIFIER] Creating fallback virtual engine...")
+                from virtual_location_engine import VirtualLocationEngine
+                warehouse_config = {
+                    'warehouse_id': warehouse_context['warehouse_id'],
+                    'num_aisles': 2,
+                    'racks_per_aisle': 1,
+                    'positions_per_rack': 22,
+                    'levels_per_position': 4,
+                    'level_names': 'ABCD',
+                    'special_areas': ['RECV-01', 'RECV-02', 'STAGE-01', 'DOCK-01', 'AISLE-01', 'AISLE-02'],
+                    'default_capacity': 1,
+                    'default_zone': 'GENERAL'
+                }
+                virtual_engine = VirtualLocationEngine(warehouse_config)
+
+        except Exception as e:
+            print(f"[ENHANCED_CLASSIFIER] Virtual engine setup failed: {e}")
+
+        # Initialize the enhanced location classifier
+        try:
+            from enhanced_location_classifier import EnhancedLocationClassifier
+            classifier = EnhancedLocationClassifier(db_session=self.db, virtual_engine=virtual_engine)
+            print(f"[ENHANCED_CLASSIFIER] Initialized successfully")
+        except Exception as e:
+            print(f"[ENHANCED_CLASSIFIER] Failed to initialize enhanced classifier: {e}")
+            # Fallback to legacy system
+            return self._assign_location_types(inventory_df)
+
+        # Get unique locations for batch processing
+        unique_locations = df['location'].dropna().unique().tolist()
+
+        if not unique_locations:
+            print(f"[ENHANCED_CLASSIFIER] No valid locations found")
+            df['location_type'] = 'MISSING'
+            return df
+
+        print(f"[ENHANCED_CLASSIFIER] Processing {len(unique_locations)} unique locations...")
+
+        # Batch classify all locations with behavioral context
+        classification_results = classifier.classify_batch(
+            locations=unique_locations,
+            inventory_df=df,
+            warehouse_context=warehouse_context
+        )
+
+        # Apply classifications to dataframe
+        location_type_map = {}
+        confidence_map = {}
+        method_map = {}
+
+        for location, result in classification_results.items():
+            location_type_map[location] = result.location_type
+            confidence_map[location] = result.confidence
+            method_map[location] = result.method
+
+        df['location_type'] = df['location'].map(location_type_map)
+        df['location_type_confidence'] = df['location'].map(confidence_map)
+        df['location_type_method'] = df['location'].map(method_map)
+
+        # Handle any unmapped locations
+        df['location_type'] = df['location_type'].fillna('UNKNOWN')
+        df['location_type_confidence'] = df['location_type_confidence'].fillna(0.0)
+        df['location_type_method'] = df['location_type_method'].fillna('fallback')
+
+        # Generate and log classification summary
+        summary = classifier.get_classification_summary(classification_results)
+        print(f"[ENHANCED_CLASSIFIER] Classification Summary:")
+        print(f"  - Total locations: {summary.get('total_locations', 0)}")
+        print(f"  - Unknown rate: {summary.get('unknown_rate_percent', 0)}%")
+        print(f"  - Average confidence: {summary.get('average_confidence', 0)}")
+        print(f"  - High confidence (>0.8): {summary.get('high_confidence_count', 0)}")
+        print(f"  - Type distribution: {summary.get('type_distribution', {})}")
+        print(f"  - Method distribution: {summary.get('method_distribution', {})}")
+
+        df = df.drop(columns=['location_type_confidence', 'location_type_method'], errors='ignore')
+
+        return df
+
 # ==================== RULE EVALUATORS ====================
 
 class BaseRuleEvaluator:
     """Base class for all rule evaluators"""
-    
-    def __init__(self, app=None):
+
+    def __init__(self, app=None, rule_engine=None):
         self.app = app
+        self.rule_engine = rule_engine  # Reference to main RuleEngine for accessing shared methods
         self._location_cache = None  # Cache for location lookup optimization
+
+        # Default warehouse location patterns for pattern-based classification
+        self.DEFAULT_WAREHOUSE_PATTERNS = {
+            'RECEIVING': [r'^RECV-\d+$', r'^RECEIVING'],
+            'STORAGE': [r'^\d+\.\d+[A-Z]$', r'^\d+[A-Z]$'],  # RACK.LEVEL+POSITION and simple formats
+            'STAGING': [r'^STAGE-\d+$', r'^STAGING'],
+            'AISLE': [r'^AISLE-\d+$'],
+            'DOCK': [r'^DOCK-\d+$', r'^DOCK'],
+            'TRANSITIONAL': [r'^TRAN-', r'^FLOW-']
+        }
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         """
@@ -971,7 +1303,56 @@ class BaseRuleEvaluator:
             return json.loads(rule.parameters) if rule.parameters else {}
         except json.JSONDecodeError:
             return {}
-    
+
+    def _get_patterns_for_location_types(self, location_types: List[str]) -> List[str]:
+        """Convert location_types to regex patterns for backward compatibility"""
+        patterns = []
+        for location_type in location_types:
+            if location_type.upper() in self.DEFAULT_WAREHOUSE_PATTERNS:
+                patterns.extend(self.DEFAULT_WAREHOUSE_PATTERNS[location_type.upper()])
+        return patterns
+
+    def _filter_by_location_patterns(self, inventory_df: pd.DataFrame, patterns: List[str]) -> pd.DataFrame:
+        """Filter inventory by multiple location patterns"""
+        if not patterns:
+            return pd.DataFrame()
+
+        # Create combined mask for all patterns
+        combined_mask = pd.Series([False] * len(inventory_df), index=inventory_df.index)
+
+        for pattern in patterns:
+            try:
+                # Apply pattern matching (case-insensitive)
+                pattern_mask = inventory_df['location'].astype(str).str.upper().str.match(pattern, na=False)
+                combined_mask = combined_mask | pattern_mask
+
+                matches = pattern_mask.sum()
+                # Simplified logging: only show zero matches for key patterns
+                if matches == 0 and any(key in pattern for key in ['RECV', 'STORAGE', 'STAGE']):
+                    print(f"[PATTERN_DEBUG] Key pattern '{pattern}' matched 0 locations")
+
+            except Exception as e:
+                print(f"[PATTERN_ERROR] Pattern '{pattern}' failed: {e}")
+                continue
+
+        matching_rows = inventory_df[combined_mask]
+        return matching_rows
+
+    def _get_location_category(self, location: str) -> str:
+        """Determine location category from location string for reporting purposes"""
+        location_str = str(location).upper()
+
+        # Check against pattern categories
+        for category, patterns in self.DEFAULT_WAREHOUSE_PATTERNS.items():
+            for pattern in patterns:
+                try:
+                    if pd.Series([location_str]).str.match(pattern, na=False).iloc[0]:
+                        return category
+                except:
+                    continue
+
+        return "STORAGE"  # Default assumption for unknown patterns
+
     def _normalize_location_code(self, location_code: str) -> str:
         """
         Conservative normalization - keep database format intact
@@ -1210,41 +1591,51 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         # Parse different condition formats
         time_threshold_hours = conditions.get('time_threshold_hours', 10)
         max_days_in_location = conditions.get('max_days_in_location')
+
+        # ENHANCED: Support both legacy location_types and new location_patterns
         location_types = conditions.get('location_types', ['RECEIVING'])
-        excluded_locations = conditions.get('excluded_locations', [])
-        
+        location_patterns = conditions.get('location_patterns', None)
+        excluded_patterns = conditions.get('excluded_patterns', None)
+
         # Convert max_days_in_location to hours if specified
         if max_days_in_location is not None:
             time_threshold_hours = max_days_in_location * 24
-        
+
         anomalies = []
         now = datetime.now()
-        
-        # Ensure location_type column exists
-        if 'location_type' not in inventory_df.columns:
-            inventory_df = self._assign_location_types_with_context(inventory_df, warehouse_context)
-        
-        # Filter pallets based on included and excluded locations
-        if excluded_locations:
-            # If exclusions specified, check all pallets except those in excluded locations
-            valid_pallets = inventory_df[~inventory_df['location_type'].isin(excluded_locations)]
+
+        # PATTERN-BASED FILTERING: Use patterns instead of location_type classification
+        if location_patterns:
+            # Use explicitly provided patterns
+            print(f"[STAGNANT_PALLETS] Using explicit location patterns: {location_patterns}")
+            valid_pallets = self._filter_by_location_patterns(inventory_df, location_patterns)
+        elif excluded_patterns:
+            # Use exclusion patterns (filter out matching locations)
+            print(f"[STAGNANT_PALLETS] Using exclusion patterns: {excluded_patterns}")
+            excluded_pallets = self._filter_by_location_patterns(inventory_df, excluded_patterns)
+            valid_pallets = inventory_df[~inventory_df.index.isin(excluded_pallets.index)]
         else:
-            # Otherwise, filter by included location types  
-            valid_pallets = inventory_df[inventory_df['location_type'].isin(location_types)]
+            # Backward compatibility: Convert location_types to patterns
+            print(f"[STAGNANT_PALLETS] Converting location_types to patterns: {location_types}")
+            patterns = self._get_patterns_for_location_types(location_types)
+            valid_pallets = self._filter_by_location_patterns(inventory_df, patterns)
         
         for _, pallet in valid_pallets.iterrows():
             if pd.isna(pallet.get('creation_date')):
                 continue
-                
+
             time_diff = now - pallet['creation_date']
+
             if time_diff > timedelta(hours=time_threshold_hours):
+                # Determine location category from location pattern for reporting
+                location_category = self._get_location_category(pallet['location'])
+
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
-                    'location_type': pallet['location_type'],
                     'anomaly_type': 'Stagnant Pallet',
                     'priority': rule.priority,
-                    'issue_description': f"Pallet in {pallet['location_type']} for {time_diff.total_seconds()/3600:.1f}h (threshold: {time_threshold_hours:.1f}h)"
+                    'issue_description': f"Pallet in {location_category} location '{pallet['location']}' for {time_diff.total_seconds()/3600:.1f}h (threshold: {time_threshold_hours:.1f}h)"
                 })
         
         return anomalies
@@ -1303,107 +1694,6 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         df['location_type'] = df['location'].apply(get_location_type)
         return df
     
-    def _assign_location_types_with_context(self, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> pd.DataFrame:
-        """Enhanced location type assignment using warehouse context when available"""
-        if not warehouse_context or not warehouse_context.get('warehouse_id'):
-            print(f"[STAGNANT_PALLETS_DEBUG] No warehouse context, using legacy assignment")
-            return self._assign_location_types(inventory_df)
-        
-        print(f"[STAGNANT_PALLETS_DEBUG] Using warehouse context: {warehouse_context['warehouse_id']}")
-        df = inventory_df.copy()
-        
-        # Try to use virtual location engine for enhanced classification
-        virtual_engine = None
-        try:
-            from virtual_template_integration import get_virtual_engine_for_warehouse
-            virtual_engine = get_virtual_engine_for_warehouse(warehouse_context['warehouse_id'])
-            
-            # If template integration fails, try to create virtual engine directly (like VirtualInvalidLocationEvaluator)
-            if not virtual_engine:
-                print(f"[STAGNANT_PALLETS_DEBUG] No template config found, creating virtual engine directly...")
-                from virtual_location_engine import VirtualLocationEngine
-                # Create with default USER_TESTF configuration like the working evaluator
-                warehouse_config = {
-                    'warehouse_id': warehouse_context['warehouse_id'],
-                    'num_aisles': 2,
-                    'racks_per_aisle': 1,
-                    'positions_per_rack': 22,
-                    'levels_per_position': 4,
-                    'level_names': 'ABCD',
-                    'special_areas': ['RECV-01', 'RECV-02', 'STAGE-01', 'DOCK-01', 'AISLE-01', 'AISLE-02'],
-                    'default_capacity': 1,
-                    'default_zone': 'GENERAL'
-                }
-                virtual_engine = VirtualLocationEngine(warehouse_config)
-                
-            print(f"[STAGNANT_PALLETS_DEBUG] Virtual engine loaded for location type assignment")
-        except Exception as e:
-            print(f"[STAGNANT_PALLETS_DEBUG] Could not load virtual engine: {e}")
-            return self._assign_location_types(inventory_df)
-        
-        def get_location_type_enhanced(location):
-            if pd.isna(location) or not str(location).strip():
-                return 'MISSING'
-            
-            location_str = str(location).strip()
-            
-            # Use virtual engine for enhanced classification
-            if virtual_engine:
-                try:
-                    # Check if location is a special area
-                    if hasattr(virtual_engine, 'special_areas'):
-                        special_areas_upper = [area.upper() for area in virtual_engine.special_areas]
-                        if location_str.upper() in special_areas_upper:
-                            # Classify special areas by pattern
-                            location_upper = location_str.upper()
-                            if any(pattern in location_upper for pattern in ['RECV', 'RECEIVING', 'DOCK', 'INBOUND']):
-                                return 'RECEIVING'
-                            elif any(pattern in location_upper for pattern in ['STAGE', 'STAGING', 'TRANSIT']):
-                                return 'TRANSITIONAL'
-                            elif 'AISLE' in location_upper:
-                                return 'AISLE'
-                            else:
-                                return 'SPECIAL'
-                    
-                    # Check if it's a valid storage location using virtual engine
-                    if hasattr(virtual_engine, 'validate_location'):
-                        validation_result = virtual_engine.validate_location(location_str)
-                        if validation_result.get('is_valid'):
-                            # If it passes virtual validation, it's likely storage
-                            return 'STORAGE'
-                        
-                except Exception as e:
-                    print(f"[STAGNANT_PALLETS_DEBUG] Virtual classification failed for {location_str}: {e}")
-            
-            # Fallback to enhanced pattern matching
-            location_upper = location_str.upper()
-            
-            # RECEIVING areas (highest priority for stagnant detection)
-            if any(pattern in location_upper for pattern in ['RECV', 'RECEIVING', 'DOCK', 'INBOUND']):
-                return 'RECEIVING'
-            
-            # TRANSITIONAL areas (medium priority)
-            if any(pattern in location_upper for pattern in ['STAGE', 'STAGING', 'TRANSIT', 'MOVE', 'TEMP']):
-                return 'TRANSITIONAL'
-            
-            # AISLE areas (special handling)
-            if 'AISLE' in location_upper:
-                return 'AISLE'
-            
-            # STORAGE areas - enhanced pattern recognition
-            if (any(pattern in location_upper for pattern in ['-A', '-B', '-C', '-D']) or 
-                location_str.replace('-', '').replace('_', '').isalnum()):
-                return 'STORAGE'
-            
-            return 'UNKNOWN'
-        
-        df['location_type'] = df['location'].apply(get_location_type_enhanced)
-        
-        # Debug: Print enhanced location type distribution
-        type_counts = df['location_type'].value_counts()
-        print(f"[STAGNANT_PALLETS_DEBUG] Enhanced location type distribution: {type_counts.to_dict()}")
-        
-        return df
     
     def test_location_matching(self, test_codes: list = None) -> dict:
         """
@@ -1479,41 +1769,58 @@ class UncoordinatedLotsEvaluator(BaseRuleEvaluator):
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
-        
+
         completion_threshold = conditions.get('completion_threshold', 0.8)
+
+        # ENHANCED: Support both legacy location_types and new pattern-based configuration
         location_types = conditions.get('location_types', ['RECEIVING'])
-        # FIXED: Make final location types configurable instead of hardcoded 'FINAL'
         final_location_types = conditions.get('final_location_types', ['FINAL', 'STORAGE'])
-        
+
+        # New pattern-based configuration options
+        source_patterns = conditions.get('source_patterns', None)  # Where stragglers are found
+        final_patterns = conditions.get('final_patterns', None)    # Where completed pallets should be
+
         anomalies = []
-        
-        # Ensure location_type column exists
-        if 'location_type' not in inventory_df.columns:
-            # Use enhanced location type assignment with warehouse context
-            stagnant_evaluator = StagnantPalletsEvaluator()
-            inventory_df = stagnant_evaluator._assign_location_types_with_context(inventory_df, warehouse_context)
-        
+
+        # PATTERN-BASED LOT COMPLETION ANALYSIS: Use patterns instead of location_type classification
+        if final_patterns is None:
+            # Backward compatibility: Convert final_location_types to patterns
+            final_patterns = self._get_patterns_for_location_types(final_location_types)
+
+        if source_patterns is None:
+            # Backward compatibility: Convert location_types to patterns
+            source_patterns = self._get_patterns_for_location_types(location_types)
+
         lots = inventory_df.groupby('receipt_number')
-        
+
         for receipt_number, lot_df in lots:
-            # Count pallets that have reached final storage locations (now configurable)
-            final_pallets = lot_df[lot_df['location_type'].isin(final_location_types)].shape[0]
-            total_pallets = lot_df.shape[0]
+            # Count pallets that have reached final storage locations using pattern matching
+            final_pallets_df = self._filter_by_location_patterns(lot_df, final_patterns)
+            final_pallets = len(final_pallets_df)
+            total_pallets = len(lot_df)
             completion_ratio = final_pallets / total_pallets if total_pallets > 0 else 0
-            
+
+            # Only log lots with stragglers (for troubleshooting)
+            # Remove verbose logging - only log when stragglers are actually found below
+
             # Only flag stragglers from mostly-complete lots (>=threshold completion)
             if completion_ratio >= completion_threshold and total_pallets > 1:
-                # Only flag multi-pallet lots where most pallets have been moved to final storage
-                # but some stragglers remain in receiving/staging areas
-                stragglers = lot_df[lot_df['location_type'].isin(location_types)]
-                for _, pallet in stragglers.iterrows():
+                # Find stragglers that remain in source locations (RECEIVING, STAGING, etc.)
+                stragglers_df = self._filter_by_location_patterns(lot_df, source_patterns)
+                # Only log if stragglers found
+                if len(stragglers_df) > 0:
+                    print(f"[INCOMPLETE_LOTS] Found {len(stragglers_df)} stragglers for lot {receipt_number}")
+
+                for _, pallet in stragglers_df.iterrows():
+                    location_category = self._get_location_category(pallet['location'])
+
                     anomalies.append({
                         'pallet_id': pallet['pallet_id'],
                         'location': pallet['location'],
                         'anomaly_type': 'Lot Straggler',
                         'priority': rule.priority,
-                        'issue_description': f"{completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet left behind in {pallet['location_type']}",
-                        'details': f"{completion_ratio:.0%} of lot '{receipt_number}' already stored, but this pallet still in {pallet['location_type']}"
+                        'issue_description': f"{completion_ratio:.0%} of lot '{receipt_number}' moved to final storage - this pallet left behind in {location_category} location '{pallet['location']}'",
+                        'details': f"{completion_ratio:.0%} of lot '{receipt_number}' already stored, but this pallet still in {location_category}"
                     })
         
         return anomalies
@@ -1549,13 +1856,19 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         significance_threshold = parameters.get('significance_threshold', 1.0)  # PRESERVED: For future premium feature
         min_severity_ratio = parameters.get('min_severity_ratio', 1.2)  # PRESERVED: For future premium feature
         
+        # UNIT-AGNOSTIC ENHANCEMENT: Check if scope filtering is available
+        use_unit_agnostic = parameters.get('use_unit_agnostic', True)  # Enable by default
+
         if use_statistical_analysis:
             return self._evaluate_with_statistical_analysis(
                 rule, inventory_df, significance_threshold, min_severity_ratio
             )
+        elif use_unit_agnostic and warehouse_context and warehouse_context.get('warehouse_id'):
+            # NEW: Unit-agnostic overcapacity detection with scope awareness
+            return self._evaluate_with_unit_agnostic_detection(rule, inventory_df, warehouse_context)
         elif use_location_differentiation:
             # Enhanced overcapacity detection with location type differentiation
-            return self._evaluate_with_location_differentiation(rule, inventory_df)
+            return self._evaluate_with_location_differentiation(rule, inventory_df, warehouse_context)
         else:
             # Legacy behavior for backward compatibility
             return self._evaluate_legacy(rule, inventory_df)
@@ -1583,7 +1896,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         anomalies = []
         
         # Calculate warehouse statistics
-        warehouse_stats = self._calculate_warehouse_statistics(inventory_df)
+        warehouse_stats = self._calculate_warehouse_statistics(inventory_df, warehouse_context)
         
         # Calculate expected overcapacity using statistical model
         expected_overcapacity = self._calculate_expected_overcapacity(inventory_df, warehouse_stats)
@@ -1595,7 +1908,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         actual_overcapacity_locations = []
         for location, count in location_counts.items():
             location_obj = self._find_location_by_code(str(location))
-            capacity = self._get_location_capacity(location_obj, str(location))
+            capacity = self._get_location_capacity(location_obj, str(location), warehouse_context)
             
             # DEBUG: Log capacity calculation details
             if self.debug:
@@ -1646,33 +1959,129 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 is_obvious = overcap_loc['count'] > overcap_loc['capacity'] * 2
                 violation_severity = overcap_loc['count'] / overcap_loc['capacity'] if overcap_loc['capacity'] > 0 else float('inf')
                 
-                # Find all pallets in overcapacity location
+                # Create one anomaly per overcapacity location (not per pallet)
                 pallets_in_loc = inventory_df[inventory_df['location'] == overcap_loc['location']]
-                for _, pallet in pallets_in_loc.iterrows():
-                    anomalies.append({
-                        'pallet_id': pallet['pallet_id'],
-                        'location': pallet['location'],
-                        'anomaly_type': 'Obvious Violation' if is_obvious else 'Smart Overcapacity',
-                        'priority': 'Very High' if is_obvious else adjusted_priority,
-                        'details': f"Location '{overcap_loc['location']}' has {overcap_loc['count']} pallets (capacity: {overcap_loc['capacity']})",
-                        'issue_description': f"{'Obvious overcapacity violation' if is_obvious else 'Systematic overcapacity detected'} - {violation_severity:.1f}x capacity",
-                        # Enhanced statistical fields
-                        'utilization_rate': warehouse_stats['utilization_rate'],
-                        'expected_overcapacity_count': expected_overcapacity['count'],
-                        'actual_overcapacity_count': actual_overcapacity_count,
-                        'anomaly_severity_ratio': severity_ratio,
-                        'overcapacity_category': 'Obvious Violation' if is_obvious else overcapacity_category,
-                        'warehouse_total_pallets': warehouse_stats['total_pallets'],
-                        'warehouse_total_capacity': warehouse_stats['total_capacity'],
-                        'statistical_model': 'Obvious violation bypass' if is_obvious else expected_overcapacity['model_used'],
-                        'excess_pallets': overcap_loc['excess'],
-                        'violation_severity': violation_severity,
-                        'bypass_reason': bypass_reason
-                    })
+                representative_pallet = pallets_in_loc.iloc[0]  # Use first pallet as representative
+                
+                anomalies.append({
+                    'pallet_id': representative_pallet['pallet_id'],
+                    'location': overcap_loc['location'],
+                    'anomaly_type': 'Obvious Violation' if is_obvious else 'Smart Overcapacity',
+                    'priority': 'Very High' if is_obvious else adjusted_priority,
+                    'details': f"Location '{overcap_loc['location']}' has {overcap_loc['count']} pallets (capacity: {overcap_loc['capacity']}, +{overcap_loc['excess']} excess)",
+                    'issue_description': f"{'Obvious overcapacity violation' if is_obvious else 'Systematic overcapacity detected'} - {violation_severity:.1f}x capacity",
+                    # Enhanced statistical fields
+                    'utilization_rate': warehouse_stats['utilization_rate'],
+                    'expected_overcapacity_count': expected_overcapacity['count'],
+                    'actual_overcapacity_count': actual_overcapacity_count,
+                    'anomaly_severity_ratio': severity_ratio,
+                    'overcapacity_category': 'Obvious Violation' if is_obvious else overcapacity_category,
+                    'warehouse_total_pallets': warehouse_stats['total_pallets'],
+                    'warehouse_total_capacity': warehouse_stats['total_capacity'],
+                    'statistical_model': 'Obvious violation bypass' if is_obvious else expected_overcapacity['model_used'],
+                    'excess_pallets': overcap_loc['excess'],
+                    'affected_pallets': overcap_loc['count'],
+                    'violation_severity': violation_severity,
+                    'bypass_reason': bypass_reason
+                })
         
         return anomalies
-    
-    def _calculate_warehouse_statistics(self, inventory_df: pd.DataFrame) -> Dict[str, Any]:
+
+    def _evaluate_with_unit_agnostic_detection(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
+        """
+        Unit-agnostic overcapacity detection with scope awareness.
+
+        This method integrates the SimpleScopeService to provide intelligent
+        overcapacity detection that respects warehouse scope configuration
+        and handles mixed unit types appropriately.
+
+        Features:
+        - Scope-aware capacity detection using SimpleScopeService
+        - Unit type awareness for intelligent capacity calculation
+        - Seamless integration with existing warehouse context
+        - Graceful fallback to location differentiation logic
+
+        Args:
+            rule: The overcapacity rule being evaluated
+            inventory_df: Inventory data (already scope-filtered by rule engine)
+            warehouse_context: Warehouse context with warehouse_id
+
+        Returns:
+            List of anomaly dictionaries for overcapacity violations
+        """
+        anomalies = []
+        warehouse_id = warehouse_context.get('warehouse_id')
+
+        print(f"\n[UNIT_AGNOSTIC] Starting unit-agnostic overcapacity detection for warehouse {warehouse_id}")
+
+        try:
+            # Initialize scope service for unit-aware capacity detection
+            scope_service = SimpleScopeService(str(warehouse_id))
+
+            # Get scope summary for debugging
+            scope_summary = scope_service.get_scope_summary()
+            print(f"[UNIT_AGNOSTIC] Scope config: {scope_summary}")
+
+            # Count items per location
+            location_counts = inventory_df['location'].value_counts()
+
+            print(f"[UNIT_AGNOSTIC] Analyzing {len(location_counts)} locations with inventory")
+
+            overcapacity_found = 0
+            for location, count in location_counts.items():
+                location_str = str(location)
+
+                # Get unit-aware capacity through scope service
+                capacity = scope_service.get_location_capacity(location_str)
+
+                if capacity is None:
+                    # Fallback to traditional capacity lookup
+                    location_obj = self._find_location_by_code(location_str)
+                    capacity = self._get_location_capacity(location_obj, location_str, warehouse_context)
+
+                # Get unit type for better anomaly reporting
+                unit_type = scope_service.get_location_unit_type(location_str)
+
+                # Check for overcapacity
+                if count > capacity:
+                    overcapacity_found += 1
+                    excess = count - capacity
+
+                    # Create representative anomaly (one per location)
+                    location_items = inventory_df[inventory_df['location'] == location]
+                    representative_item = location_items.iloc[0]
+
+                    anomaly = {
+                        'pallet_id': representative_item['pallet_id'],
+                        'location': location_str,
+                        'anomaly_type': 'Overcapacity',
+                        'priority': rule.priority,
+                        'details': f"Location '{location_str}' has {count} {unit_type} (capacity: {capacity}, +{excess} excess)",
+                        'affected_pallets': count,
+                        'excess_pallets': excess,
+                        'unit_type': unit_type,
+                        'capacity_source': 'scope_service' if scope_service.get_location_capacity(location_str) else 'fallback'
+                    }
+
+                    anomalies.append(anomaly)
+
+                    # Print only first few overcapacity locations to reduce log spam
+                    if overcapacity_found <= 3:
+                        print(f"[UNIT_AGNOSTIC] OVERCAPACITY: {location_str} has {count}/{capacity} {unit_type} (+{excess} excess)")
+                    elif overcapacity_found == 4:
+                        print(f"[UNIT_AGNOSTIC] ... (additional overcapacity locations found, details in results)")
+
+            print(f"[UNIT_AGNOSTIC] Found {overcapacity_found} overcapacity locations")
+
+        except Exception as e:
+            print(f"[UNIT_AGNOSTIC] Error in unit-agnostic detection: {e}")
+            # Fallback to location differentiation method
+            print(f"[UNIT_AGNOSTIC] Falling back to location differentiation method")
+            return self._evaluate_with_location_differentiation(rule, inventory_df, warehouse_context)
+
+        return anomalies
+
+    def _calculate_warehouse_statistics(self, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> Dict[str, Any]:
         """Calculate warehouse utilization and capacity statistics"""
         
         # Get all unique locations and their capacities
@@ -1680,13 +2089,20 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         total_capacity = 0
         valid_locations = 0
         
+        print(f"[WAREHOUSE_STATS_DEBUG] Processing {len(unique_locations)} unique locations")
+        
         for location in unique_locations:
             location_obj = self._find_location_by_code(str(location))
-            capacity = self._get_location_capacity(location_obj, str(location))
+            capacity = self._get_location_capacity(location_obj, str(location), warehouse_context)
             total_capacity += capacity
             valid_locations += 1
+            
+            if capacity == 0:
+                print(f"[WAREHOUSE_STATS_DEBUG] WARNING: Location {location} has capacity 0")
         
         total_pallets = len(inventory_df)
+        print(f"[WAREHOUSE_STATS_DEBUG] Total pallets: {total_pallets}, Total capacity: {total_capacity}, Valid locations: {valid_locations}")
+        
         utilization_rate = total_pallets / total_capacity if total_capacity > 0 else 0
         
         # Calculate distribution metrics
@@ -1711,6 +2127,27 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         utilization_rate = warehouse_stats['utilization_rate']
         total_pallets = warehouse_stats['total_pallets']
         total_locations = warehouse_stats['total_locations']
+        
+        print(f"[EXPECTED_OVERCAP_DEBUG] Stats: utilization_rate={utilization_rate}, total_pallets={total_pallets}, total_locations={total_locations}")
+        
+        # SAFETY CHECK: Prevent division by zero
+        if total_locations <= 0:
+            print(f"[OVERCAPACITY_DEBUG] WARNING: total_locations is {total_locations}, using fallback")
+            return {
+                'count': 1.0,
+                'model_used': 'Fallback (zero locations detected)',
+                'utilization_basis': 0.0,
+                'confidence_level': 30
+            }
+        
+        if total_pallets <= 0:
+            print(f"[OVERCAPACITY_DEBUG] WARNING: total_pallets is {total_pallets}, using fallback")
+            return {
+                'count': 0.0,
+                'model_used': 'Fallback (zero pallets detected)', 
+                'utilization_basis': 0.0,
+                'confidence_level': 95
+            }
         
         if utilization_rate <= 1.0:
             # Low to moderate utilization: Use Poisson-like distribution
@@ -1783,16 +2220,100 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         
         return reverse_map[adjusted_level]
     
-    def _get_location_capacity(self, location_obj, location_str: str) -> int:
-        """Get location capacity with intelligent defaults"""
-        # First priority: Use database capacity with type-specific preferences
+    def _get_location_capacity(self, location_obj, location_str: str, warehouse_context: dict = None, is_validated: bool = None) -> int:
+        """
+        Get location capacity with unit-agnostic integration and invalid location handling
+
+        ENHANCED for Unit-Agnostic Warehouse Intelligence:
+        - Integrates SimpleScopeService for unit type awareness
+        - Handles mixed unit types intelligently
+        - Maintains backward compatibility with existing capacity logic
+
+        Args:
+            location_obj: Database location object
+            location_str: Location code string
+            warehouse_context: Warehouse context for virtual engine lookup
+            is_validated: Whether location passed pre-validation (None = unknown, True = valid, False = invalid)
+
+        Returns:
+            Capacity integer, or -1 for invalid locations (should be excluded from analysis)
+        """
+        # ENHANCEMENT: Handle pre-validated invalid locations
+        if is_validated is False:
+            # Location failed pre-validation - return -1 to exclude from overcapacity analysis
+            return -1
+
+        # ENHANCEMENT: Basic invalid location patterns detection (fallback)
+        if is_validated is None:
+            location_upper = location_str.upper()
+            invalid_patterns = ['NOWHERE', 'INVALID', 'ERROR', 'NULL', 'UNKNOWN', 'TEMP', 'TEST']
+            if any(invalid_pattern in location_upper for invalid_pattern in invalid_patterns):
+                return -1  # Exclude invalid locations
+
+        # UNIT-AGNOSTIC ENHANCEMENT: Integrate SimpleScopeService for capacity determination
+        warehouse_id = None
+        if warehouse_context and warehouse_context.get('warehouse_id'):
+            warehouse_id = warehouse_context['warehouse_id']
+
+        if warehouse_id:
+            try:
+                # Use scope service to get location capacity with unit type awareness
+                scope_service = SimpleScopeService(str(warehouse_id))
+                scope_capacity = scope_service.get_location_capacity(location_str)
+
+                if scope_capacity is not None:
+                    # Found capacity through scope service
+                    return scope_capacity
+
+                # Also get unit type for intelligent fallback handling
+                unit_type = scope_service.get_location_unit_type(location_str)
+
+                # Log unit type information for debugging (reduced verbosity)
+                # print(f"[UNIT_AGNOSTIC] Location {location_str} detected as unit type: {unit_type}")
+
+            except Exception as e:
+                print(f"[UNIT_AGNOSTIC] Error accessing scope service for {location_str}: {e}")
+                # Continue with legacy capacity logic on error
+        
+        # ENHANCED: First check virtual engine if available (proper template-based capacity)
+        if warehouse_context and warehouse_context.get('warehouse_id'):
+            try:
+                from virtual_template_integration import get_virtual_engine_for_warehouse
+                virtual_engine = get_virtual_engine_for_warehouse(warehouse_context['warehouse_id'])
+                if virtual_engine:
+                    virtual_location = virtual_engine.get_location_properties(location_str)
+                    if virtual_location and hasattr(virtual_location, 'capacity'):
+                        # Found in virtual engine - use template-configured capacity
+                        return virtual_location.capacity
+            except Exception as e:
+                # Virtual engine not available, continue with database lookup
+                pass
+        
+        # ENHANCED: Database capacity with unit-agnostic preferences
         if location_obj:
+            # UNIT-AGNOSTIC: Check for unit_type field and handle appropriately
+            location_unit_type = getattr(location_obj, 'unit_type', None)
+
+            if location_unit_type:
+                # print(f"[UNIT_AGNOSTIC] Location {location_str} has database unit_type: {location_unit_type}")
+
+                # For mixed or non-pallet unit types, use the standard capacity field
+                if location_unit_type in ['boxes', 'items', 'cases', 'mixed']:
+                    if hasattr(location_obj, 'capacity') and location_obj.capacity:
+                        return location_obj.capacity
+                # For pallet unit types, prefer pallet_capacity if available
+                elif location_unit_type == 'pallets':
+                    if hasattr(location_obj, 'pallet_capacity') and location_obj.pallet_capacity:
+                        return location_obj.pallet_capacity
+                    elif hasattr(location_obj, 'capacity') and location_obj.capacity:
+                        return location_obj.capacity
+
             # For TRANSITIONAL locations, prefer pallet_capacity over capacity
-            if (hasattr(location_obj, 'location_type') and 
+            if (hasattr(location_obj, 'location_type') and
                 location_obj.location_type == 'TRANSITIONAL' and
                 hasattr(location_obj, 'pallet_capacity') and location_obj.pallet_capacity):
                 return location_obj.pallet_capacity
-            
+
             # For other locations, prefer capacity first
             if hasattr(location_obj, 'capacity') and location_obj.capacity:
                 return location_obj.capacity
@@ -1827,8 +2348,32 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             return 15  # Floor storage areas
         elif location_str.startswith('USER_') or any(x in location_upper for x in ['-', 'RACK', 'SHELF']):
             return 1   # Storage positions typically hold 1 pallet
+        elif self._matches_storage_pattern(location_str):
+            return 1   # Storage locations in ###L format (e.g., 001A, 050A, etc.)
         else:
             return 5   # Conservative default
+    
+    def _matches_storage_pattern(self, location_str: str) -> bool:
+        """
+        Check if location matches storage patterns like ###L (e.g., 001A, 050A, 234C)
+        This fixes overcapacity detection for standard warehouse storage locations.
+        """
+        import re
+        location_str = str(location_str).strip()
+        
+        # Pattern 1: ###L format (3 digits + single letter) - e.g., 001A, 050A, 234C
+        if re.match(r'^\d{3}[A-Z]$', location_str.upper()):
+            return True
+            
+        # Pattern 2: ##-##-###L format with hyphens - e.g., 01-02-001A
+        if re.match(r'^\d{2}-\d{2}-\d{3}[A-Z]$', location_str.upper()):
+            return True
+            
+        # Pattern 3: Other common storage formats
+        if re.match(r'^\d{1,4}[A-Z]{1,2}$', location_str.upper()):  # 1A, 12B, 123C, 1234AB
+            return True
+            
+        return False
     
     def _evaluate_legacy(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
@@ -1856,23 +2401,27 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         for location, count in location_counts.items():
             # Find location using smart matching to get capacity
             location_obj = self._find_location_by_code(str(location))
-            capacity = self._get_location_capacity(location_obj, str(location))
+            capacity = self._get_location_capacity(location_obj, str(location), warehouse_context or {})
             
             if count > capacity:
-                # Find all pallets in overcapacity location
+                # Create one anomaly per overcapacity location (not per pallet)
                 pallets_in_loc = inventory_df[inventory_df['location'] == location]
-                for _, pallet in pallets_in_loc.iterrows():
-                    anomalies.append({
-                        'pallet_id': pallet['pallet_id'],
-                        'location': pallet['location'],
-                        'anomaly_type': 'Overcapacity',
-                        'priority': rule.priority,
-                        'details': f"Location '{location}' has {count} pallets (capacity: {capacity})"
-                    })
+                representative_pallet = pallets_in_loc.iloc[0]  # Use first pallet as representative
+                excess = count - capacity
+                
+                anomalies.append({
+                    'pallet_id': representative_pallet['pallet_id'],
+                    'location': location,
+                    'anomaly_type': 'Overcapacity',
+                    'priority': rule.priority,
+                    'details': f"Location '{location}' has {count} pallets (capacity: {capacity}, +{excess} excess)",
+                    'affected_pallets': count,
+                    'excess_pallets': excess
+                })
         
         return anomalies
     
-    def _evaluate_with_location_differentiation(self, rule: Rule, inventory_df: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _evaluate_with_location_differentiation(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         """
         ENHANCED OVERCAPACITY DETECTION WITH LOCATION TYPE DIFFERENTIATION
         
@@ -1899,17 +2448,84 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         
         # Count pallets per location
         location_counts = inventory_df['location'].value_counts()
+        print(f"[OVERCAPACITY_DEBUG] ==================== OVERCAPACITY ANALYSIS START ====================")
+        print(f"[OVERCAPACITY_DEBUG] Total unique locations found: {len(location_counts)}")
+        # Only show locations with >2 pallets (potential overcapacity)
+        overcap_candidates = location_counts[location_counts > 2]
+        if len(overcap_candidates) > 0:
+            print(f"[OVERCAPACITY_DEBUG] Potential overcapacity locations: {len(overcap_candidates)}")
+        else:
+            print(f"[OVERCAPACITY_DEBUG] No locations with >2 pallets found")
         
         # Separate overcapacity locations by category for differentiated processing
         storage_overcapacity = {}
         special_overcapacity = {}
+        locations_within_capacity = 0
         
-        # Classify all overcapacity locations
+        # ENHANCEMENT: Pre-validation filter to exclude invalid locations from overcapacity analysis
+        print(f"[OVERCAPACITY_DEBUG] -------------------- PRE-VALIDATION FILTER --------------------")
+        validated_location_counts = {}
+        invalid_location_count = 0
+        
+        # Use virtual location engine for validation consistency
+        warehouse_id = warehouse_context.get('warehouse_id') if warehouse_context else None
+        virtual_engine = None
+        if warehouse_id:
+            try:
+                from virtual_template_integration import get_virtual_engine_for_warehouse
+                virtual_engine = get_virtual_engine_for_warehouse(warehouse_id)
+            except Exception:
+                pass
+        
+        for location, count in location_counts.items():
+            location_str = str(location).strip()
+            
+            # Skip empty/null locations
+            if not location_str or pd.isna(location):
+                continue
+                
+            # Validate location using virtual engine if available
+            is_valid_location = True
+            validation_reason = "No validation available"
+            
+            if virtual_engine:
+                is_valid_location, validation_reason = virtual_engine.validate_location(location_str)
+            else:
+                # Fallback: Basic validation for obviously invalid patterns
+                if any(invalid_pattern in location_str.upper() for invalid_pattern in ['NOWHERE', 'INVALID', 'ERROR', 'NULL']):
+                    is_valid_location = False
+                    validation_reason = "Contains invalid pattern"
+                elif location_str.upper().startswith('AISLE-') and not location_str.upper().startswith('AISLE-0'):
+                    # AISLE-05+ are typically invalid in most warehouse configurations
+                    is_valid_location = False  
+                    validation_reason = "Invalid aisle location pattern"
+                    
+            if is_valid_location:
+                validated_location_counts[location] = count
+            else:
+                invalid_location_count += 1
+                print(f"[OVERCAPACITY_DEBUG] [INVALID]: {location} ({count} pallets) - {validation_reason} [EXCLUDED from overcapacity analysis]")
+        
+        print(f"[OVERCAPACITY_DEBUG] Pre-validation summary: {len(validated_location_counts)} valid locations, {invalid_location_count} invalid locations excluded")
+        
+        # Use validated locations for capacity analysis
+        location_counts = validated_location_counts
+        
+        # Classify all overcapacity locations (now using validated locations only)
+        print(f"[OVERCAPACITY_DEBUG] -------------------- CAPACITY ANALYSIS --------------------")
+        total_locations_analyzed = 0
+        overcapacity_locations_found = 0
+        
         for location, count in location_counts.items():
             location_obj = self._find_location_by_code(str(location))
-            capacity = self._get_location_capacity(location_obj, str(location))
+            # Pass is_validated=True since these locations passed pre-validation filter
+            capacity = self._get_location_capacity(location_obj, str(location), warehouse_context, is_validated=True)
+            total_locations_analyzed += 1
             
             if count > capacity:
+                overcapacity_locations_found += 1
+                location_type = location_obj.location_type if location_obj else 'NOT_FOUND'
+                
                 # Classify location for appropriate alert strategy
                 category, priority = self.location_classifier.classify_location(location_obj, str(location))
                 
@@ -1921,34 +2537,97 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                     'priority': priority.value
                 }
                 
+                excess = count - capacity
+                # Track for summary: {location} has {count}/{capacity} pallets (+{excess} excess)
                 if category == LocationCategory.STORAGE:
                     storage_overcapacity[location] = location_info
                 else:  # LocationCategory.SPECIAL
                     special_overcapacity[location] = location_info
+            else:
+                locations_within_capacity += 1
+        
+        print(f"[OVERCAPACITY_DEBUG] -------------------- SUMMARY --------------------")
+        print(f"[OVERCAPACITY_DEBUG] Total locations analyzed: {total_locations_analyzed}")
+        print(f"[OVERCAPACITY_DEBUG] Locations within capacity: {locations_within_capacity}")
+        print(f"[OVERCAPACITY_DEBUG] Overcapacity locations found: {overcapacity_locations_found}")
+        print(f"[OVERCAPACITY_DEBUG] Storage overcapacity locations: {len(storage_overcapacity)}")
+        print(f"[OVERCAPACITY_DEBUG] Special area overcapacity locations: {len(special_overcapacity)}")
         
         # Generate CRITICAL individual pallet alerts for Storage locations
+        print(f"[OVERCAPACITY_DEBUG] Generating {len(storage_overcapacity)} storage anomalies...")
+        storage_anomaly_count = 0
+        excluded_pallet_count = 0
+        
+        # Initialize precedence checking
+        try:
+            from rule_precedence_system import create_precedence_manager
+            precedence_manager = create_precedence_manager()
+            rule_precedence = getattr(rule, 'precedence_level', 2)  # Overcapacity default precedence
+        except ImportError:
+            precedence_manager = None
+            rule_precedence = 2
+        
         for location, info in storage_overcapacity.items():
             pallets_in_loc = inventory_df[inventory_df['location'] == location]
-            for _, pallet in pallets_in_loc.iterrows():
-                anomalies.append({
-                    'pallet_id': pallet['pallet_id'],
-                    'location': pallet['location'],
-                    'anomaly_type': 'Storage Overcapacity',
-                    'priority': info['priority'],  # Very High (CRITICAL)
-                    'details': f"Storage location '{location}' overcapacity: {info['count']}/{info['capacity']} pallets - investigate pallet {pallet['pallet_id']}",
-                    'business_context': 'CRITICAL - Data integrity requires individual pallet investigation',
-                    'location_category': 'STORAGE'
-                })
+
+            # Create one anomaly per overcapacity storage location (not per pallet)
+            representative_pallet = pallets_in_loc.iloc[0]  # Use first pallet as representative
+            pallet_id = representative_pallet['pallet_id']
+
+            # Check if representative pallet should be excluded by precedence system
+            if (precedence_manager and precedence_manager.enable_precedence and
+                precedence_manager.should_exclude_pallet(pallet_id, rule)):
+                excluded_pallet_count += 1
+                exclusion_reason = precedence_manager.registry.get_exclusion_reason(pallet_id, rule_precedence)
+                print(f"[OVERCAPACITY_DEBUG]   --> EXCLUDED: {pallet_id} - {exclusion_reason}")
+                continue
+
+            excess = info['count'] - info['capacity']
+
+            # DETAILED LOGGING: Show every storage overcapacity anomaly
+            all_pallet_ids = ', '.join(pallets_in_loc['pallet_id'].tolist())
+            print(f"[OVERCAPACITY_STORAGE] #{storage_anomaly_count + 1}: Location '{location}' - {info['count']}/{info['capacity']} pallets (+{excess} excess)")
+            print(f"[OVERCAPACITY_STORAGE]    Pallets: {all_pallet_ids}")
+
+            anomalies.append({
+                'pallet_id': representative_pallet['pallet_id'],
+                'location': location,
+                'anomaly_type': 'Storage Overcapacity',
+                'priority': info['priority'],  # Very High (CRITICAL)
+                'details': f"Storage location '{location}' overcapacity: {info['count']}/{info['capacity']} pallets (+{excess} excess)",
+                'business_context': 'CRITICAL - Data integrity requires location investigation',
+                'location_category': 'STORAGE',
+                'affected_pallets': info['count'],
+                'excess_pallets': excess
+            })
+            storage_anomaly_count += 1
+        
+        if excluded_pallet_count > 0:
+            print(f"[OVERCAPACITY_DEBUG] Total pallets excluded by precedence: {excluded_pallet_count}")
+        
+        print(f"[OVERCAPACITY_DEBUG] Total storage anomalies generated: {storage_anomaly_count}")
         
         # Generate WARNING location-level alerts for Special areas
+        print(f"[OVERCAPACITY_DEBUG] Generating {len(special_overcapacity)} special area anomalies...")
+        special_anomaly_count = 0
         for location, info in special_overcapacity.items():
-            # Single alert per overcapacity special area
-            percentage = round((info['count'] / info['capacity']) * 100)
+            # SAFETY CHECK: Prevent division by zero
+            if info['capacity'] > 0:
+                percentage = round((info['count'] / info['capacity']) * 100)
+            else:
+                percentage = 999  # Indicate infinite overcapacity
+                print(f"[OVERCAPACITY_DEBUG] WARNING: Location {location} has capacity 0, using percentage=999")
             excess_pallets = info['count'] - info['capacity']
-            
+
             # Use first pallet in location for the alert (required field)
             pallets_in_loc = inventory_df[inventory_df['location'] == location]
             representative_pallet = pallets_in_loc.iloc[0]
+
+            # DETAILED LOGGING: Show every special area overcapacity anomaly
+            all_pallet_ids = ', '.join(pallets_in_loc['pallet_id'].tolist())
+            print(f"[OVERCAPACITY_SPECIAL] #{special_anomaly_count + 1}: Location '{location}' - {info['count']}/{info['capacity']} pallets ({percentage}%, +{excess_pallets} excess)")
+            print(f"[OVERCAPACITY_SPECIAL]    Pallets: {all_pallet_ids}")
+            print(f"[OVERCAPACITY_SPECIAL]    Representative: {representative_pallet['pallet_id']}")
             
             anomalies.append({
                 'pallet_id': representative_pallet['pallet_id'],  # Representative pallet
@@ -1962,6 +2641,11 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 'excess_pallets': excess_pallets,
                 'capacity_percentage': percentage
             })
+            special_anomaly_count += 1
+            # Count logged in summary
+        
+        print(f"[OVERCAPACITY_DEBUG] Total special area anomalies generated: {special_anomaly_count}")
+        print(f"[OVERCAPACITY_DEBUG] Complete: {storage_anomaly_count} storage + {special_anomaly_count} special = {len(anomalies)} total anomalies")
         
         # Add analytics metadata for tracking improvement
         if hasattr(rule, 'conditions') and rule.conditions:
@@ -2326,46 +3010,124 @@ class InvalidLocationEvaluator(BaseRuleEvaluator):
         return anomalies
 
 class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
-    """Evaluator for location-specific stagnant pallets"""
-    
+    """Evaluator for location-specific stagnant pallets with dynamic pattern support"""
+
+    def __init__(self, app=None, pattern_resolver=None):
+        super().__init__(app)
+        self.pattern_resolver = pattern_resolver
+        print(f"[PATTERN_INTEGRATION] LocationSpecificStagnantEvaluator initialized with pattern_resolver: {pattern_resolver is not None}")
+
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
-        
-        location_pattern = conditions.get('location_pattern', 'AISLE*')
         time_threshold = conditions.get('time_threshold_hours', 4)
-        
+
         anomalies = []
         now = datetime.now()
-        
-        # Filter by location pattern
-        matching_pallets = inventory_df[
-            inventory_df['location'].astype(str).str.upper().str.match(
-                location_pattern.upper().replace('*', '.*'), na=False
-            )
-        ]
-        
-        # Evaluating {len(matching_pallets)} pallets for stagnant behavior
-        
+
+        # ENHANCED: Get patterns from resolver if available
+        location_patterns = self._get_location_patterns(conditions, warehouse_context)
+
+        # Filter by location patterns (support multiple patterns)
+        matching_pallets = self._filter_by_patterns(inventory_df, location_patterns)
+
+        # Evaluate stagnant pallets - only log if anomalies found
+
         for _, pallet in matching_pallets.iterrows():
             if pd.isna(pallet.get('creation_date')):
                 continue
-                
+
             time_diff = now - pallet['creation_date']
             time_diff_hours = time_diff.total_seconds() / 3600
             exceeds_threshold = time_diff > timedelta(hours=time_threshold)
-            
-            # Pallet evaluation: {time_diff_hours:.1f}h vs {time_threshold}h threshold
-            
+
+            # Individual pallet evaluation (logged below if anomaly found)
+
             if exceeds_threshold:
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
                     'anomaly_type': 'Location-Specific Stagnant',
                     'priority': rule.priority,
-                    'details': f"Pallet stuck in {pallet['location']} for {time_diff_hours:.1f}h"
+                    'details': f"Pallet stuck in {pallet['location']} for {time_diff_hours:.1f}h",
+                    'rule_id': rule.id,
+                    'rule_name': rule.name,
+                    'rule_type': rule.rule_type
                 })
-        
+
+        if len(anomalies) > 0:
+            print(f"[PATTERN_RESOLVER] LocationSpecificStagnantEvaluator found {len(anomalies)} anomalies")
         return anomalies
+
+    def _get_location_patterns(self, conditions: dict, warehouse_context: dict) -> List[str]:
+        """Get location patterns with pattern resolver integration"""
+
+        # ENHANCED: Try pattern resolver first
+        if self.pattern_resolver and warehouse_context:
+            try:
+                pattern_set = self.pattern_resolver.get_patterns_for_rule('LOCATION_SPECIFIC_STAGNANT', warehouse_context)
+                patterns = pattern_set.transitional_patterns
+
+                # Convert patterns to pandas-compatible format
+                processed_patterns = []
+                for pattern in patterns:
+                    # Convert regex patterns to pandas str.match compatible format
+                    if pattern.startswith('^') and pattern.endswith('$'):
+                        # Remove ^ and $ anchors for pandas str.match
+                        processed_patterns.append(pattern[1:-1])
+                    else:
+                        processed_patterns.append(pattern)
+
+                # Template-based patterns resolved successfully
+                return processed_patterns
+
+            except Exception as e:
+                # Pattern resolution failed, using fallback
+                pass
+
+        # FALLBACK: Use existing logic when resolver unavailable
+        location_pattern = conditions.get('location_pattern', 'AISLE*')
+
+        # ENHANCED: Convert wildcard patterns to precise regex patterns
+        if location_pattern == 'AISLE*':
+            # Match specific AISLE locations like AISLE-01, AISLE-02, etc.
+            fallback_pattern = r'^AISLE-\d+$'
+            # Using precise AISLE pattern
+        else:
+            # For other patterns, use the original wildcard conversion
+            fallback_pattern = location_pattern.upper().replace('*', '.*')
+            # Using fallback pattern
+
+        return [fallback_pattern]
+
+    def _filter_by_patterns(self, inventory_df: pd.DataFrame, patterns: List[str]) -> pd.DataFrame:
+        """Filter inventory by multiple location patterns"""
+        if not patterns:
+            return pd.DataFrame()
+
+        # Create combined mask for all patterns
+        combined_mask = pd.Series([False] * len(inventory_df), index=inventory_df.index)
+
+        for pattern in patterns:
+            try:
+                # Apply pattern matching
+                pattern_mask = inventory_df['location'].astype(str).str.upper().str.match(pattern, na=False)
+                combined_mask = combined_mask | pattern_mask
+
+                matches = pattern_mask.sum()
+                # Only log zero matches for troubleshooting
+                if matches == 0:
+                    print(f"[PATTERN_RESOLVER] Pattern '{pattern}' matched 0 locations")
+
+            except Exception as e:
+                print(f"[PATTERN_RESOLVER] Pattern '{pattern}' failed: {e}")
+                continue
+
+        matching_pallets = inventory_df[combined_mask]
+        # Only log if no matches found (for troubleshooting)
+        if len(matching_pallets) == 0:
+            print(f"[PATTERN_RESOLVER] Total matches across all patterns: {len(matching_pallets)}")
+
+        return matching_pallets
 
 class TemperatureZoneMismatchEvaluator(BaseRuleEvaluator):
     """Evaluator for temperature zone violations"""
@@ -2440,20 +3202,193 @@ class DataIntegrityEvaluator(BaseRuleEvaluator):
         return anomalies
 
 class LocationMappingErrorEvaluator(BaseRuleEvaluator):
-    """Evaluator for location mapping errors"""
-    
+    """Evaluator for location mapping errors with dynamic pattern support"""
+
+    def __init__(self, app=None, pattern_resolver=None):
+        super().__init__(app)
+        self.pattern_resolver = pattern_resolver
+        print(f"[PATTERN_INTEGRATION] LocationMappingErrorEvaluator initialized with pattern_resolver: {pattern_resolver is not None}")
+
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
-        
+
         anomalies = []
-        
-        # This is a placeholder for more complex location mapping validation
-        # Could include checks like:
-        # - Locations that should exist but don't
-        # - Pattern inconsistencies
-        # - Zone mismatches
-        
+
+        # Check for location type mismatches
+        validate_location_types = conditions.get('validate_location_types', True)
+        check_pattern_consistency = conditions.get('check_pattern_consistency', True)
+
+        if validate_location_types:
+            # ENHANCED: Get location type patterns with pattern resolver integration
+            location_type_patterns = self._get_location_type_patterns_enhanced(warehouse_context)
+
+            # Evaluating location mapping errors using pattern-based validation
+
+            # Check each pallet for location type consistency
+            for _, pallet in inventory_df.iterrows():
+                location = str(pallet.get('location', '')).upper()
+                location_type = str(pallet.get('location_type', '')).upper()
+
+                if not location or not location_type:
+                    continue
+
+                # Determine expected location type based on location pattern
+                expected_type = None
+                matched_pattern = None
+
+                for loc_type, patterns in location_type_patterns.items():
+                    # Support multiple patterns per location type
+                    patterns_list = patterns if isinstance(patterns, list) else [patterns]
+
+                    for pattern in patterns_list:
+                        try:
+                            if re.match(pattern, location):
+                                expected_type = loc_type
+                                matched_pattern = pattern
+                                break
+                        except re.error as e:
+                            print(f"[PATTERN_RESOLVER] Invalid regex pattern '{pattern}': {e}")
+                            continue
+
+                    if expected_type:
+                        break
+
+                # If we found an expected type and it doesn't match actual type
+                if expected_type and expected_type != location_type:
+                    # Location type mismatch found - added to anomalies
+
+                    anomalies.append({
+                        'pallet_id': pallet['pallet_id'],
+                        'location': pallet['location'],
+                        'anomaly_type': 'Location Type Mismatch',
+                        'priority': rule.priority,
+                        'details': f"Location '{location}' should be type '{expected_type}' but is marked as '{location_type}'",
+                        'expected_type': expected_type,
+                        'actual_type': location_type,
+                        'issue_description': f"Location type inconsistency: {location} pattern suggests {expected_type}, but marked as {location_type}",
+                        'matched_pattern': matched_pattern,
+                        'rule_id': rule.id,
+                        'rule_name': rule.name,
+                        'rule_type': rule.rule_type
+                    })
+
+        if len(anomalies) > 0:
+            print(f"[PATTERN_RESOLVER] LocationMappingErrorEvaluator found {len(anomalies)} anomalies")
         return anomalies
+
+    def _get_location_type_patterns_enhanced(self, warehouse_context: dict) -> Dict[str, List[str]]:
+        """Enhanced location type pattern generation with pattern resolver integration"""
+
+        # ENHANCED: Try pattern resolver first
+        if self.pattern_resolver and warehouse_context:
+            try:
+                pattern_set = self.pattern_resolver.get_patterns_for_rule('LOCATION_MAPPING_ERROR', warehouse_context)
+
+                enhanced_patterns = {
+                    'STORAGE': pattern_set.storage_patterns,
+                    'RECEIVING': pattern_set.receiving_patterns,
+                    'TRANSITIONAL': pattern_set.transitional_patterns,  # Maps to AISLE in legacy systems
+                    'STAGING': pattern_set.staging_patterns,
+                    'DOCK': pattern_set.dock_patterns,
+                    'SPECIAL': pattern_set.special_patterns
+                }
+
+                # Add backward compatibility mapping
+                enhanced_patterns['AISLE'] = pattern_set.transitional_patterns
+
+                # Template-based location type patterns loaded successfully
+
+                return enhanced_patterns
+
+            except Exception as e:
+                # Pattern resolution failed, using fallback
+                pass
+
+        # FALLBACK: Use existing logic
+        fallback_patterns = self._get_location_type_patterns(warehouse_context)
+
+        # Convert single patterns to lists for consistency
+        normalized_patterns = {}
+        for loc_type, pattern in fallback_patterns.items():
+            normalized_patterns[loc_type] = [pattern] if isinstance(pattern, str) else pattern
+
+        # Using fallback location type patterns
+        return normalized_patterns
+    
+    def _get_warehouse_config(self, warehouse_context: dict) -> dict:
+        """
+        Get warehouse configuration including max_position_digits for enterprise support.
+        
+        Args:
+            warehouse_context: Warehouse context with warehouse_id
+            
+        Returns:
+            Dictionary with warehouse configuration, defaults to 6 digits if not found
+        """
+        if not warehouse_context:
+            return {'max_position_digits': 6}  # Default for backward compatibility
+            
+        warehouse_id = warehouse_context.get('warehouse_id')
+        if not warehouse_id:
+            return {'max_position_digits': 6}  # Default fallback
+        
+        # Try to get warehouse configuration from database
+        try:
+            context = self._ensure_app_context()
+            if context:
+                with context:
+                    from models import WarehouseConfig
+                    config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+                    if config:
+                        return config.to_dict()
+            else:
+                from models import WarehouseConfig
+                config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+                if config:
+                    return config.to_dict()
+        except Exception as e:
+            print(f"[LOCATION_MAPPING] Warning: Could not load warehouse config for {warehouse_id}: {e}")
+        
+        # Fallback to enterprise default (6 digits supports up to 999999 positions)
+        return {'max_position_digits': 6}
+    
+    def _get_location_type_patterns(self, warehouse_context: dict) -> dict:
+        """
+        Generate dynamic location type patterns based on warehouse configuration.
+        
+        Supports enterprise-scale warehouses with configurable position digits (3-6 digits).
+        Maintains backward compatibility with traditional 3-digit warehouses.
+        
+        Args:
+            warehouse_context: Warehouse context for configuration lookup
+            
+        Returns:
+            Dictionary mapping location types to regex patterns
+        """
+        # Get warehouse configuration
+        config = self._get_warehouse_config(warehouse_context)
+        max_digits = config.get('max_position_digits', 6)
+        
+        # Ensure max_digits is within valid range (3-6 digits)
+        if max_digits < 3:
+            max_digits = 3  # Minimum 3 digits for backward compatibility
+        elif max_digits > 6:
+            max_digits = 6  # Maximum 6 digits for enterprise scale
+        
+        print(f"[LOCATION_MAPPING] Using max_position_digits={max_digits} for pattern generation")
+        
+        # Generate dynamic patterns based on warehouse configuration
+        patterns = {
+            'STORAGE': rf'^\d{{3,{max_digits}}}[A-Z]$',  # 3 to max_digits + letter format
+            'RECEIVING': r'^(recv-|RECV-|RECEIVING)',  # receiving patterns
+            'AISLE': r'^(aisle-|AISLE-)',  # aisle patterns  
+            'STAGING': r'^(stage-|STAGE-|STAGING)',  # staging patterns
+            'DOCK': r'^(dock-|DOCK-)',  # dock patterns
+        }
+        
+        print(f"[LOCATION_MAPPING] Generated patterns: STORAGE={patterns['STORAGE']}")
+        
+        return patterns
 
 class MissingLocationEvaluator(BaseRuleEvaluator):
     """Evaluator for missing location detection"""

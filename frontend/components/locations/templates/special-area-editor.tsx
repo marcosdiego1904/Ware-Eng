@@ -57,7 +57,7 @@ export function SpecialAreaEditor({
 
   function getDefaultZone(type: string) {
     switch (type) {
-      case 'RECEIVING': return 'DOCK';
+      case 'RECEIVING': return 'RECEIVING';
       case 'STAGING': return 'STAGING';
       case 'DOCK': return 'DOCK';
       case 'TRANSITIONAL': return 'GENERAL';

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2 } from 'lucide-react'
+import Image from 'next/image'
 
 interface LoginFormData {
   username: string
@@ -44,13 +45,26 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
-        <CardDescription>
-          Sign in to your Warehouse Intelligence Dashboard
-        </CardDescription>
-      </CardHeader>
+    <div className="w-full max-w-md space-y-6">
+      {/* RackHawk Logo */}
+      <div className="flex justify-center">
+        <Image
+          src="/logo-auth.png"
+          alt="RackHawk"
+          width={320}
+          height={80}
+          priority
+          className="w-[280px] sm:w-[320px] h-auto"
+        />
+      </div>
+
+      <Card className="w-full">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+          <CardDescription>
+            Sign in to your RackHawk Dashboard
+          </CardDescription>
+        </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {error && (
@@ -89,7 +103,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full bg-[#F08A5D] hover:bg-[#E67A4D] text-white" disabled={isLoading}>
             {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Sign In
           </Button>
@@ -106,5 +120,6 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
         </form>
       </CardContent>
     </Card>
+    </div>
   )
 }

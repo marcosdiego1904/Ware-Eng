@@ -1,0 +1,6 @@
+Puntos a mejorar
+
+Interfaz principal -- debemos hacer todas las funciones en un solo dashboard?
+mejorar el maanejo de las reglas -- hacer que la interaccion sea lo mas facil possible.
+mejorar detalles de interactividad con los affected pallets
+

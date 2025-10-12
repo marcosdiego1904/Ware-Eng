@@ -354,6 +354,125 @@ export function OverviewView() {
         </Card>
       </div>
 
+      {/* Intelligence Preview Cards - Data-Driven Insights (Brand Aligned) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Health Score Preview - Steel Gray Professional */}
+        <Card
+          className="cursor-pointer hover:shadow-lg transition-all duration-300 border-2 border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 bg-gradient-to-br from-slate-50/40 to-slate-100/30 dark:from-slate-800/40 dark:to-slate-700/30"
+          style={{ borderRadius: '6px' }}
+          onClick={() => setCurrentView('track-wins')}
+        >
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              {/* Health Score Circle */}
+              <div className="relative w-20 h-20">
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle cx="40" cy="40" r="32" stroke="#E2E8F0" strokeWidth="6" fill="none" />
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r="32"
+                    stroke="#4A5568"
+                    strokeWidth="6"
+                    fill="none"
+                    strokeDasharray={`${(
+                      stats.systemHealth === 'excellent' ? 95 :
+                      stats.systemHealth === 'good' ? 80 :
+                      stats.systemHealth === 'warning' ? 65 : 40
+                    ) / 100 * 201} 201`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                    {stats.systemHealth === 'excellent' ? '95' :
+                     stats.systemHealth === 'good' ? '80' :
+                     stats.systemHealth === 'warning' ? '65' : '40'}
+                  </span>
+                </div>
+              </div>
+              {/* Score Info */}
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                  Warehouse Health
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
+                    {stats.systemHealth.charAt(0).toUpperCase() + stats.systemHealth.slice(1)}
+                  </span>
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                  {stats.resolutionRate.toFixed(0)}% resolved
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Wins Preview - Safety Orange Action */}
+        <Card
+          className="cursor-pointer hover:shadow-lg transition-all duration-300 border-2 border-orange-100 hover:border-orange-200 dark:border-orange-900/50 dark:hover:border-orange-800/50 bg-gradient-to-br from-orange-50/30 to-orange-100/20 dark:from-orange-950/20 dark:to-orange-900/30"
+          style={{ borderRadius: '6px' }}
+          onClick={() => setCurrentView('reports')}
+        >
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              {/* Quick Wins Icon */}
+              <div className="w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center border-4 border-orange-200 dark:border-orange-800">
+                <span className="text-3xl">🎯</span>
+              </div>
+              {/* Wins Info */}
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                  Quick Wins Available
+                </h3>
+                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                  {(() => {
+                    // Calculate quick wins - low priority anomalies that are easy to fix
+                    const quickWinsCount = detailedData?.priorityBreakdown?.['LOW'] || 0
+                    return quickWinsCount
+                  })()}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                  5-15 min fixes
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Space Availability Preview - Steel Gray Professional */}
+        <Card
+          className="cursor-pointer hover:shadow-lg transition-all duration-300 border-2 border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 bg-gradient-to-br from-slate-50/40 to-slate-100/30 dark:from-slate-800/40 dark:to-slate-700/30"
+          style={{ borderRadius: '6px' }}
+          onClick={() => setCurrentView('analytics')}
+        >
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              {/* Space Icon */}
+              <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center border-2 border-slate-200 dark:border-slate-700">
+                <span className="text-3xl">📦</span>
+              </div>
+              {/* Space Info */}
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                  Space Available
+                </h3>
+                <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">
+                  {(() => {
+                    const availablePercentage = 100 - (stats.warehouseUtilization || 0)
+                    return availablePercentage > 0 ? `${availablePercentage.toFixed(0)}%` : 'N/A'
+                  })()}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                  {((stats.totalCapacity || 0) - (stats.totalPallets || 0)).toLocaleString()} locations open
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Warehouse Utilization Section */}
       {(stats.warehouseUtilization ?? 0) > 0 && (
         <Card className="border-blue-200 bg-blue-50/30">

@@ -27,7 +27,7 @@ export interface LocationSummary {
 
 export interface Anomaly {
   id: number;
-  status: 'New' | 'Acknowledged' | 'In Progress' | 'Resolved';
+  status: 'New' | 'Acknowledged' | 'In Progress' | 'Resolved' | 'Cleared';
   anomaly_type: string;
   location: string;
   priority: 'VERY HIGH' | 'HIGH' | 'MEDIUM' | 'LOW';
@@ -60,6 +60,16 @@ export interface CreateReportRequest {
   rules_file?: File;
   column_mapping: Record<string, string>;
   warehouse_id?: string;  // NEW: Add warehouse_id support
+  clear_previous?: boolean;  // CLEAR ANOMALIES: Support for clearing previous anomalies
+}
+
+export interface SpaceUtilization {
+  warehouse_capacity: number;       // Total warehouse capacity (max pallets)
+  inventory_count: number;           // Current pallets in this report
+  utilization_percentage: number;    // Space utilization %
+  available_space: number;           // Remaining capacity
+  warehouse_name: string;            // Warehouse identifier
+  warehouse_id: string;              // Warehouse ID
 }
 
 export const reportsApi = {
@@ -94,11 +104,18 @@ export const reportsApi = {
       console.log('Including warehouse_id from applied template:', data.warehouse_id);
     }
 
+    // CLEAR ANOMALIES: Include clear_previous parameter if provided
+    if (data.clear_previous !== undefined) {
+      formData.append('clear_previous', data.clear_previous.toString());
+      console.log('Including clear_previous parameter:', data.clear_previous);
+    }
+
     console.log('Sending FormData with:', {
       inventory_file: data.inventory_file.name,
       rules_file: data.rules_file?.name,
       column_mapping: data.column_mapping,
-      warehouse_id: data.warehouse_id  // NEW: Log warehouse context
+      warehouse_id: data.warehouse_id,  // NEW: Log warehouse context
+      clear_previous: data.clear_previous  // CLEAR ANOMALIES: Log clear parameter
     });
 
     // Log FormData contents for debugging
@@ -113,16 +130,47 @@ export const reportsApi = {
       console.log('Request successful:', response.data);
       return response.data;
     } catch (error: unknown) {
-      const err = error as { response?: { status?: number; statusText?: string; data?: unknown }; message?: string }
       console.error('Request failed:', error);
-      console.error('Error details:', {
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-        data: err.response?.data,
-        message: err.message,
-        code: (error as { code?: string }).code
-      });
-      throw error;
+
+      // Better error handling with proper type checking
+      if (error && typeof error === 'object') {
+        const err = error as {
+          response?: {
+            status?: number;
+            statusText?: string;
+            data?: { message?: string; error?: string }
+          };
+          message?: string;
+          code?: string;
+          request?: unknown;
+        };
+
+        const errorDetails = {
+          status: err.response?.status || 'unknown',
+          statusText: err.response?.statusText || 'unknown',
+          data: err.response?.data || null,
+          message: err.message || 'Unknown error',
+          code: err.code || 'unknown',
+          hasRequest: !!err.request,
+          hasResponse: !!err.response,
+          // Provide a user-friendly message
+          userMessage: err.response?.data?.message ||
+                      err.response?.data?.error ||
+                      err.message ||
+                      'Failed to create report. Please check your connection and try again.'
+        };
+
+        console.error('Error details:', errorDetails);
+
+        // Re-throw with enhanced error information
+        const enhancedError = new Error(errorDetails.userMessage);
+        Object.assign(enhancedError, { originalError: error, details: errorDetails });
+        throw enhancedError;
+      }
+
+      // Fallback for non-object errors
+      console.error('Non-object error caught:', error);
+      throw new Error('An unexpected error occurred. Please try again.');
     }
   },
 
@@ -152,6 +200,11 @@ export const reportsApi = {
     const response = await api.post(`/reports/${reportId}/duplicate`, {
       new_name: newName
     });
+    return response.data;
+  },
+
+  async getSpaceUtilization(reportId: number): Promise<SpaceUtilization> {
+    const response = await api.get(`/reports/${reportId}/space-utilization`);
     return response.data;
   },
 };

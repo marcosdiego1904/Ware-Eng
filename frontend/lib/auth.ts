@@ -12,6 +12,7 @@ export interface LoginRequest {
 export interface RegisterRequest {
   username: string;
   password: string;
+  invitation_code: string;  // Required for registration
 }
 
 export interface AuthResponse {
@@ -25,7 +26,7 @@ export const authApi = {
     return response.data;
   },
 
-  async register(credentials: RegisterRequest): Promise<{ message: string }> {
+  async register(credentials: RegisterRequest): Promise<{ message: string; invitation_used?: string }> {
     const response = await api.post('/auth/register', credentials);
     return response.data;
   },

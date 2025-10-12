@@ -109,6 +109,9 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
   
   // Quick Apply State
   const [shareCode, setShareCode] = useState('');
+  
+  // Track which template was last applied to show correct "Applied" status
+  const [lastAppliedTemplateId, setLastAppliedTemplateId] = useState<number | null>(null);
 
   useEffect(() => {
     const scope = templateScope === 'featured' ? 'all' : templateScope;
@@ -120,11 +123,29 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
     let filtered = [...templates];
     
     // Mark active template based on current warehouse config
+    // Only ONE template should show as applied, even if multiple templates have matching dimensions
     if (currentWarehouseConfig) {
+      // First, find all templates that match the current warehouse dimensions
+      const matchingTemplates = filtered.filter(template => isTemplateActive(template, currentWarehouseConfig));
+      
+      // If multiple templates match, determine which one should show as applied
+      let activeTemplate = null;
+      if (matchingTemplates.length > 0) {
+        // If we have tracked which template was last applied, use that
+        if (lastAppliedTemplateId) {
+          activeTemplate = matchingTemplates.find(t => t.id === lastAppliedTemplateId);
+        }
+        // Fall back to the first matching template if no specific one was tracked
+        if (!activeTemplate) {
+          activeTemplate = matchingTemplates[0];
+        }
+      }
+      
+      // Mark templates as applied or not
       filtered = filtered.map(template => ({
         ...template,
-        is_applied: isTemplateActive(template, currentWarehouseConfig),
-        applied_warehouse_id: isTemplateActive(template, currentWarehouseConfig) ? currentWarehouseConfig.warehouse_id : undefined
+        is_applied: Boolean(activeTemplate && template.id === activeTemplate.id),
+        applied_warehouse_id: activeTemplate && template.id === activeTemplate.id ? currentWarehouseConfig.warehouse_id : undefined
       }));
     }
     
@@ -248,8 +269,14 @@ export function EnhancedTemplateManagerV2({ warehouseId }: EnhancedTemplateManag
         success: true,
         locations_created: result?.locations_created,
         storage_locations: result?.storage_locations,
-        special_areas: result?.special_areas
+        special_areas: result?.special_areas,
+        virtual_location_summary: result?.virtual_location_summary
       });
+      
+      // Track which template was successfully applied
+      if (templateToApply.id) {
+        setLastAppliedTemplateId(templateToApply.id);
+      }
       
       // Clear share code if it was used
       setShareCode('');

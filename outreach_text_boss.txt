@@ -1,0 +1,85 @@
+VERSION 1: "THE MENTORSHIP CALLBACK"
+-------------------------------------------
+
+Hey [Boss Name], it's Diego - hope you remember me 😊
+
+I'm about to graduate with my CS degree (the one I was working
+on at QPSI), and I wanted to reach out because I built
+something I think you'd appreciate.
+
+Remember all those inventory concepts you guys taught me? The
+ones we used to rescue that 50K deficit? I turned them into
+software.
+
+It basically does what I used to do manually - finds forgotten
+pallets, incomplete lots, overcapacity issues, all the stuff
+we tracked down in Excel. But automated.
+
+I'm testing it with real warehouses now and immediately thought
+of QPSI. You guys taught me everything I know about inventory -
+would mean a lot if the team could be the first to try it.
+
+Free pilot, I handle everything. Just want feedback from people
+who actually know this stuff.
+
+Would you be open to a quick call this week to chat about it?
+
+- Diego
+
+
+-------------------------------------------
+
+VERSION 2: "THE HUMBLE APPROACH" (if V1 feels too forward)
+-------------------------------------------
+
+[Boss Name] - Diego here. Been a while!
+
+Quick update: I'm finishing my CS degree and spent the last
+year building warehouse software based on everything you guys
+taught me at QPSI.
+
+It automates the inventory analysis we used to do manually -
+finding stagnant pallets, lot stragglers, all those patterns
+we hunted for.
+
+Thought of you because the concepts in the app are literally
+the same ones we used to fix that 50K deficit. You'd recognize
+them immediately.
+
+I'm looking for a warehouse to pilot it with. Would QPSI's
+inventory team be interested in testing it out? Free for
+3 months - just need honest feedback.
+
+Let me know if you'd be open to a quick call to discuss.
+
+Diego
+
+
+-------------------------------------------
+
+VERSION 3: "THE DIRECT PERSONAL" (most authentic to your voice)
+-------------------------------------------
+
+Hey [Boss Name], Diego here 👋
+
+Hope you're doing well. I'm about to graduate with my CS degree
+and wanted to share something with you.
+
+I built inventory software using all the concepts you guys
+taught me when I was 19-21 at QPSI. Basically automated the
+system we used to recover that 50K - finds forgotten pallets,
+incomplete lots, overcapacity, all of it.
+
+I'm testing it with warehouses now and you were my first
+thought. The app literally uses the same principles you
+taught me, just automated.
+
+Would the QPSI inventory team want to pilot it? Free for
+3 months, I train them on it, just need feedback.
+
+Can I call you this week to walk through it?
+
+Thanks for everything you taught me back then.
+
+Diego
+

@@ -1,0 +1,28 @@
+Hi Mr. Keith, it's Marcos - hope you remember me 😊
+
+I'm about to graduate with my CS degree (the one I was working
+on at QPSI), and I wanted to reach out because I built something
+I think you'd appreciate.
+
+Remember all those inventory concepts you guys taught me? I turned it into
+software.
+
+It does what I used to do manually - ensures all lots moved to
+the racks, catches pallets left behind in aisles or receiving,
+flags overcapacity issues, invalid locations, all the patterns
+we used to hunt down in Excel. But automated in 2 minutes
+instead of hours.
+
+I'm testing it with real warehouses now and immediately thought
+of QPSI. You guys taught me everything I know about inventory -
+would mean a lot if the team could be the first to try it.
+
+Free pilot. I can send you a demo link first (since you're
+in NJ), or if the PA team wants, I can come down in person to
+walk them through it. Whatever works best.
+
+
+Thanks for everything you guys taught me back then, Mr. Keith.
+Really shaped how I think about operations.
+
+- Marcos

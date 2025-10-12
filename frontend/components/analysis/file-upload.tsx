@@ -88,7 +88,7 @@ export function FileUpload({ onFilesSelected, selectedFiles, allowRulesOptional 
             <CardTitle className="flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5" />
               Inventory Report
-              <Badge variant="destructive" className="text-xs">Required</Badge>
+              <Badge className="text-xs bg-orange-500 text-white hover:bg-orange-600">Required</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -123,11 +123,11 @@ export function FileUpload({ onFilesSelected, selectedFiles, allowRulesOptional 
                 }`}
               >
                 <input {...getInventoryInputProps()} />
-                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600 mb-2">
-                  Drag & drop your inventory Excel file here, or click to browse
+                <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                <p className="text-sm text-slate-700 mb-2">
+                  Drop your WMS export here, or click to browse
                 </p>
-                <p className="text-xs text-gray-500">Supports .xlsx and .xls files</p>
+                <p className="text-xs text-slate-500">Accepts Excel exports from any WMS</p>
               </div>
             )}
             
@@ -152,7 +152,7 @@ export function FileUpload({ onFilesSelected, selectedFiles, allowRulesOptional 
               <FileSpreadsheet className="w-5 h-5" />
               Warehouse Rules
               {allowRulesOptional && (
-                <Badge variant="secondary" className="text-xs">Optional</Badge>
+                <Badge className="text-xs bg-slate-600 text-white hover:bg-slate-700">Optional</Badge>
               )}
             </CardTitle>
           </CardHeader>
@@ -189,11 +189,11 @@ export function FileUpload({ onFilesSelected, selectedFiles, allowRulesOptional 
               >
                 <input {...getRulesInputProps()} />
                 <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600 mb-2">
-                  Drag & drop your rules Excel file here, or click to browse
+                <p className="text-sm text-slate-700 mb-2">
+                  Drop your rules file here, or click to browse
                 </p>
-                <p className="text-xs text-gray-500">
-                  {allowRulesOptional ? 'Will use default rules if not provided' : 'Required file'}
+                <p className="text-xs text-slate-500">
+                  {allowRulesOptional ? 'Will use warehouse defaults if not provided' : 'Required file'}
                 </p>
               </div>
             )}
@@ -216,9 +216,9 @@ export function FileUpload({ onFilesSelected, selectedFiles, allowRulesOptional 
       {/* File Validation Messages */}
       <div className="space-y-2">
         {!selectedFiles.inventory && (
-          <div className="flex items-center gap-2 text-red-600">
+          <div className="flex items-center gap-2 text-orange-600">
             <AlertCircle className="w-4 h-4" />
-            <span className="text-sm">Inventory report is required to proceed</span>
+            <span className="text-sm">Upload your inventory file to start</span>
           </div>
         )}
         

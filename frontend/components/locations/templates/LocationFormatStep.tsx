@@ -44,17 +44,22 @@ const EXAMPLE_SUGGESTIONS = [
   {
     title: "Position + Level Format",
     description: "Position number followed by level letter",
-    examples: "010A\n325B\n245D\n100C\n005A"
+    examples: "010A\n325B\n245D\n1230A\n5678D\n123456A"
+  },
+  {
+    title: "Enterprise Scale Positions",
+    description: "Large warehouse positions with 4+ digits",
+    examples: "1000A\n2500B\n7890C\n15000A\n25000D"
   },
   {
     title: "Aisle-Rack-Position",
-    description: "Multi-segment location codes",
-    examples: "A01-R02-P15\nB05-R01-P03\nC12-R03-P25"
+    description: "Multi-segment location codes for large warehouses",
+    examples: "01-A-1000A\n02-B-2500C\n01-A-15000B\n03-C-7890A"
   },
   {
     title: "Zone + Sequential",
     description: "Zone identifier with sequential numbers",
-    examples: "ZONE-A-001\nZONE-B-125\nZONE-C-075"
+    examples: "ZONE-A-001\nZONE-B-125\nZONE-C-1250\nZONE-A-5000"
   }
 ];
 
@@ -146,99 +151,122 @@ export function LocationFormatStep({
   const exampleList = parseExamples(examples);
 
   return (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
-        <MapPin className="h-12 w-12 mx-auto mb-4 text-primary" />
-        <h3 className="text-lg font-semibold">Smart Location Format</h3>
-        <p className="text-sm text-muted-foreground">
-          Paste your location examples and we'll automatically detect the pattern
+    <div className="space-y-8">
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-slate-700 to-orange-700 shadow-xl mb-4">
+          <MapPin className="h-8 w-8 text-orange-300" />
+        </div>
+        <h3 className="text-2xl font-bold text-gray-900 mb-2">Set Up Location Names</h3>
+        <p className="text-base text-gray-600 max-w-lg mx-auto">
+          Tell us how you currently name your storage locations, and we'll set up the same system for your warehouse
         </p>
       </div>
 
       {/* Format Application Status */}
       {formatApplied ? (
-        <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800">
-            <strong>Format Configuration Applied!</strong> Your template will use the detected location format pattern.
-          </AlertDescription>
-        </Alert>
+        <div className="bg-gradient-to-r from-emerald-50 to-slate-50 border border-emerald-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-emerald-600 to-slate-700 shadow-lg">
+              <CheckCircle className="h-4 w-4 text-emerald-200" />
+            </div>
+            <div>
+              <div className="font-semibold text-slate-800">Perfect! Location system is ready</div>
+              <div className="text-sm text-slate-600">We've learned your naming pattern and will use it throughout your warehouse</div>
+            </div>
+          </div>
+        </div>
       ) : (
-        <Alert>
-          <Sparkles className="h-4 w-4" />
-          <AlertDescription>
-            <strong>How it works:</strong> Enter 3-10 location examples from your warehouse. 
-            Our AI will detect the pattern for your template.
-          </AlertDescription>
-        </Alert>
+        <div className="bg-gradient-to-r from-blue-50 to-slate-50 border border-blue-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-slate-700 shadow-lg">
+              <Info className="h-4 w-4 text-blue-200" />
+            </div>
+            <div>
+              <div className="font-semibold text-slate-800">How this works</div>
+              <div className="text-sm text-slate-600 mt-1">
+                Just show us 3-5 examples of how you name your storage spots (like A01, B15, or ZONE-A-001). 
+                We'll figure out the pattern and set up your entire warehouse using the same system.
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Example Input */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Location Examples
-          </CardTitle>
-          <CardDescription>
-            Paste your location codes (one per line or comma-separated)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="examples">Your Location Codes</Label>
+      <div className="bg-gray-50 p-6 rounded-lg border">
+        <div className="mb-4">
+          <h4 className="text-lg font-semibold text-gray-900 mb-2">Show us your location names</h4>
+          <p className="text-sm text-gray-600">
+            Enter a few examples of how you currently label your storage spots
+          </p>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="space-y-3">
+            <Label htmlFor="examples" className="text-base font-medium text-gray-900">
+              Your current location names
+            </Label>
             <Textarea
               id="examples"
               value={examples}
               onChange={(e) => handleExamplesChange(e.target.value)}
-              placeholder="010A&#10;325B&#10;245D&#10;100C&#10;005A"
+              placeholder="A01&#10;B15&#10;C22&#10;D03&#10;A45"
               rows={6}
-              className="font-mono text-sm"
+              className="font-mono text-base"
             />
-            <div className="flex justify-between items-center text-xs text-muted-foreground">
-              <span>
-                {exampleList.length} example{exampleList.length !== 1 ? 's' : ''} entered
-                {exampleList.length >= 2 && ' • Detection active'}
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">
+                {exampleList.length === 0 && "Enter 3-5 examples to get started"}
+                {exampleList.length === 1 && "Great! Add 2-4 more examples"}
+                {exampleList.length === 2 && "Perfect! Add 1-3 more examples"}
+                {exampleList.length >= 3 && exampleList.length < 6 && "✅ Perfect! We're analyzing your pattern..."}
+                {exampleList.length >= 6 && "✅ Excellent! That's plenty of examples"}
               </span>
-              <span>Supports multiple formats: newlines, commas, semicolons</span>
+              <span className="text-xs text-gray-500">One per line</span>
             </div>
           </div>
 
           {/* Quick Examples */}
           {examples.length === 0 && (
-            <div className="space-y-3">
-              <div className="text-sm font-medium">Quick Examples</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-4">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="bg-gray-50 px-4 text-gray-500">Or try one of these common formats</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {EXAMPLE_SUGGESTIONS.map((suggestion, index) => (
-                  <Card
+                  <div
                     key={index}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    className="cursor-pointer p-4 bg-white rounded-lg border hover:border-orange-200 hover:shadow-sm transition-all duration-200"
                     onClick={() => applySuggestion(suggestion)}
                   >
-                    <CardContent className="p-3">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium">{suggestion.title}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {suggestion.description}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs text-primary">
-                          <Copy className="h-3 w-3" />
-                          Click to use
-                        </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-gray-900 text-sm">{suggestion.title}</div>
+                        <div className="text-xs text-orange-600 font-medium">Try this →</div>
                       </div>
-                    </CardContent>
-                  </Card>
+                      <div className="text-xs text-gray-600">{suggestion.description}</div>
+                      <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                        {suggestion.examples.split('\n').slice(0, 3).join(', ')}...
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Detection Results */}
-      {(detectionResult || loading || error) && (
+      {(detectionResult || loading || error) && exampleList.length >= 2 && (
         <div className="space-y-4">
-          <div className="text-sm font-medium">Detection Results</div>
+          <div className="text-lg font-semibold text-gray-900">We found your pattern!</div>
           <FormatDetectionDisplay
             result={detectionResult}
             loading={loading}
@@ -252,13 +280,20 @@ export function LocationFormatStep({
       )}
 
       {/* Help Text */}
-      {exampleList.length < 2 && examples.length > 0 && (
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            Please provide at least 2 valid location examples for pattern detection.
-          </AlertDescription>
-        </Alert>
+      {exampleList.length === 1 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-yellow-100">
+              <Info className="h-4 w-4 text-yellow-600" />
+            </div>
+            <div>
+              <div className="font-semibold text-yellow-900">Almost there!</div>
+              <div className="text-sm text-yellow-700 mt-1">
+                Add one or two more examples so we can understand your naming pattern better.
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

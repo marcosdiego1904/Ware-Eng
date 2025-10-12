@@ -252,17 +252,27 @@ def setup_warehouse(current_user):
         
         warehouse_id = data.get('warehouse_id', f'WAREHOUSE_{current_user.id}_{int(datetime.utcnow().timestamp())}')
         
+        # DEBUG: Log the request data
+        force_recreate_value = data.get('force_recreate', False)
+        print(f"[WAREHOUSE_SETUP_DEBUG] Warehouse ID: {warehouse_id}")
+        print(f"[WAREHOUSE_SETUP_DEBUG] Force recreate: {force_recreate_value}")
+        print(f"[WAREHOUSE_SETUP_DEBUG] Request keys: {list(data.keys())}")
+        
         # Step 1: Create or update warehouse configuration
         config_data = data.get('configuration', {})
         config_data['warehouse_id'] = warehouse_id
         
         # Check if config already exists
         existing_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+        print(f"[WAREHOUSE_SETUP_DEBUG] Existing config found: {existing_config is not None}")
         
         if existing_config and not data.get('force_recreate', False):
+            print(f"[WAREHOUSE_SETUP_DEBUG] BLOCKED: Existing config without force_recreate")
             return jsonify({
                 'error': f'Warehouse {warehouse_id} already exists. Use force_recreate=true to override.'
             }), 409
+            
+        print(f"[WAREHOUSE_SETUP_DEBUG] Proceeding with setup...")
         
         if existing_config:
             # Update existing config
@@ -309,9 +319,17 @@ def setup_warehouse(current_user):
         generate_locations = data.get('generate_locations', True)
         created_locations = []
         
+        print(f"[WAREHOUSE_SETUP_DEBUG] Generate locations: {generate_locations}")
+        
         if generate_locations:
             # Always clear existing locations when updating warehouse configuration
+            existing_location_count = Location.query.filter_by(warehouse_id=warehouse_id).count()
+            print(f"[WAREHOUSE_SETUP_DEBUG] Deleting {existing_location_count} existing locations for warehouse {warehouse_id}")
             Location.query.filter_by(warehouse_id=warehouse_id).delete()
+            
+            # Locations have been cleared above - no additional workarounds needed
+            # Multi-tenancy is now properly supported with compound unique constraints
+            
             db.session.flush()  # Ensure deletions are applied before continuing
             
             # Locations have been cleared above, so we can proceed with generation
@@ -444,17 +462,15 @@ def setup_warehouse(current_user):
                 db.session.add(location)
                 created_locations.append(location)
             
-            # Better PostgreSQL transaction handling
+            # Commit warehouse configuration and locations
             try:
-                db.session.flush()  # Catch constraint violations early
                 db.session.commit()
+                print(f"[WAREHOUSE_SETUP_DEBUG] Warehouse setup committed successfully")
             except Exception as commit_error:
                 db.session.rollback()
                 error_msg = str(commit_error)
-                if 'unique constraint' in error_msg.lower() or 'duplicate key' in error_msg.lower():
-                    return jsonify({'error': f'Warehouse setup failed due to duplicate data. Try with force_recreate=true.'}), 409
-                else:
-                    raise  # Re-raise other exceptions
+                print(f"[WAREHOUSE_SETUP_DEBUG] Database commit failed: {error_msg}")
+                return jsonify({'error': f'Warehouse setup failed: {error_msg}'}), 500
         
         # Step 3: Create template if requested
         create_template = data.get('create_template', False)

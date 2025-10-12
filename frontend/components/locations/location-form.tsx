@@ -27,10 +27,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import useLocationStore, { Location } from '@/lib/location-store';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  AlertCircle, 
-  MapPin, 
-  Package, 
+import { BulkLocationRangeTab } from './bulk-location-range-tab';
+import {
+  AlertCircle,
+  MapPin,
+  Package,
   Building2,
   Loader2,
   Save,
@@ -41,7 +42,7 @@ interface LocationFormProps {
   location?: Location | null;
   warehouseId: string;
   onClose: () => void;
-  onSave: (location: Location) => void;
+  onSave: (locations: Location | Location[]) => void;
 }
 
 interface LocationFormData {
@@ -156,8 +157,8 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
         is_active: location.is_active
       });
       
-      setAllowedProductsText(location.allowed_products.join(', '));
-      setSpecialRequirementsText(JSON.stringify(location.special_requirements, null, 2));
+      setAllowedProductsText(location.allowed_products ? location.allowed_products.join(', ') : '');
+      setSpecialRequirementsText(location.special_requirements ? JSON.stringify(location.special_requirements, null, 2) : '{}');
       setIsStorageLocation(location.is_storage_location);
       
       // Trigger validation for existing location's pallet capacity
@@ -297,27 +298,37 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
             {location ? 'Edit Location' : 'Add New Location'}
           </DialogTitle>
           <DialogDescription>
-            {location 
+            {location
               ? `Modify the details for location ${location.code}`
-              : 'Create a new location in your warehouse'
+              : 'Create a new location or multiple locations using the bulk range creator'
             }
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <Tabs defaultValue="basic" className="flex-1 flex flex-col overflow-hidden">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="basic">Basic Info</TabsTrigger>
-              <TabsTrigger value="structure">Structure</TabsTrigger>
-              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+        {/* Show tabs only for new locations (not editing) */}
+        {!location ? (
+          <Tabs defaultValue="single" className="flex-1 flex flex-col overflow-hidden">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="single">Single Location</TabsTrigger>
+              <TabsTrigger value="bulk">Bulk Range Creator</TabsTrigger>
             </TabsList>
+
+            {/* Single Location Tab */}
+            <TabsContent value="single" className="flex-1 flex flex-col overflow-hidden">
+              <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                <Tabs defaultValue="basic" className="flex-1 flex flex-col overflow-hidden">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="basic">Basic Info</TabsTrigger>
+                    <TabsTrigger value="structure">Structure</TabsTrigger>
+                    <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                  </TabsList>
 
             <TabsContent value="basic" className="flex-1 overflow-y-auto space-y-6">
               <Card>
@@ -600,6 +611,316 @@ export function LocationForm({ location, warehouseId, onClose, onSave }: Locatio
             </Button>
           </div>
         </form>
+      </TabsContent>
+
+      {/* Bulk Range Creator Tab */}
+      <TabsContent value="bulk" className="flex-1 overflow-y-auto">
+        <BulkLocationRangeTab
+          warehouseId={warehouseId}
+          onClose={onClose}
+          onSave={onSave}
+        />
+      </TabsContent>
+    </Tabs>
+  ) : (
+    /* Edit mode - show original single location form */
+    <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden">
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Tabs defaultValue="basic" className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="basic">Basic Info</TabsTrigger>
+          <TabsTrigger value="structure">Structure</TabsTrigger>
+          <TabsTrigger value="advanced">Advanced</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="basic" className="flex-1 overflow-y-auto space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-4 w-4" />
+                Location Details
+              </CardTitle>
+              <CardDescription>
+                Basic information about this location
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="code">Location Code *</Label>
+                  <Input
+                    id="code"
+                    {...register('code', {
+                      required: 'Location code is required',
+                      minLength: { value: 1, message: 'Code must be at least 1 character' }
+                    })}
+                    placeholder="e.g., 001A, RECEIVING"
+                  />
+                  {errors.code && (
+                    <p className="text-sm text-destructive">{errors.code.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="location_type">Location Type *</Label>
+                  <Select
+                    value={locationType}
+                    onValueChange={(value: LocationFormData['location_type']) => setValue('location_type', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="STORAGE">Storage</SelectItem>
+                      <SelectItem value="RECEIVING">Receiving</SelectItem>
+                      <SelectItem value="STAGING">Staging</SelectItem>
+                      <SelectItem value="DOCK">Dock</SelectItem>
+                      <SelectItem value="TRANSITIONAL">Transitional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="zone">Zone</Label>
+                  <Input
+                    id="zone"
+                    {...register('zone')}
+                    placeholder="e.g., GENERAL, FREEZER, HAZMAT"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pallet_capacity">Pallet Capacity</Label>
+                  <Input
+                    id="pallet_capacity"
+                    type="number"
+                    min="1"
+                    {...register('pallet_capacity', {
+                      valueAsNumber: true,
+                      min: { value: 1, message: 'Capacity must be at least 1' },
+                      onChange: (e) => {
+                        const value = parseInt(e.target.value) || 0;
+                        console.log('🔍 Pallet capacity input changed:', value);
+                        validatePalletCapacity(value);
+                      }
+                    })}
+                    placeholder="Number of pallets"
+                  />
+                  {errors.pallet_capacity && (
+                    <p className="text-sm text-destructive">{errors.pallet_capacity.message}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {locationType === 'STORAGE' && 'Storage: 1-2 pallets typical, 4 maximum'}
+                    {locationType === 'RECEIVING' && 'Receiving: 5-30 pallets typical'}
+                    {locationType === 'STAGING' && 'Staging: 5-30 pallets typical'}
+                    {locationType === 'DOCK' && 'Dock: 5-20 pallets typical'}
+                    {locationType === 'TRANSITIONAL' && 'Transitional: 5-15 pallets typical (aisles, crossdocks)'}
+                    {' • Validation active ✓'}
+                  </p>
+                  {palletWarnings.length > 0 && (
+                    <div className="space-y-1">
+                      {palletWarnings.map((warning, index) => (
+                        <p key={index} className="text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                          {warning}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pattern">Location Pattern (Optional)</Label>
+                <Input
+                  id="pattern"
+                  {...register('pattern')}
+                  placeholder="e.g., AISLE-*, 00[1-9][A-D]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Regex pattern for matching multiple locations (optional)
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="is_active"
+                  checked={watch('is_active')}
+                  onCheckedChange={(checked) => setValue('is_active', checked)}
+                />
+                <Label htmlFor="is_active">Location is active</Label>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="structure" className="flex-1 overflow-y-auto space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Physical Structure
+              </CardTitle>
+              <CardDescription>
+                {isStorageLocation
+                  ? 'Define the physical location within your warehouse hierarchy'
+                  : 'Storage locations only - structure fields are not needed for special areas'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isStorageLocation ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="aisle_number">Aisle Number</Label>
+                      <Input
+                        id="aisle_number"
+                        type="number"
+                        min="1"
+                        {...register('aisle_number', {
+                          valueAsNumber: true,
+                          onChange: handleStructureChange
+                        })}
+                        placeholder="1, 2, 3..."
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="rack_number">Rack Number</Label>
+                      <Input
+                        id="rack_number"
+                        type="number"
+                        min="1"
+                        {...register('rack_number', {
+                          valueAsNumber: true,
+                          onChange: handleStructureChange
+                        })}
+                        placeholder="1, 2..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="position_number">Position Number</Label>
+                      <Input
+                        id="position_number"
+                        type="number"
+                        min="1"
+                        {...register('position_number', {
+                          valueAsNumber: true,
+                          onChange: handleStructureChange
+                        })}
+                        placeholder="1, 2, 3... 50, 100..."
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="level">Level</Label>
+                      <Input
+                        id="level"
+                        {...register('level', {
+                          onChange: handleStructureChange
+                        })}
+                        placeholder="A, B, C, D..."
+                        maxLength={2}
+                      />
+                    </div>
+                  </div>
+
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      When you enter position number and level, the location code will be auto-generated (e.g., 01-02-015A).
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Building2 className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <p>Structure information is only applicable to storage locations.</p>
+                  <p>Special areas like receiving, staging, and dock don&apos;t need hierarchy details.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="advanced" className="flex-1 overflow-y-auto space-y-6">
+          <div className="grid gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Allowed Products</CardTitle>
+                <CardDescription>
+                  Specify which product patterns are allowed in this location
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Textarea
+                    value={allowedProductsText}
+                    onChange={(e) => setAllowedProductsText(e.target.value)}
+                    placeholder="Enter product patterns separated by commas, e.g., FROZEN*, *HAZMAT*, PRODUCT-123"
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use asterisks (*) for wildcards. Leave empty to allow all products.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Special Requirements</CardTitle>
+                <CardDescription>
+                  Additional requirements or metadata for this location (JSON format)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Textarea
+                    value={specialRequirementsText}
+                    onChange={(e) => setSpecialRequirementsText(e.target.value)}
+                    placeholder='{"temperature": "freezer", "hazmat_approved": true, "max_height": 10}'
+                    rows={4}
+                  />
+                  {formErrors.special_requirements && (
+                    <p className="text-sm text-destructive">{formErrors.special_requirements}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Valid JSON format required. Use empty object {} if no special requirements.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      <Separator className="mt-auto" />
+
+      <div className="flex justify-end gap-2 pt-4">
+        <Button type="button" variant="outline" onClick={onClose}>
+          <X className="h-4 w-4 mr-2" />
+          Cancel
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Save className="h-4 w-4 mr-2" />
+          {location ? 'Update Location' : 'Create Location'}
+        </Button>
+      </div>
+    </form>
+  )}
       </DialogContent>
     </Dialog>
   );

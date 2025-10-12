@@ -4,14 +4,22 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { 
-  ArrowRight, 
-  CheckCircle2, 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  ArrowRight,
+  CheckCircle2,
   AlertCircle,
   FileSpreadsheet,
-  Settings
+  Settings,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  AlertTriangle
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import { ConfidenceIndicator, ConfidenceBar } from './confidence-badge'
+import { cn } from '@/lib/utils'
 
 interface ColumnMappingProps {
   inventoryFile: File
@@ -28,50 +36,111 @@ const REQUIRED_COLUMNS = [
   { key: 'creation_date', label: 'Creation Date', description: 'Date when pallet was created' }
 ]
 
+interface MatchSuggestion {
+  matched_column: string | null
+  confidence: number
+  method: string | null
+  alternatives: Array<{ column: string; confidence: number }>
+}
+
+interface DateFormatInfo {
+  format_type: 'EXCEL_SERIAL' | 'ISO_FORMAT' | 'US_SLASH' | 'EU_SLASH' | 'UNIX_TIMESTAMP' | 'HUMAN_READABLE' | 'MIXED' | 'UNKNOWN'
+  confidence: number  // 0.0-1.0
+  sample_values: string[]
+  unparseable_count: number
+  total_count: number
+  parsing_strategy: string
+}
+
+interface MappingSuggestions {
+  suggestions: Record<string, MatchSuggestion>
+  user_columns: string[]
+  unmapped_required: string[]
+  unmapped_user: string[]
+  auto_mappable: Record<string, MatchSuggestion>
+  requires_review: Record<string, MatchSuggestion>
+  date_format_info?: DateFormatInfo | null  // NEW: Date format detection
+  statistics: {
+    total_required: number
+    total_user_columns: number
+    matched: number
+    unmapped_required: number
+    unmapped_user: number
+    auto_mappable_count: number
+    requires_review_count: number
+  }
+}
+
 export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: ColumnMappingProps) {
   const [userColumns, setUserColumns] = useState<string[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
+  const [mappingSuggestions, setMappingSuggestions] = useState<MappingSuggestions | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showAlternatives, setShowAlternatives] = useState<Record<string, boolean>>({})
 
   const loadFileColumns = useCallback(async () => {
     try {
       setIsLoading(true)
       setError(null)
 
-      const arrayBuffer = await inventoryFile.arrayBuffer()
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-      const firstSheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[firstSheetName]
-      
-      // Get the range of the worksheet
-      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
-      
-      // Extract headers from the first row
-      const headers: string[] = []
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col })
-        const cell = worksheet[cellAddress]
-        if (cell && cell.v) {
-          headers.push(String(cell.v).trim())
+      // Call the intelligent column mapping API
+      const formData = new FormData()
+      formData.append('file', inventoryFile)
+
+      // Get auth token (using 'auth_token' key to match api.ts)
+      const token = localStorage.getItem('auth_token')
+
+      if (!token) {
+        throw new Error('Authentication required. Please log in again.')
+      }
+
+      const response = await fetch('http://localhost:5000/api/v1/suggest-column-mapping', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to analyze column mapping')
+      }
+
+      const result: MappingSuggestions = await response.json()
+
+      console.log('[COLUMN_MAPPER] Received suggestions:', result)
+
+      // Set user columns
+      setUserColumns(result.user_columns)
+
+      // Set mapping suggestions
+      setMappingSuggestions(result)
+
+      // Auto-apply high-confidence matches (>= 85%)
+      const autoMapping: Record<string, string> = {}
+      for (const [reqCol, suggestion] of Object.entries(result.auto_mappable)) {
+        if (suggestion.matched_column) {
+          autoMapping[reqCol] = suggestion.matched_column
         }
       }
 
-      setUserColumns(headers)
-      
-      // Auto-suggest mappings based on column names
-      const autoMapping: Record<string, string> = {}
-      REQUIRED_COLUMNS.forEach(({ key }) => {
-        const suggestedColumn = findBestMatch(key, headers)
-        if (suggestedColumn) {
-          autoMapping[key] = suggestedColumn
+      // Also include medium-confidence matches (for review)
+      for (const [reqCol, suggestion] of Object.entries(result.requires_review)) {
+        if (suggestion.matched_column && suggestion.confidence >= 0.65) {
+          autoMapping[reqCol] = suggestion.matched_column
         }
-      })
-      
+      }
+
+      console.log('[COLUMN_MAPPER] Auto-applied mappings:', autoMapping)
+      console.log('[COLUMN_MAPPER] Statistics:', result.statistics)
+
       setMapping(autoMapping)
-    } catch (err) {
-      console.error('Failed to parse Excel file:', err)
-      setError('Failed to read Excel file. Please ensure it\'s a valid .xlsx or .xls file.')
+
+    } catch (err: any) {
+      console.error('Failed to get column mapping suggestions:', err)
+      setError(err.message || 'Failed to analyze Excel file. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -81,47 +150,25 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
     loadFileColumns()
   }, [loadFileColumns])
 
-  // Simple fuzzy matching for auto-suggestions
-  const findBestMatch = (requiredCol: string, availableColumns: string[]): string | null => {
-    const normalizedRequired = requiredCol.toLowerCase().replace(/_/g, ' ')
-    
-    // Exact match
-    const exactMatch = availableColumns.find(col => 
-      col.toLowerCase().replace(/[_\s]/g, '') === normalizedRequired.replace(/[_\s]/g, '')
-    )
-    if (exactMatch) return exactMatch
-
-    // Partial match
-    const partialMatch = availableColumns.find(col => 
-      col.toLowerCase().includes(normalizedRequired) || 
-      normalizedRequired.includes(col.toLowerCase())
-    )
-    if (partialMatch) return partialMatch
-
-    // Keyword-based matching
-    const keywords: Record<string, string[]> = {
-      'pallet_id': ['pallet', 'id', 'identifier', 'palletid'],
-      'location': ['location', 'loc', 'position', 'zone'],
-      'description': ['description', 'desc', 'product', 'item', 'sku'],
-      'receipt_number': ['receipt', 'lot', 'batch', 'order', 'number'],
-      'creation_date': ['date', 'created', 'timestamp', 'time']
-    }
-
-    const relatedKeywords = keywords[requiredCol] || []
-    for (const keyword of relatedKeywords) {
-      const match = availableColumns.find(col => 
-        col.toLowerCase().includes(keyword)
-      )
-      if (match) return match
-    }
-
-    return null
-  }
-
   const updateMapping = (requiredColumn: string, userColumn: string) => {
     setMapping(prev => ({
       ...prev,
       [requiredColumn]: userColumn
+    }))
+  }
+
+  const toggleAlternatives = (column: string) => {
+    setShowAlternatives(prev => ({
+      ...prev,
+      [column]: !prev[column]
+    }))
+  }
+
+  const selectAlternative = (requiredColumn: string, alternativeColumn: string) => {
+    updateMapping(requiredColumn, alternativeColumn)
+    setShowAlternatives(prev => ({
+      ...prev,
+      [requiredColumn]: false
     }))
   }
 
@@ -140,7 +187,9 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
       <Card>
         <CardContent className="p-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Reading Excel file columns...</p>
+          <Sparkles className="w-6 h-6 text-blue-500 mx-auto mb-2 animate-pulse" />
+          <p className="text-gray-700 font-medium">Analyzing your file...</p>
+          <p className="text-sm text-gray-500 mt-1">Using intelligent column matching</p>
         </CardContent>
       </Card>
     )
@@ -163,6 +212,102 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
 
   return (
     <div className="space-y-6">
+      {/* Smart Matching Summary Banner */}
+      {mappingSuggestions && (
+        <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-6 h-6 text-blue-600" />
+              <div className="flex-1">
+                <h3 className="font-medium text-gray-900">Intelligent Column Matching</h3>
+                <p className="text-sm text-gray-600">
+                  {mappingSuggestions.statistics.auto_mappable_count} high-confidence matches •{' '}
+                  {mappingSuggestions.statistics.requires_review_count} require review •{' '}
+                  {mappingSuggestions.statistics.unmapped_required} unmapped
+                </p>
+              </div>
+              {mappingSuggestions.statistics.auto_mappable_count === mappingSuggestions.statistics.total_required && (
+                <Badge className="bg-green-500 text-white">Perfect Match!</Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Date Format Detection Section */}
+      {mappingSuggestions?.date_format_info && (
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-blue-600" />
+              Date Format Detection
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Format Type Badge */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700">Detected Format:</span>
+              <Badge className={cn(
+                "font-mono",
+                mappingSuggestions.date_format_info.format_type === 'EXCEL_SERIAL' && "bg-purple-100 text-purple-800",
+                mappingSuggestions.date_format_info.format_type === 'ISO_FORMAT' && "bg-green-100 text-green-800",
+                mappingSuggestions.date_format_info.format_type === 'UNIX_TIMESTAMP' && "bg-blue-100 text-blue-800",
+                mappingSuggestions.date_format_info.format_type === 'US_SLASH' && "bg-indigo-100 text-indigo-800",
+                mappingSuggestions.date_format_info.format_type === 'EU_SLASH' && "bg-cyan-100 text-cyan-800",
+                mappingSuggestions.date_format_info.format_type === 'MIXED' && "bg-yellow-100 text-yellow-800",
+                mappingSuggestions.date_format_info.format_type === 'UNKNOWN' && "bg-gray-100 text-gray-800"
+              )}>
+                {mappingSuggestions.date_format_info.format_type.replace(/_/g, ' ')}
+              </Badge>
+              <ConfidenceIndicator
+                confidence={mappingSuggestions.date_format_info.confidence * 100}
+                showDetails={false}
+              />
+            </div>
+
+            {/* Parsing Strategy */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-600">Parsing Method:</span>
+              <code className="px-2 py-1 bg-gray-100 rounded text-xs">
+                {mappingSuggestions.date_format_info.parsing_strategy}
+              </code>
+            </div>
+
+            {/* Sample Values */}
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Sample values:</p>
+              <div className="flex flex-wrap gap-2">
+                {mappingSuggestions.date_format_info.sample_values.map((sample, idx) => (
+                  <code key={idx} className="px-2 py-1 bg-white rounded border text-xs">
+                    {sample}
+                  </code>
+                ))}
+              </div>
+            </div>
+
+            {/* Warning for Unparseable Dates */}
+            {mappingSuggestions.date_format_info.unparseable_count > 0 && (
+              <Alert className="bg-yellow-50 border-yellow-200">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <AlertTitle className="text-yellow-800">Parsing Issues Detected</AlertTitle>
+                <AlertDescription className="text-yellow-700">
+                  {mappingSuggestions.date_format_info.unparseable_count} of {mappingSuggestions.date_format_info.total_count} dates could not be parsed automatically.
+                  These pallets will be excluded from time-based rules (e.g., stagnant pallet detection).
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Success Message */}
+            {mappingSuggestions.date_format_info.unparseable_count === 0 && (
+              <div className="flex items-center gap-2 text-sm text-green-700">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>All dates parsed successfully!</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -206,8 +351,65 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
                         </option>
                       ))}
                     </select>
-                    
-                    {mapping[key] && (
+
+                    {mapping[key] && mappingSuggestions?.suggestions[key] && (
+                      <div className="space-y-2">
+                        {/* Confidence Indicator */}
+                        <ConfidenceIndicator
+                          confidence={mappingSuggestions.suggestions[key].confidence}
+                          method={mappingSuggestions.suggestions[key].method || undefined}
+                          showDetails={true}
+                        />
+
+                        {/* Confidence Bar */}
+                        <ConfidenceBar confidence={mappingSuggestions.suggestions[key].confidence} />
+
+                        {/* Alternatives Button */}
+                        {mappingSuggestions.suggestions[key].alternatives.length > 0 && (
+                          <div className="space-y-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleAlternatives(key)}
+                              className="text-xs h-7 px-2"
+                            >
+                              {showAlternatives[key] ? (
+                                <>
+                                  <ChevronUp className="w-3 h-3 mr-1" />
+                                  Hide alternatives
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3 h-3 mr-1" />
+                                  Show {mappingSuggestions.suggestions[key].alternatives.length} alternatives
+                                </>
+                              )}
+                            </Button>
+
+                            {/* Alternatives List */}
+                            {showAlternatives[key] && (
+                              <div className="bg-gray-50 rounded-md p-3 space-y-2">
+                                <p className="text-xs font-medium text-gray-700">Alternative matches:</p>
+                                {mappingSuggestions.suggestions[key].alternatives.map((alt, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => selectAlternative(key, alt.column)}
+                                    className="w-full flex items-center justify-between p-2 bg-white rounded border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+                                  >
+                                    <span className="text-sm">{alt.column}</span>
+                                    <Badge className="bg-gray-100 text-gray-700 text-xs">
+                                      {Math.round(alt.confidence * 100)}%
+                                    </Badge>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {mapping[key] && !mappingSuggestions?.suggestions[key] && (
                       <div className="flex items-center gap-1 text-green-600">
                         <CheckCircle2 className="w-3 h-3" />
                         <span className="text-xs">Mapped to: {mapping[key]}</span>

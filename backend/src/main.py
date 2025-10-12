@@ -251,6 +251,18 @@ def summarize_anomalies_by_location(anomalies):
         return []
 
     anomalies_df = pd.DataFrame(anomalies)
+
+    # Fix: Ensure 'location' column contains only strings, not Series
+    # This can happen if there are duplicate 'location' columns in the source data
+    if 'location' in anomalies_df.columns:
+        def ensure_string(loc):
+            if isinstance(loc, pd.Series):
+                # If it's a Series, take the first value
+                return str(loc.iloc[0]) if not loc.empty else 'UNKNOWN'
+            return str(loc) if pd.notna(loc) else 'UNKNOWN'
+
+        anomalies_df['location'] = anomalies_df['location'].apply(ensure_string)
+
     grouped = anomalies_df.groupby('location')
     
     summary_list = []
@@ -258,17 +270,19 @@ def summarize_anomalies_by_location(anomalies):
         'VERY_HIGH': 4, 'VERY HIGH': 4, 'Very High': 4, 'very high': 4,  # Support all formats
         'HIGH': 3, 'High': 3, 'high': 3,
         'MEDIUM': 2, 'Medium': 2, 'medium': 2,
-        'LOW': 1, 'Low': 1, 'low': 1
+        'LOW': 1, 'Low': 1, 'low': 1,
+        'EXCLUDED': 0, 'Excluded': 0, 'excluded': 0  # Special priority for excluded anomalies
     }
-    reverse_priority_map = {4: 'VERY_HIGH', 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW'}
+    reverse_priority_map = {4: 'VERY_HIGH', 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW', 0: 'EXCLUDED'}
 
     for location_name, group in grouped:
         anomaly_count = len(group)
         main_anomaly = group['anomaly_type'].mode()[0]
-        
+
         # Map text priorities to numbers, find the max, and convert back to text
-        highest_priority_num = group['priority'].apply(lambda p: priority_map[p]).max()
-        highest_priority = reverse_priority_map[int(highest_priority_num)]
+        # Use .get() with default value to handle unknown priorities gracefully
+        highest_priority_num = group['priority'].apply(lambda p: priority_map.get(p, 1)).max()  # Default to LOW (1) if unknown
+        highest_priority = reverse_priority_map.get(int(highest_priority_num), 'LOW')  # Default to 'LOW' if unknown
         
         summary_list.append({
             'location_name': location_name,

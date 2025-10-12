@@ -74,9 +74,9 @@ def create_warehouse_tables():
                     created_by=user.id
                 )
                 
-                # Set default receiving areas
+                # Set default receiving areas with RECV-01 pattern
                 config.set_receiving_areas([
-                    {'code': 'RECEIVING', 'type': 'RECEIVING', 'capacity': 10, 'zone': 'DOCK'}
+                    {'code': 'RECV-01', 'type': 'RECEIVING', 'capacity': 10, 'zone': 'DOCK'}
                 ])
                 
                 db.session.add(config)

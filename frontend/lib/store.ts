@@ -47,24 +47,32 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 // Dashboard Store
 interface DashboardState {
-  currentView: 'overview' | 'new-analysis' | 'reports' | 'rules' | 'warehouse-settings' | 'profile';
+  currentView: 'overview' | 'new-analysis' | 'reports' | 'rule-center' | 'rules' | 'warehouse-settings' | 'profile' | 'action-center' | 'analytics' | 'track-wins';
   isLoading: boolean;
   reports: Report[];
   currentReport: ReportDetails | null;
-  
+
   // Enhanced analysis state
   selectedRulesForAnalysis: number[];
   customRuleParameters: Record<number, any>;
-  
+
+  // Navigation state for cross-view communication
+  actionCenterPreselectedCategory?: string;
+  reportToOpen?: { reportId: number; tab?: 'business-intelligence' | 'analytics' };
+
   setCurrentView: (view: DashboardState['currentView']) => void;
   setLoading: (loading: boolean) => void;
   setReports: (reports: Report[]) => void;
   setCurrentReport: (report: ReportDetails | null) => void;
-  
+
   // Enhanced analysis actions
   setSelectedRulesForAnalysis: (ruleIds: number[]) => void;
   setCustomRuleParameters: (ruleId: number, parameters: any) => void;
   clearAnalysisSelection: () => void;
+
+  // Navigation actions
+  setActionCenterPreselectedCategory: (categoryId?: string) => void;
+  setReportToOpen: (reportData?: { reportId: number; tab?: 'business-intelligence' | 'analytics' }) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -72,27 +80,35 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   isLoading: false,
   reports: [],
   currentReport: null,
-  
+
   // Enhanced analysis state
   selectedRulesForAnalysis: [],
   customRuleParameters: {},
-  
+
+  // Navigation state
+  actionCenterPreselectedCategory: undefined,
+  reportToOpen: undefined,
+
   setCurrentView: (view) => set({ currentView: view }),
   setLoading: (loading) => set({ isLoading: loading }),
   setReports: (reports) => set({ reports }),
   setCurrentReport: (report) => set({ currentReport: report }),
-  
+
   // Enhanced analysis actions
   setSelectedRulesForAnalysis: (ruleIds) => set({ selectedRulesForAnalysis: ruleIds }),
-  setCustomRuleParameters: (ruleId, parameters) => 
+  setCustomRuleParameters: (ruleId, parameters) =>
     set((state) => ({
       customRuleParameters: {
         ...state.customRuleParameters,
         [ruleId]: parameters
       }
     })),
-  clearAnalysisSelection: () => set({ 
+  clearAnalysisSelection: () => set({
     selectedRulesForAnalysis: [],
     customRuleParameters: {}
   }),
+
+  // Navigation actions
+  setActionCenterPreselectedCategory: (categoryId) => set({ actionCenterPreselectedCategory: categoryId }),
+  setReportToOpen: (reportData) => set({ reportToOpen: reportData }),
 }));

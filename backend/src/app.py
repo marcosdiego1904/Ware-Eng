@@ -98,6 +98,16 @@ CORS(app,
      expose_headers=["Authorization"],
      max_age=3600)
 
+# Global request logger
+@app.before_request
+def log_requests():
+    # Log all API requests - bypass log filter
+    if request.path.startswith('/api/'):
+        import sys
+        # Force output to stderr to bypass logging filter
+        sys.stderr.write(f"[REQUEST_LOG] {request.method} {request.url} - Path: {request.path} - Endpoint: {request.endpoint}\n")
+        sys.stderr.flush()
+
 # Global OPTIONS handler for preflight requests
 @app.before_request
 def handle_preflight():
@@ -370,9 +380,10 @@ def health_check():
     try:
         from models import Rule, RuleCategory, Location
         from migrations import migration_runner
-        
+        from sqlalchemy import text
+
         # Check database connection
-        db.session.execute('SELECT 1')
+        db.session.execute(text('SELECT 1'))
         
         # Check if rules exist
         rule_count = Rule.query.filter_by(is_active=True).count()
@@ -511,12 +522,15 @@ def load_user(user_id):
 # --- Initialize Database with Professional Migration System ---
 # Run migrations only when needed (efficient approach)
 from migrations import run_migrations_if_needed
+from db_init import init_database
 
 with app.app_context():
     try:
         run_migrations_if_needed()
+        # Initialize database with essential data (invitation codes, etc.)
+        init_database()
     except Exception as e:
-        print(f"Migration failed: {e}")
+        print(f"Migration/Initialization failed: {e}")
         # App continues to work even if migrations fail
 
 # --- Authentication Routes (DEPRECATED - Use JWT API endpoints instead) ---
@@ -686,6 +700,26 @@ def default_json_serializer(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, datetime):
         return obj.isoformat()
+
+    # Handle numpy/pandas data types
+    import numpy as np
+    import pandas as pd
+
+    if isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (pd.Timestamp, pd.DatetimeIndex)):
+        return obj.isoformat()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif pd.isna(obj):  # Handle pandas NaT, NaN, etc.
+        return None
+
     raise TypeError(f"Type {type(obj).__name__} not serializable")
 
 # @app.route('/process', methods=['POST'])
@@ -1047,9 +1081,10 @@ def api_register():
         data = request.get_json()
         if not data or not data.get('username') or not data.get('password'):
             return jsonify({'message': 'Username and password are required'}), 400
-            
+
         username = data.get('username')
         password = data.get('password')
+        invitation_code = data.get('invitation_code', '').strip().upper()
 
         # Basic validation
         if len(username) < 3:
@@ -1057,15 +1092,49 @@ def api_register():
         if len(password) < 6:
             return jsonify({'message': 'Password must be at least 6 characters long'}), 400
 
+        # INVITATION CODE VALIDATION: Require valid invitation code
+        if not invitation_code:
+            return jsonify({
+                'message': 'Invitation code is required',
+                'error': 'invitation_required'
+            }), 400
+
+        from core_models import InvitationCode
+        invitation = InvitationCode.query.filter_by(code=invitation_code).first()
+
+        if not invitation:
+            return jsonify({
+                'message': 'Invalid invitation code',
+                'error': 'invalid_invitation'
+            }), 400
+
+        is_valid, validation_message = invitation.is_valid()
+        if not is_valid:
+            return jsonify({
+                'message': validation_message,
+                'error': 'invitation_invalid'
+            }), 400
+
+        # Check if username already exists
         if User.query.filter_by(username=username).first():
             return jsonify({'message': 'Username already exists'}), 409
 
+        # Create new user
         new_user = User(username=username)
         new_user.set_password(password)
         db.session.add(new_user)
+        db.session.flush()  # Get user ID before marking invitation as used
+
+        # Mark invitation as used
+        invitation.use_code(new_user.id)
+
         db.session.commit()
 
-        return jsonify({'message': 'Account created successfully!'}), 201
+        return jsonify({
+            'message': 'Account created successfully!',
+            'invitation_used': invitation_code
+        }), 201
+
     except Exception as e:
         db.session.rollback()
         print(f"Registration error: {e}")
@@ -1086,10 +1155,184 @@ def get_user_reports(current_user):
         output.append(report_data)
     return jsonify({'reports': output})
 
+def clear_user_previous_anomalies(user_id):
+    """
+    Clear all unresolved anomalies for a user.
+    Returns count of cleared anomalies.
+    """
+    try:
+        # Get all unresolved anomalies for this user (exclude already resolved and cleared)
+        anomalies_to_clear = db.session.query(Anomaly).join(AnalysisReport).filter(
+            AnalysisReport.user_id == user_id,
+            Anomaly.status != 'Resolved',
+            Anomaly.status != 'Cleared'  # Don't re-clear already cleared anomalies
+        ).all()
+
+        cleared_count = len(anomalies_to_clear)
+
+        if cleared_count > 0:
+            # Mark all as resolved with a special status for cleared anomalies
+            for anomaly in anomalies_to_clear:
+                # Store the old status before changing it
+                old_status = anomaly.status
+                anomaly.status = 'Cleared'
+
+                # Add to history for audit trail
+                history_entry = AnomalyHistory(
+                    anomaly_id=anomaly.id,
+                    old_status=old_status,
+                    new_status='Cleared',
+                    comment='Automatically cleared due to new analysis upload (user preference)',
+                    user_id=user_id
+                )
+                db.session.add(history_entry)
+
+            db.session.commit()
+            print(f"[CLEAR_ANOMALIES] Cleared {cleared_count} previous anomalies for user {user_id}")
+
+        return cleared_count
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"[CLEAR_ANOMALIES] Error clearing anomalies: {e}")
+        return 0
+
+@api_bp.route('/suggest-column-mapping', methods=['POST'])
+@cross_origin(origins=['http://localhost:3000', 'http://localhost:3001'])
+@token_required
+def suggest_column_mapping_endpoint(current_user):
+    """
+    Intelligent column mapping suggestion endpoint.
+
+    Analyzes an Excel file and suggests column mappings using fuzzy matching
+    and semantic understanding. Returns confidence scores and alternatives.
+
+    Request:
+        - file: Excel file (multipart/form-data)
+
+    Response:
+        {
+            'suggestions': {
+                'pallet_id': {
+                    'matched_column': 'Pallet number',
+                    'confidence': 0.87,
+                    'method': 'fuzzy',
+                    'alternatives': [...]
+                },
+                ...
+            },
+            'user_columns': ['Pallet number', 'Location', ...],
+            'unmapped_required': ['creation_date'],
+            'unmapped_user': ['NIL', 'Founds'],
+            'auto_mappable': {...},
+            'requires_review': {...},
+            'statistics': {...}
+        }
+    """
+    try:
+        # Import column matcher
+        from column_matcher import suggest_column_mapping
+
+        # Check for file in request
+        if 'file' not in request.files:
+            return jsonify({'message': 'No file provided'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'message': 'No file selected'}), 400
+
+        # Validate file type
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            return jsonify({'message': 'File must be an Excel file (.xlsx or .xls)'}), 400
+
+        # Save file temporarily
+        temp_dir = tempfile.gettempdir()
+        temp_filepath = os.path.join(temp_dir, f"column_analysis_{uuid.uuid4().hex}.xlsx")
+        file.save(temp_filepath)
+
+        try:
+            # Read Excel file to extract column names
+            df = pd.read_excel(temp_filepath, nrows=0)  # Read only headers
+            user_columns = list(df.columns)
+
+            print(f"[COLUMN_MATCHER] Analyzing {len(user_columns)} columns from {file.filename}")
+            print(f"[COLUMN_MATCHER] User columns: {user_columns}")
+
+            # Get column mapping suggestions
+            result = suggest_column_mapping(user_columns, include_alternatives=True)
+
+            # NEW: Detect date format if creation_date is mapped
+            result['date_format_info'] = None
+            if 'creation_date' in result['suggestions']:
+                try:
+                    from date_parser import DateFormatDetector
+
+                    matched_col = result['suggestions']['creation_date']['matched_column']
+
+                    # Read sample of data to detect date format (100 rows should be enough)
+                    df_sample = pd.read_excel(temp_filepath, nrows=100)
+
+                    if matched_col in df_sample.columns:
+                        date_column = df_sample[matched_col]
+
+                        detector = DateFormatDetector()
+                        format_info = detector.detect_format(date_column)
+
+                        result['date_format_info'] = {
+                            'format_type': format_info['format_type'],
+                            'confidence': format_info['confidence'],
+                            'sample_values': format_info['sample_values'][:5],  # First 5 samples
+                            'unparseable_count': format_info.get('unparseable_count', 0),
+                            'total_count': format_info.get('total_count', len(date_column)),
+                            'parsing_strategy': format_info['parsing_strategy']
+                        }
+
+                        print(f"[DATE_DETECTION] Format: {format_info['format_type']}, Confidence: {format_info['confidence']:.1%}")
+
+                except Exception as e:
+                    print(f"[ERROR] Date format detection failed: {e}")
+                    result['date_format_info'] = None
+
+            # Add metadata
+            result['metadata'] = {
+                'filename': file.filename,
+                'total_columns': len(user_columns),
+                'timestamp': datetime.now().isoformat()
+            }
+
+            # Log summary
+            stats = result['statistics']
+            print(f"[COLUMN_MATCHER] Matched: {stats['matched']}/{stats['total_required']}, "
+                  f"Auto-mappable: {stats['auto_mappable_count']}, "
+                  f"Requires review: {stats['requires_review_count']}")
+
+            return jsonify(result), 200
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+
+    except Exception as e:
+        print(f"[COLUMN_MATCHER] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'message': 'Failed to analyze column mapping',
+            'error': str(e)
+        }), 500
+
 @api_bp.route('/reports', methods=['POST'])
 @cross_origin(origins=['http://localhost:3000', 'http://localhost:3001'])
 @token_required
 def create_analysis_report(current_user):
+    import sys
+    sys.stderr.write(f"[UPLOAD_DEBUG] === NEW ANALYSIS UPLOAD STARTED ===\n")
+    sys.stderr.write(f"[UPLOAD_DEBUG] User: {current_user.username} (ID: {current_user.id})\n")
+    sys.stderr.write(f"[UPLOAD_DEBUG] Request form keys: {list(request.form.keys())}\n")
+    sys.stderr.write(f"[UPLOAD_DEBUG] Request files keys: {list(request.files.keys())}\n")
+    sys.stderr.flush()
     # Check user report limit
     report_count = AnalysisReport.query.filter_by(user_id=current_user.id).count()
     if report_count >= 3 and current_user.username not in ['marcosbarzola@devbymarcos.com', 'marcos9', 'testf']:
@@ -1107,7 +1350,41 @@ def create_analysis_report(current_user):
     warehouse_id = request.form.get('warehouse_id')
     if warehouse_id:
         print(f"[APPLY_TEMPLATE] Using explicit warehouse: {warehouse_id}")
-    
+
+    # CLEAR ANOMALIES FEATURE: Check if we should clear previous anomalies
+    clear_previous_param = request.form.get('clear_previous')
+    clear_previous = False
+    cleared_count = 0
+
+    print(f"[CLEAR_ANOMALIES] === CLEARING LOGIC START ===")
+    print(f"[CLEAR_ANOMALIES] clear_previous_param from form: {clear_previous_param}")
+    print(f"[CLEAR_ANOMALIES] User preference clear_previous_anomalies: {current_user.clear_previous_anomalies}")
+    print(f"[CLEAR_ANOMALIES] User preference should_clear_previous_anomalies(): {current_user.should_clear_previous_anomalies()}")
+
+    # Check current unresolved count before clearing
+    current_unresolved = current_user.get_unresolved_anomaly_count()
+    print(f"[CLEAR_ANOMALIES] Current unresolved anomalies: {current_unresolved}")
+
+    # Determine if we should clear based on parameter or user preference
+    if clear_previous_param is not None:
+        # Explicit parameter from frontend (user choice in modal)
+        clear_previous = clear_previous_param.lower() == 'true'
+        print(f"[CLEAR_ANOMALIES] Using explicit parameter: {clear_previous}")
+    else:
+        # Use user's default preference
+        clear_previous = current_user.should_clear_previous_anomalies()
+        print(f"[CLEAR_ANOMALIES] Using user default preference: {clear_previous}")
+
+    # Clear previous anomalies if requested
+    if clear_previous:
+        print(f"[CLEAR_ANOMALIES] Triggering clearing of {current_unresolved} anomalies...")
+        cleared_count = clear_user_previous_anomalies(current_user.id)
+        print(f"[CLEAR_ANOMALIES] Successfully cleared {cleared_count} previous anomalies")
+    else:
+        print(f"[CLEAR_ANOMALIES] Clearing skipped (clear_previous = False)")
+
+    print(f"[CLEAR_ANOMALIES] === CLEARING LOGIC END ===")
+
     # NEW: Get explicit template_id from form data (from applied template)
     template_id = request.form.get('template_id')
     if template_id:
@@ -1158,9 +1435,51 @@ def create_analysis_report(current_user):
         # Fix: Invert the mapping - map FROM Excel columns TO system columns
         inverted_mapping = {v: k for k, v in column_mapping.items()}
         inventory_df.rename(columns=inverted_mapping, inplace=True)
-        
+
+        # Remove duplicate columns that may have been created during mapping
+        # This can happen if the source Excel has a column already named the same as a mapped column
+        if inventory_df.columns.duplicated().any():
+            print(f"[DATA_QUALITY] WARNING: Duplicate columns detected after mapping: {list(inventory_df.columns[inventory_df.columns.duplicated()])}")
+            # Keep only the first occurrence of each column name
+            inventory_df = inventory_df.loc[:, ~inventory_df.columns.duplicated()]
+            print(f"[DATA_QUALITY] Deduplicated columns. New columns: {list(inventory_df.columns)}")
+
         if 'creation_date' in inventory_df.columns:
-            inventory_df['creation_date'] = pd.to_datetime(inventory_df['creation_date'])
+            try:
+                from date_parser import SmartDateParser, DateFormatDetector, DateQualityValidator
+
+                # Step 1: Detect format
+                detector = DateFormatDetector()
+                format_info = detector.detect_format(inventory_df['creation_date'])
+
+                print(f"[DATE_PARSING] Detected format: {format_info['format_type']} (confidence: {format_info['confidence']:.1%})")
+
+                # Step 2: Parse dates using smart parser
+                parser = SmartDateParser()
+                parse_result = parser.parse_dates(inventory_df['creation_date'], format_info)
+                inventory_df['creation_date'] = parse_result.parsed_series
+
+                # Step 3: Validate quality
+                validator = DateQualityValidator()
+                quality_info = validator.validate(inventory_df['creation_date'], parse_result.parsed_series)
+
+                # Log results
+                print(f"[DATE_PARSING] Parse success: {parse_result.success_rate:.1%} ({parse_result.method})")
+                print(f"[DATE_PARSING] Quality score: {quality_info['quality_score']:.1%}")
+
+                if quality_info['warnings']:
+                    for warning in quality_info['warnings']:
+                        print(f"[DATE_WARNING] {warning}")
+
+                # Log failed dates for debugging
+                if len(parse_result.failed_indices) > 0:
+                    print(f"[DATA_QUALITY] {len(parse_result.failed_indices)} dates could not be parsed - these will be flagged by DataIntegrityEvaluator")
+
+            except Exception as e:
+                print(f"[ERROR] Smart date parsing failed: {e}")
+                print(f"[ERROR] Falling back to basic pandas parsing")
+                # Fallback to basic parsing
+                inventory_df['creation_date'] = pd.to_datetime(inventory_df['creation_date'], errors='coerce')
         else:
             print(f"[WARNING] 'creation_date' column not found after mapping!")
         
@@ -1564,15 +1883,23 @@ def create_analysis_report(current_user):
         # Generate and save the report
         location_summary = summarize_anomalies_by_location(anomalies)
         report_name = f"Analysis - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
-        
+
+        # Calculate total inventory count from the uploaded file
+        inventory_count = len(inventory_df)
+        print(f"[SPACE_UTILIZATION] Storing inventory count: {inventory_count} pallets/items")
+        print(f"[SPACE_UTILIZATION] Warehouse ID: {warehouse_id}, Template ID: {template_id}")
+
         try:
             # Start a new transaction to ensure clean state
             db.session.rollback()  # Clear any previous transaction state
-            
+
             new_report = AnalysisReport()
             new_report.report_name = report_name
             new_report.user_id = current_user.id
             new_report.location_summary = json.dumps(location_summary)
+            new_report.inventory_count = inventory_count  # Store pallet count for space utilization
+            new_report.warehouse_id = warehouse_id  # Link report to warehouse for capacity calculations
+            new_report.template_id = template_id  # Store template ID for audit trail
             
             db.session.add(new_report)
             db.session.flush()
@@ -1580,8 +1907,21 @@ def create_analysis_report(current_user):
             for item in anomalies:
                 anomaly = Anomaly()
                 if isinstance(item, dict):
-                    anomaly.description = item.get('anomaly_type', 'Uncategorized Anomaly')
-                    anomaly.details = json.dumps(item, default=default_json_serializer)
+                    # Clean the anomaly dict to ensure all values are JSON-serializable
+                    cleaned_item = {}
+                    for key, value in item.items():
+                        # Handle duplicate column issues (Series, lists, etc.)
+                        if isinstance(value, pd.Series):
+                            cleaned_item[key] = str(value.iloc[0]) if not value.empty else 'N/A'
+                        elif isinstance(value, list):
+                            cleaned_item[key] = value[0] if value else 'N/A'
+                        elif isinstance(value, dict):
+                            cleaned_item[key] = str(value)
+                        else:
+                            cleaned_item[key] = value
+
+                    anomaly.description = cleaned_item.get('anomaly_type', 'Uncategorized Anomaly')
+                    anomaly.details = json.dumps(cleaned_item, default=default_json_serializer)
                 else:
                     anomaly.description = str(item)
                     anomaly.details = None
@@ -1593,7 +1933,16 @@ def create_analysis_report(current_user):
             db.session.rollback()
             raise db_error
 
-        return jsonify({'message': 'Report created successfully', 'report_id': new_report.id}), 201
+        # Prepare success message with clearing info
+        success_message = 'Report created successfully'
+        if cleared_count > 0:
+            success_message = f'Report created successfully. {cleared_count} previous anomalies were cleared.'
+
+        return jsonify({
+            'message': success_message,
+            'report_id': new_report.id,
+            'cleared_anomalies_count': cleared_count
+        }), 201
 
     except Exception as e:
         db.session.rollback()
@@ -1610,6 +1959,58 @@ def create_analysis_report(current_user):
                     os.remove(filepath)
                 except OSError:
                     pass
+
+# User Preferences API Endpoints for Clear Anomalies Feature
+@api_bp.route('/user/preferences', methods=['GET'])
+@cross_origin(origins=['http://localhost:3000', 'http://localhost:3001'])
+@token_required
+def get_user_preferences(current_user):
+    """Get user's analysis preferences"""
+    try:
+        return jsonify({
+            'success': True,
+            'preferences': {
+                'clear_previous_anomalies': current_user.clear_previous_anomalies,
+                'show_clear_warning': current_user.show_clear_warning
+            },
+            'unresolved_anomaly_count': current_user.get_unresolved_anomaly_count()
+        }), 200
+    except Exception as e:
+        print(f"[ERROR] Failed to get user preferences: {e}")
+        return jsonify({'success': False, 'message': 'Failed to get preferences'}), 500
+
+@api_bp.route('/user/preferences', methods=['POST'])
+@cross_origin(origins=['http://localhost:3000', 'http://localhost:3001'])
+@token_required
+def update_user_preferences(current_user):
+    """Update user's analysis preferences"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+
+        # Update preferences
+        clear_previous = data.get('clear_previous_anomalies')
+        show_warning = data.get('show_clear_warning')
+
+        current_user.update_analysis_preferences(
+            clear_previous=clear_previous,
+            show_warning=show_warning
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Preferences updated successfully',
+            'preferences': {
+                'clear_previous_anomalies': current_user.clear_previous_anomalies,
+                'show_clear_warning': current_user.show_clear_warning
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"[ERROR] Failed to update user preferences: {e}")
+        return jsonify({'success': False, 'message': 'Failed to update preferences'}), 500
 
 @api_bp.route('/reports/<int:report_id>/details', methods=['GET'])
 @token_required
@@ -1645,6 +2046,16 @@ def get_api_report_details(current_user, report_id):
     locations_map = {}
     for anomaly in processed_anomalies:
         location = anomaly.get('location', 'N/A')
+
+        # Fix: Handle cases where location is a list (from duplicate columns)
+        if isinstance(location, list):
+            location = location[0] if location else 'N/A'
+        elif isinstance(location, (pd.Series, dict)):
+            location = str(location)
+
+        # Ensure location is hashable (string)
+        location = str(location) if location is not None else 'N/A'
+
         if location not in locations_map:
             locations_map[location] = []
         locations_map[location].append(anomaly)
@@ -1679,6 +2090,71 @@ def get_api_report_details(current_user, report_id):
         "reportName": report.report_name,
         "kpis": kpis,
         "locations": location_summary
+    })
+
+@api_bp.route('/reports/<int:report_id>/space-utilization', methods=['GET'])
+@token_required
+def get_report_space_utilization(current_user, report_id):
+    """
+    Calculate warehouse space utilization for a specific report.
+    Returns: {
+        warehouse_capacity: int,      # Total warehouse capacity
+        inventory_count: int,          # Pallets in this report
+        utilization_percentage: float, # Utilization %
+        available_space: int,          # Remaining capacity
+        warehouse_name: str            # Warehouse identifier
+    }
+    """
+    from models import WarehouseConfig
+
+    # Get report and verify ownership
+    report = AnalysisReport.query.get_or_404(report_id)
+    if report.user_id != current_user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    # Get warehouse from report, fallback to user's default warehouse
+    warehouse_id = report.warehouse_id or current_user.get_default_warehouse()
+    if not warehouse_id:
+        return jsonify({
+            "error": "No warehouse configuration found",
+            "message": "Please set up your warehouse configuration first"
+        }), 404
+
+    # Log which warehouse we're using for this calculation
+    source = "report" if report.warehouse_id else "user default"
+    print(f"[SPACE_UTILIZATION] Using warehouse {warehouse_id} from {source} for report {report_id}")
+
+    # Get warehouse configuration
+    warehouse_config = WarehouseConfig.query.filter_by(warehouse_id=warehouse_id).first()
+    if not warehouse_config:
+        return jsonify({
+            "error": "Warehouse configuration not found",
+            "message": f"No configuration found for warehouse {warehouse_id}"
+        }), 404
+
+    # Calculate warehouse total capacity
+    warehouse_capacity = warehouse_config.calculate_total_capacity()
+
+    # Get inventory count from report (fallback to 0 if not available)
+    inventory_count = report.inventory_count or 0
+
+    # Calculate utilization percentage
+    utilization_percentage = 0.0
+    if warehouse_capacity > 0:
+        utilization_percentage = (inventory_count / warehouse_capacity) * 100
+
+    # Calculate available space
+    available_space = max(0, warehouse_capacity - inventory_count)
+
+    print(f"[SPACE_UTILIZATION] Report {report_id}: {inventory_count}/{warehouse_capacity} pallets ({utilization_percentage:.1f}%)")
+
+    return jsonify({
+        "warehouse_capacity": warehouse_capacity,
+        "inventory_count": inventory_count,
+        "utilization_percentage": round(utilization_percentage, 1),
+        "available_space": available_space,
+        "warehouse_name": warehouse_config.warehouse_name,
+        "warehouse_id": warehouse_id
     })
 
 @api_bp.route('/anomalies/<int:anomaly_id>/status', methods=['POST'])
@@ -1722,11 +2198,158 @@ def change_api_anomaly_status(current_user, anomaly_id):
     }
 
     return jsonify({
-        'success': True, 
+        'success': True,
         'message': 'Status updated successfully.',
         'new_status': new_status,
         'history_item': new_history_item
     })
+
+# Bulk Resolution API Endpoints
+@api_bp.route('/anomalies/resolve-all', methods=['POST'])
+@token_required
+def resolve_all_anomalies(current_user):
+    """Mark all user's anomalies as resolved"""
+    try:
+        # Get all unresolved anomalies for the current user (exclude resolved and cleared)
+        anomalies = db.session.query(Anomaly).join(AnalysisReport).filter(
+            AnalysisReport.user_id == current_user.id,
+            Anomaly.status != 'Resolved',
+            Anomaly.status != 'Cleared'  # Also exclude cleared anomalies
+        ).all()
+
+        resolved_count = len(anomalies)
+
+        # Update all anomalies to resolved status
+        for anomaly in anomalies:
+            old_status = anomaly.status
+            anomaly.status = 'Resolved'
+
+            # Create history entry
+            history_entry = AnomalyHistory(
+                anomaly_id=anomaly.id,
+                old_status=old_status,
+                new_status='Resolved',
+                comment='Bulk resolution - all anomalies marked resolved',
+                user_id=current_user.id
+            )
+            db.session.add(history_entry)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully resolved {resolved_count} anomalies',
+            'resolved_count': resolved_count
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error resolving anomalies: {str(e)}'}), 500
+
+@api_bp.route('/anomalies/resolve-category', methods=['POST'])
+@token_required
+def resolve_category_anomalies(current_user):
+    """Mark all anomalies of a specific category as resolved"""
+    try:
+        data = request.get_json()
+        anomaly_type = data.get('anomaly_type')
+        print(f"[CATEGORY_DEBUG] Category resolution request: anomaly_type={anomaly_type}")
+
+        if not anomaly_type:
+            return jsonify({'success': False, 'message': 'anomaly_type is required'}), 400
+
+        # Get all unresolved anomalies of the specified type for the current user
+        print(f"[CATEGORY_DEBUG] Querying anomalies for user_id={current_user.id}, type={anomaly_type}")
+        anomalies = db.session.query(Anomaly).join(AnalysisReport).filter(
+            AnalysisReport.user_id == current_user.id,
+            Anomaly.description == anomaly_type,
+            Anomaly.status != 'Resolved',
+            Anomaly.status != 'Cleared'  # Also exclude cleared anomalies
+        ).all()
+
+        resolved_count = len(anomalies)
+        print(f"[CATEGORY_DEBUG] Found {resolved_count} anomalies to resolve")
+
+        # Update all matching anomalies to resolved status
+        for anomaly in anomalies:
+            old_status = anomaly.status
+            anomaly.status = 'Resolved'
+
+            # Create history entry
+            history_entry = AnomalyHistory(
+                anomaly_id=anomaly.id,
+                old_status=old_status,
+                new_status='Resolved',
+                comment=f'Bulk resolution - all {anomaly_type} anomalies resolved',
+                user_id=current_user.id
+            )
+            db.session.add(history_entry)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully resolved {resolved_count} {anomaly_type} anomalies',
+            'resolved_count': resolved_count,
+            'anomaly_type': anomaly_type
+        })
+
+    except Exception as e:
+        print(f"[CATEGORY_DEBUG] Exception occurred: {str(e)}")
+        print(f"[CATEGORY_DEBUG] Exception type: {type(e)}")
+        import traceback
+        print(f"[CATEGORY_DEBUG] Traceback: {traceback.format_exc()}")
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error resolving category: {str(e)}'}), 500
+
+@api_bp.route('/anomalies/resolve-bulk', methods=['POST'])
+@token_required
+def resolve_bulk_anomalies(current_user):
+    """Mark selected anomalies as resolved"""
+    try:
+        data = request.get_json()
+        anomaly_ids = data.get('anomaly_ids', [])
+
+        if not anomaly_ids:
+            return jsonify({'success': False, 'message': 'anomaly_ids array is required'}), 400
+
+        # Get all specified anomalies for the current user (exclude resolved and cleared)
+        anomalies = db.session.query(Anomaly).join(AnalysisReport).filter(
+            AnalysisReport.user_id == current_user.id,
+            Anomaly.id.in_(anomaly_ids),
+            Anomaly.status != 'Resolved',
+            Anomaly.status != 'Cleared'  # Also exclude cleared anomalies
+        ).all()
+
+        resolved_count = len(anomalies)
+
+        # Update all selected anomalies to resolved status
+        for anomaly in anomalies:
+            old_status = anomaly.status
+            anomaly.status = 'Resolved'
+
+            # Create history entry
+            history_entry = AnomalyHistory(
+                anomaly_id=anomaly.id,
+                old_status=old_status,
+                new_status='Resolved',
+                comment='Bulk resolution - selected anomalies resolved',
+                user_id=current_user.id
+            )
+            db.session.add(history_entry)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully resolved {resolved_count} selected anomalies',
+            'resolved_count': resolved_count,
+            'requested_count': len(anomaly_ids)
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error resolving bulk anomalies: {str(e)}'}), 500
 
 @api_bp.route('/reports/<int:report_id>', methods=['DELETE'])
 @token_required
@@ -1913,6 +2536,14 @@ try:
 except ImportError as e:
     print(f"Warehouse Configuration API not available: {e}")
 
+# Register Scope Management API (Unit-Agnostic Intelligence)
+try:
+    from scope_api import scope_bp
+    app.register_blueprint(scope_bp)
+    print("Scope Management API registered successfully")
+except ImportError as e:
+    print(f"Scope Management API not available: {e}")
+
 # Register Template Management API
 try:
     from template_api import template_bp
@@ -1948,6 +2579,14 @@ try:
 except ImportError as e:
     print(f"User Warehouse API not available: {e}")
 
+# Register Track Your Wins API (Gamification & analytics)
+try:
+    from wins_api import wins_bp
+    app.register_blueprint(wins_bp)
+    print("Track Your Wins API registered successfully")
+except ImportError as e:
+    print(f"Track Your Wins API not available: {e}")
+
 # Register Admin Migration API (for Smart Configuration deployment)
 # DISABLED after successful migration for security
 # try:
@@ -1964,6 +2603,30 @@ try:
     print("Debug Format API registered successfully")
 except ImportError as e:
     print(f"Debug Format API not available: {e}")
+
+# Register Admin Monitoring API (Database statistics and health checks)
+try:
+    from admin_monitoring_api import admin_monitoring_bp
+    app.register_blueprint(admin_monitoring_bp)
+    print("Admin Monitoring API registered successfully")
+except ImportError as e:
+    print(f"Admin Monitoring API not available: {e}")
+
+# Register Invitation API (Invitation-only registration system)
+try:
+    from invitation_api import invitation_bp
+    app.register_blueprint(invitation_bp)
+    print("Invitation API registered successfully")
+except ImportError as e:
+    print(f"Invitation API not available: {e}")
+
+# Register Customer Monitoring API (Demo account activity tracking)
+try:
+    from customer_monitoring_api import customer_monitoring_bp
+    app.register_blueprint(customer_monitoring_bp)
+    print("Customer Monitoring API registered successfully")
+except ImportError as e:
+    print(f"Customer Monitoring API not available: {e}")
 
 # ==================== PRODUCTION DATABASE DIAGNOSTIC ====================
 

@@ -52,14 +52,20 @@ class VirtualTemplateManager:
             print(f"  - Storage locations: {virtual_summary['storage_locations']:,}")
             print(f"  - Special areas: {virtual_summary['special_areas']}")
             
-            # Step 4: CRITICAL FIX - Create physical special location records
-            # This allows Special Areas Management UI to display them
-            special_locations_created = self._create_physical_special_locations(
+            # Step 4: ENHANCED - Create physical special location records with error tracking
+            special_locations_result = self._create_physical_special_locations(
                 template, warehouse_id, current_user
             )
             
-            # Step 5: Increment template usage
-            template.increment_usage()
+            # Step 5: Handle potential failures and provide user feedback
+            if special_locations_result['failure_count'] > 0:
+                print(f"[VIRTUAL_TEMPLATE] ⚠️ WARNING: {special_locations_result['failure_count']} locations failed to create:")
+                for error in special_locations_result['error_summary']:
+                    print(f"[VIRTUAL_TEMPLATE]   - {error}")
+            
+            # Step 6: Increment template usage (only if no critical errors)
+            if not special_locations_result.get('critical_error', False):
+                template.increment_usage()
             
             return {
                 'success': True,
@@ -68,9 +74,18 @@ class VirtualTemplateManager:
                 'virtual_location_summary': virtual_summary,
                 'template_code': template.template_code,
                 'creation_method': 'hybrid_virtual_with_physical_special_areas',
-                'locations_created': len(special_locations_created),  # Physical special locations
+                'locations_created': special_locations_result['success_count'],  # Successful locations only
+                'locations_failed': special_locations_result['failure_count'],    # NEW: Failed count
+                'failed_locations': special_locations_result['failed_locations'], # NEW: Detailed failures
                 'virtual_locations_available': virtual_summary['total_possible_locations'],
-                'special_areas': len(special_locations_created)
+                'special_areas': special_locations_result['success_count'],
+                'location_creation_summary': {
+                    'expected': special_locations_result['total_expected'],
+                    'processed': special_locations_result['total_processed'],  
+                    'successful': special_locations_result['success_count'],
+                    'failed': special_locations_result['failure_count'],
+                    'error_details': special_locations_result['error_summary']
+                }
             }
             
         except Exception as e:
@@ -159,7 +174,7 @@ class VirtualTemplateManager:
             config.location_format_config = template.location_format_config
             config.format_confidence = template.format_confidence
             config.format_examples = template.format_examples
-            config.format_learned_date = template.format_learned_date
+            config.format_learned_date = template.format_learned_date or datetime.utcnow()
             
             # Parse and log format details for debugging
             try:
@@ -186,32 +201,39 @@ class VirtualTemplateManager:
         """
         Create physical location records for special areas only
         
-        This is the HYBRID ARCHITECTURE FIX - special areas as physical records
-        while keeping storage locations virtual for performance.
+        Enhanced with comprehensive error detection and reporting.
         
         Returns:
-            list: Created location objects
+            dict: {
+                'created_locations': list,
+                'failed_locations': list,
+                'success_count': int,
+                'failure_count': int,
+                'error_summary': list
+            }
         """
         created_special_locations = []
+        failed_locations = []
+        error_summary = []
         
         try:
             print(f"[VIRTUAL_TEMPLATE] Creating physical special area locations for warehouse {warehouse_id}")
             
-            # CRITICAL FIX: Remove existing special locations and commit to prevent unique constraint violations
+            # Remove existing special locations for this warehouse to prevent duplicates
             existing_special = Location.query.filter(
                 Location.warehouse_id == warehouse_id,
                 Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
             ).all()
             
             if existing_special:
-                print(f"[VIRTUAL_TEMPLATE] Removing {len(existing_special)} existing special locations to prevent duplicates")
+                print(f"[VIRTUAL_TEMPLATE] Removing {len(existing_special)} existing special locations for clean setup")
                 for loc in existing_special:
                     print(f"[VIRTUAL_TEMPLATE] Deleting existing location: {loc.code} ({loc.location_type})")
                     db.session.delete(loc)
                 
-                # CRITICAL: Commit the deletions immediately to release unique constraints
-                db.session.commit()
-                print(f"[VIRTUAL_TEMPLATE] Successfully deleted {len(existing_special)} existing locations")
+                # Flush deletions before creating new locations
+                db.session.flush()
+                print(f"[VIRTUAL_TEMPLATE] Successfully removed {len(existing_special)} existing locations")
             else:
                 print("[VIRTUAL_TEMPLATE] No existing special locations to remove")
             
@@ -237,61 +259,182 @@ class VirtualTemplateManager:
                 special_area_configs.append((json.dumps(aisle_locations_data), 'TRANSITIONAL', 'GENERAL', 10))
                 print(f"[VIRTUAL_TEMPLATE] Added {len(aisle_locations_data)} AISLE locations for {template.num_aisles} aisles")
             
+            # ENHANCED ERROR DETECTION: Process each area type with comprehensive tracking
+            total_expected_locations = 0
+            total_processed_locations = 0
+            
             for areas_template, location_type, default_zone, default_capacity in special_area_configs:
                 if not areas_template:
+                    print(f"[VIRTUAL_TEMPLATE] No {location_type} areas defined in template")
                     continue
                     
                 try:
                     areas = json.loads(areas_template) if isinstance(areas_template, str) else areas_template
-                    print(f"[VIRTUAL_TEMPLATE] Processing {len(areas)} {location_type} areas")
+                    area_count = len(areas)
+                    total_expected_locations += area_count
+                    print(f"[VIRTUAL_TEMPLATE] Processing {area_count} {location_type} areas")
                     
-                    for area_data in areas:
-                        location_code = area_data.get('code', f'{location_type}_1')
+                    locations_created_for_type = 0
+                    locations_failed_for_type = 0
+                    
+                    for area_index, area_data in enumerate(areas):
+                        location_code = area_data.get('code', f'{location_type}_{area_index + 1}')
+                        total_processed_locations += 1
                         
-                        # Double-check: Ensure this location doesn't exist (safety check)
+                        # ENHANCED VALIDATION: Check for problematic location codes
+                        validation_errors = []
+                        
+                        if not location_code or not location_code.strip():
+                            validation_errors.append("Location code is empty")
+                        elif len(location_code.strip()) > 50:  # Database column limit
+                            validation_errors.append(f"Location code too long ({len(location_code)} chars, max 50)")
+                        elif location_code.strip() != location_code:
+                            validation_errors.append("Location code has leading/trailing whitespace")
+                        
+                        if validation_errors:
+                            error_msg = f"Validation failed for {location_code}: {'; '.join(validation_errors)}"
+                            print(f"[VIRTUAL_TEMPLATE] ❌ VALIDATION ERROR: {error_msg}")
+                            failed_locations.append({
+                                'code': location_code,
+                                'type': location_type,
+                                'error': error_msg,
+                                'stage': 'validation'
+                            })
+                            error_summary.append(error_msg)
+                            locations_failed_for_type += 1
+                            continue
+                        
+                        # ENHANCED DUPLICATE CHECK with detailed logging
                         existing_check = Location.query.filter(
-                            Location.code == location_code,
+                            Location.code == location_code.strip(),
                             Location.warehouse_id == warehouse_id
                         ).first()
                         
                         if existing_check:
-                            print(f"[VIRTUAL_TEMPLATE] WARNING: Location {location_code} still exists after deletion attempt - skipping")
+                            error_msg = f"Location {location_code} already exists (ID: {existing_check.id})"
+                            print(f"[VIRTUAL_TEMPLATE] ❌ DUPLICATE ERROR: {error_msg}")
+                            failed_locations.append({
+                                'code': location_code,
+                                'type': location_type,
+                                'error': error_msg,
+                                'stage': 'duplicate_check'
+                            })
+                            error_summary.append(error_msg)
+                            locations_failed_for_type += 1
                             continue
                         
-                        # Create physical special location record
-                        location = Location(
-                            code=location_code,
-                            location_type=location_type,
-                            capacity=area_data.get('capacity', default_capacity),
-                            pallet_capacity=area_data.get('capacity', default_capacity),
-                            zone=area_data.get('zone', default_zone),
-                            warehouse_id=warehouse_id,
-                            created_by=current_user.id,
-                            is_active=True
-                        )
-                        
+                        # ENHANCED LOCATION CREATION with detailed error capture
                         try:
+                            location = Location(
+                                code=location_code.strip(),
+                                location_type=location_type,
+                                capacity=area_data.get('capacity', default_capacity),
+                                pallet_capacity=area_data.get('capacity', default_capacity),
+                                zone=area_data.get('zone', default_zone),
+                                warehouse_id=warehouse_id,
+                                created_by=current_user.id,
+                                is_active=True
+                            )
+                            
+                            # TRANSACTION SAFETY: Add to session and flush for validation
                             db.session.add(location)
+                            db.session.flush()  # Get database validation without committing
+                            
                             created_special_locations.append(location)
-                            print(f"[VIRTUAL_TEMPLATE] Created special location: {location.code} ({location_type})")
-                        except Exception as location_error:
-                            print(f"[VIRTUAL_TEMPLATE] ERROR: Failed to create location {location_code}: {location_error}")
-                            # Continue with other locations rather than failing completely
+                            locations_created_for_type += 1
+                            print(f"[VIRTUAL_TEMPLATE] ✅ Created: {location.code} ({location_type}) capacity={location.capacity}")
+                            
+                        except Exception as creation_error:
+                            # DETAILED ERROR ANALYSIS
+                            error_type = type(creation_error).__name__
+                            error_msg = f"Failed to create {location_code} ({location_type}): {error_type} - {str(creation_error)}"
+                            
+                            print(f"[VIRTUAL_TEMPLATE] ❌ CREATION ERROR: {error_msg}")
+                            failed_locations.append({
+                                'code': location_code,
+                                'type': location_type,
+                                'error': error_msg,
+                                'stage': 'database_creation',
+                                'exception_type': error_type
+                            })
+                            error_summary.append(error_msg)
+                            locations_failed_for_type += 1
+                            
+                            # Rollback the failed transaction
+                            db.session.rollback()
+                    
+                    print(f"[VIRTUAL_TEMPLATE] {location_type} SUMMARY: ✅ {locations_created_for_type} created, ❌ {locations_failed_for_type} failed")
                         
-                except (json.JSONDecodeError, TypeError) as e:
-                    print(f"[VIRTUAL_TEMPLATE] Error processing {location_type} areas: {e}")
-                    continue
+                except (json.JSONDecodeError, TypeError) as json_error:
+                    error_msg = f"JSON processing error for {location_type} areas: {str(json_error)}"
+                    print(f"[VIRTUAL_TEMPLATE] ❌ JSON ERROR: {error_msg}")
+                    error_summary.append(error_msg)
+                    
+                    # Count all locations in this type as failed
+                    try:
+                        failed_count = len(json.loads(areas_template)) if isinstance(areas_template, str) else len(areas_template)
+                        for i in range(failed_count):
+                            failed_locations.append({
+                                'code': f'{location_type}_AREA_{i+1}',
+                                'type': location_type,
+                                'error': error_msg,
+                                'stage': 'json_parsing'
+                            })
+                    except:
+                        failed_locations.append({
+                            'code': f'{location_type}_AREAS',
+                            'type': location_type,
+                            'error': error_msg,
+                            'stage': 'json_parsing'
+                        })
+            
+            # FINAL SUMMARY AND REPORTING
+            success_count = len(created_special_locations)
+            failure_count = len(failed_locations)
+            
+            print(f"[VIRTUAL_TEMPLATE] ==================== SPECIAL LOCATION CREATION SUMMARY ====================")
+            print(f"[VIRTUAL_TEMPLATE] Expected: {total_expected_locations}")
+            print(f"[VIRTUAL_TEMPLATE] Processed: {total_processed_locations}")
+            print(f"[VIRTUAL_TEMPLATE] ✅ Created: {success_count}")
+            print(f"[VIRTUAL_TEMPLATE] ❌ Failed: {failure_count}")
+            
+            if failed_locations:
+                print(f"[VIRTUAL_TEMPLATE] FAILED LOCATIONS DETAILS:")
+                for failed in failed_locations:
+                    print(f"[VIRTUAL_TEMPLATE]   ❌ {failed['code']} ({failed['type']}) - {failed['error']}")
             
             # Flush but don't commit yet (will be committed by caller)
-            db.session.flush()
+            if success_count > 0:
+                db.session.flush()
+                print(f"[VIRTUAL_TEMPLATE] Successfully prepared {success_count} special locations for commit")
             
-            print(f"[VIRTUAL_TEMPLATE] Successfully prepared {len(created_special_locations)} special locations")
-            return created_special_locations
+            # ENHANCED RETURN: Detailed results for caller analysis
+            return {
+                'created_locations': created_special_locations,
+                'failed_locations': failed_locations,
+                'success_count': success_count,
+                'failure_count': failure_count,
+                'error_summary': error_summary,
+                'total_expected': total_expected_locations,
+                'total_processed': total_processed_locations
+            }
             
         except Exception as e:
-            current_app.logger.error(f"Error creating physical special locations: {e}")
-            # Don't rollback here, let the caller handle it
-            return []
+            error_msg = f"Critical error creating physical special locations: {str(e)}"
+            print(f"[VIRTUAL_TEMPLATE] ❌ CRITICAL ERROR: {error_msg}")
+            error_summary.append(error_msg)
+            
+            # Return error result structure
+            return {
+                'created_locations': created_special_locations,
+                'failed_locations': failed_locations + [{'code': 'SYSTEM_ERROR', 'type': 'ALL', 'error': error_msg, 'stage': 'system_exception'}],
+                'success_count': len(created_special_locations),
+                'failure_count': len(failed_locations) + 1,
+                'error_summary': error_summary,
+                'total_expected': 0,
+                'total_processed': 0,
+                'critical_error': True
+            }
     
     def get_virtual_location_engine_for_warehouse(self, warehouse_id):
         """

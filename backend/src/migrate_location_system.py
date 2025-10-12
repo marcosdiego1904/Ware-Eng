@@ -103,9 +103,9 @@ def migrate_location_system():
                     created_by=1
                 )
                 
-                # Set default receiving areas
+                # Set default receiving areas with RECV-01 pattern
                 config.set_receiving_areas([
-                    {'code': 'RECEIVING', 'type': 'RECEIVING', 'capacity': 10, 'zone': 'DOCK'}
+                    {'code': 'RECV-01', 'type': 'RECEIVING', 'capacity': 10, 'zone': 'DOCK'}
                 ])
                 
                 db.session.add(config)

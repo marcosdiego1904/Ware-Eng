@@ -92,15 +92,15 @@ export function FormatDetectionDisplay({
   };
 
   const renderDetectionSuccess = () => (
-    <Card className={`transition-all duration-300 ${
+    <Card className={`transition-all duration-300 shadow-lg ${
       isApplied 
-        ? "border-green-200 bg-green-50/50" 
-        : "border-blue-200 bg-blue-50/50"
+        ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-slate-50" 
+        : "border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50"
     }`}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className={`flex items-center gap-2 ${
-            isApplied ? "text-green-700" : "text-blue-700"
+            isApplied ? "text-emerald-700" : "text-slate-700"
           }`}>
             {isApplied ? (
               <>
@@ -121,7 +121,7 @@ export function FormatDetectionDisplay({
             {result.confidence}%
           </Badge>
         </div>
-        <CardDescription className={isApplied ? "text-green-600" : "text-blue-600"}>
+        <CardDescription className={isApplied ? "text-emerald-600" : "text-slate-600"}>
           {isApplied 
             ? "Your template is now configured with this location format pattern."
             : "High-confidence format detection complete. Apply to configure your template."
@@ -180,9 +180,9 @@ export function FormatDetectionDisplay({
         {/* Clean Action Button with State Management */}
         <div className="flex justify-center pt-4">
           {isApplied ? (
-            <div className="flex items-center gap-2 px-6 py-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              <span className="text-green-700 font-medium">
+            <div className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-50 to-slate-50 border border-emerald-200 rounded-lg shadow-sm">
+              <CheckCircle className="h-5 w-5 text-emerald-600" />
+              <span className="text-emerald-700 font-medium">
                 Successfully Applied!
               </span>
             </div>
@@ -190,7 +190,7 @@ export function FormatDetectionDisplay({
             <Button 
               onClick={handleApplyFormat}
               disabled={isApplying}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-4 text-base"
+              className="bg-gradient-to-r from-slate-700 to-blue-700 hover:from-slate-800 hover:to-blue-800 text-white font-semibold px-8 py-4 text-base shadow-lg"
               size="lg"
             >
               {isApplying ? (
@@ -230,15 +230,57 @@ export function FormatDetectionDisplay({
           No pattern detected
         </CardTitle>
         <CardDescription>
-          We couldn't automatically detect a consistent location format pattern
+          We couldn't automatically detect a consistent location format pattern from your examples
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Enhanced troubleshooting with specific pattern examples */}
+        <div className="bg-white rounded-lg border p-4 space-y-3">
+          <div className="font-medium text-slate-700">Common patterns we recognize:</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">17.24E, 13.06B, 17.15C</div>
+              <div className="text-slate-500">Rack.Level+Position format</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">01A, 325B, 245D</div>
+              <div className="text-slate-500">Position + Level format</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">01-A-1000A, 02-B-2500C</div>
+              <div className="text-slate-500">Aisle-Rack-Position format</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">01-01-001A, 02-01-325B</div>
+              <div className="text-slate-500">Standard warehouse format</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">A01-B02-P015, C03-D01-P999</div>
+              <div className="text-slate-500">Letter-prefixed format</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">ZONE-A-001, AREA-B-125</div>
+              <div className="text-slate-500">Zone-based locations</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-mono text-blue-600">RECV-01, STAGE-01, DOCK-01</div>
+              <div className="text-slate-500">Special work areas</div>
+            </div>
+          </div>
+        </div>
+
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            Try providing more examples or check that your location codes follow a consistent pattern.
-            Examples: "01A", "325B", "245D" (Position + Level format)
+            <div className="space-y-2">
+              <div className="font-medium">Troubleshooting suggestions:</div>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Provide 4-6 examples that follow the same pattern</li>
+                <li>Check that all examples use consistent separators (dashes, letters, numbers)</li>
+                <li>Make sure examples are actual location codes you use in your warehouse</li>
+                <li>If you have a unique format, try the manual configuration option below</li>
+              </ul>
+            </div>
           </AlertDescription>
         </Alert>
         

@@ -1,0 +1,37 @@
+Rules: 
+
+Incomplete Lots Alert
+Technical description: Identifies pallets still in receiving when most of their lot has been stored
+UNCOORDINATED LOTS 
+My description: un error comun que hay es que los lotes de pallets que van a ser subidos a los racks locations no se mueven completos a los aisles, y quedan palet rezagados en receiving o peor aun, esos pallets son subidos a los rack locations sin scanear y esos pallets aprecen con locacion de receiving.  
+
+AISLE Stuck Pallets
+Technical description: Detects pallets stuck in AISLE locations for extended periods
+LOCATION SPECIFIC STAGNANT
+My description: Los pallets son movidos a los aisles, pero son subidos a los racks locactions sin scanear, estos pallets estan fiscanmente en rack locactions pero en el Sistema con la locacion de aisle.
+
+Forgotten Pallets Alert
+Technical description: Detects pallets that have been in RECEIVING areas for more than 10 hours, indicating workflow inefficiencies or forgotten items.
+STAGNANT PALLETS
+My description: Parecido a incomplete lots, pero en este caso la regla se active en base a la cantidad de horas que ha estado un pallet en reciving, que un pallet este mas de 10 en receving es una senal de que algo esta pasando con ese pallet. 
+
+Scanner Error Detection
+Technical description: Detects data integrity issues from scanning.
+DATA INTEGRITY
+My description: Im not sure about this one
+
+
+Location Type Mismatches
+Technical description: Identifies inconsistencies in location type mapping
+LOCATION MAPPING ERROR
+myDescritpion: Not sure about this one
+
+Invalid Locations Alert
+Technical description: Finds pallets in locations not defined in warehouse rules
+INVALID LOCATION
+My description: El usuario cuando crea elwarehose template define las locaciones que su warehouse tiene, si cuando se corre el reporte, el Sistema encuentra una locacion no definida por el usuario en el reporte, se marca como locacion invalida
+
+Overcapacity Alert
+Technical description: Detects locations that exceed their designated storage capacity
+OVERCAPACITY
+My description: Una de las reglas mas importantes, va mas alla de la capacidad fisica. Si en una locacion que el usurio define o que fisicamente solo cabe una paleta, se encuentran 2 paletas sistematicamente, significa que hay un problema, hay un pallet en ese lugar que no corresponde. 

@@ -67,6 +67,8 @@ class Rule(db.Model):
     conditions = db.Column(db.Text, nullable=False)  # JSON string for rule conditions
     parameters = db.Column(db.Text)  # JSON string for configurable parameters
     priority = db.Column(db.String(20), default='MEDIUM')  # VERY_HIGH, HIGH, MEDIUM, LOW
+    precedence_level = db.Column(db.Integer, default=4)  # 1=highest (data integrity), 4=lowest (data quality)
+    exclusion_rules = db.Column(db.Text)  # JSON string for custom exclusion patterns
     is_active = db.Column(db.Boolean, default=True)
     is_default = db.Column(db.Boolean, default=False)  # System default rules
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -88,6 +90,27 @@ class Rule(db.Model):
     def set_conditions(self, conditions_dict):
         """Set conditions from dict to JSON string"""
         self.conditions = json.dumps(conditions_dict)
+    
+    def get_exclusion_rules(self):
+        """Parse exclusion_rules JSON string into dict"""
+        try:
+            return json.loads(self.exclusion_rules) if self.exclusion_rules else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_exclusion_rules(self, exclusion_dict):
+        """Set exclusion rules from dict to JSON string"""
+        self.exclusion_rules = json.dumps(exclusion_dict) if exclusion_dict else None
+    
+    def get_precedence_name(self):
+        """Get human-readable precedence level name"""
+        precedence_names = {
+            1: "Data Integrity (Highest)",
+            2: "Operational Safety", 
+            3: "Process Efficiency",
+            4: "Data Quality (Lowest)"
+        }
+        return precedence_names.get(self.precedence_level, f"Level {self.precedence_level}")
     
     def get_parameters(self):
         """Parse parameters JSON string into dict"""
@@ -243,7 +266,7 @@ class Location(db.Model):
     __tablename__ = 'location'
     
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(50), unique=True, nullable=False)
+    code = db.Column(db.String(50), nullable=False)
     pattern = db.Column(db.String(100))  # Regex pattern for matching location codes
     location_type = db.Column(db.String(30), nullable=False)  # RECEIVING, STORAGE, STAGING, DOCK
     capacity = db.Column(db.Integer, default=1)
@@ -262,6 +285,10 @@ class Location(db.Model):
     location_hierarchy = db.Column(db.Text)  # JSON for flexible hierarchy data
     special_requirements = db.Column(db.Text)  # JSON for temperature, hazmat, etc.
     
+    # Unit-agnostic tracking fields
+    unit_type = db.Column(db.String(50), default='pallets')  # pallets, boxes, items, cases, mixed
+    is_tracked = db.Column(db.Boolean, default=True)  # Whether this location is included in analysis
+
     # System fields
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -270,14 +297,18 @@ class Location(db.Model):
     # Relationships
     creator = db.relationship('User', foreign_keys=[created_by])
     
-    # Database indexes for performance optimization
+    # Database indexes and constraints for performance optimization and multi-tenancy
     __table_args__ = (
+        # MULTI-TENANCY: Compound unique constraint for proper tenant isolation
+        db.UniqueConstraint('warehouse_id', 'code', name='uq_location_warehouse_code'),
+        # Performance indexes
         db.Index('idx_location_warehouse_type', 'warehouse_id', 'location_type'),
         db.Index('idx_location_warehouse_zone', 'warehouse_id', 'zone'),
         db.Index('idx_location_warehouse_active', 'warehouse_id', 'is_active'),
         db.Index('idx_location_structure', 'warehouse_id', 'aisle_number', 'rack_number'),
         db.Index('idx_location_code_active', 'code', 'is_active'),
         db.Index('idx_location_created_by', 'created_by'),
+        db.Index('idx_location_tracking', 'warehouse_id', 'is_tracked', 'unit_type'),
     )
     
     def get_allowed_products(self):
@@ -352,10 +383,10 @@ class Location(db.Model):
         # Use clean format for all warehouses (no prefixes needed)
         code = base_code
         
-        # Check for conflicts and add suffix if needed
+        # Check for conflicts within the same warehouse and add suffix if needed
         attempt = 0
         original_code = code
-        while cls.query.filter_by(code=code).first():
+        while cls.query.filter_by(warehouse_id=warehouse_id, code=code).first():
             attempt += 1
             code = f"{original_code}_{attempt}"
         
@@ -444,6 +475,9 @@ class WarehouseConfig(db.Model):
     format_examples = db.Column(db.Text)         # JSON array of original user examples
     format_learned_date = db.Column(db.DateTime) # When format was detected/learned
     
+    # Enhanced Location Configuration - Support for enterprise-scale warehouses
+    max_position_digits = db.Column(db.Integer, default=6)    # Maximum digits in position field (1-6, default: 6 = 999999 max)
+    
     # Metadata
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -487,6 +521,68 @@ class WarehouseConfig(db.Model):
         """Set dock areas from list to JSON string"""
         self.dock_areas = json.dumps(areas_list)
     
+    def generate_next_receiving_code(self):
+        """Generate the next available RECV-XX code following RECV-01 pattern"""
+        existing_areas = self.get_receiving_areas()
+        existing_numbers = []
+        
+        # Extract numbers from existing RECV-XX codes
+        for area in existing_areas:
+            code = area.get('code', '')
+            if code.startswith('RECV-'):
+                try:
+                    number = int(code.split('-')[1])
+                    existing_numbers.append(number)
+                except (IndexError, ValueError):
+                    continue
+        
+        # Find the next available number
+        if not existing_numbers:
+            return 'RECV-01'  # First receiving area with zero-padding
+        
+        next_number = max(existing_numbers) + 1
+        return f'RECV-{next_number:02d}'  # Zero-padded format
+    
+    def generate_next_staging_code(self):
+        """Generate the next available STAGE-XX code"""
+        existing_areas = self.get_staging_areas()
+        existing_numbers = []
+        
+        for area in existing_areas:
+            code = area.get('code', '')
+            if code.startswith('STAGE-'):
+                try:
+                    number = int(code.split('-')[1])
+                    existing_numbers.append(number)
+                except (IndexError, ValueError):
+                    continue
+        
+        if not existing_numbers:
+            return 'STAGE-1'
+        
+        next_number = max(existing_numbers) + 1
+        return f'STAGE-{next_number}'
+    
+    def generate_next_dock_code(self):
+        """Generate the next available DOCK-XX code following DOCK-01 pattern"""
+        existing_areas = self.get_dock_areas()
+        existing_numbers = []
+        
+        for area in existing_areas:
+            code = area.get('code', '')
+            if code.startswith('DOCK-'):
+                try:
+                    number = int(code.split('-')[1])
+                    existing_numbers.append(number)
+                except (IndexError, ValueError):
+                    continue
+        
+        if not existing_numbers:
+            return 'DOCK-01'  # Use 01 format for consistency with existing patterns
+        
+        next_number = max(existing_numbers) + 1
+        return f'DOCK-{next_number:02d}'  # Zero-padded format
+    
     def calculate_total_storage_locations(self):
         """Calculate total number of storage locations"""
         return (self.num_aisles * self.racks_per_aisle * 
@@ -528,11 +624,12 @@ class WarehouseConfig(db.Model):
             'format_confidence': self.format_confidence,
             'format_examples': json.loads(self.format_examples) if self.format_examples else None,
             'format_learned_date': self.format_learned_date.isoformat() if self.format_learned_date else None,
+            'max_position_digits': self.max_position_digits,
             # Metadata
             'created_by': self.created_by,
             'creator_username': self.creator.username if self.creator else None,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'is_active': self.is_active
         }
 
@@ -566,6 +663,9 @@ class WarehouseTemplate(db.Model):
     format_confidence = db.Column(db.Float, default=0.0)      # Detection confidence score (0.0-1.0)
     format_examples = db.Column(db.Text)         # JSON array of original user examples
     format_learned_date = db.Column(db.DateTime) # When format was detected/learned
+    
+    # Enhanced Location Configuration - Support for enterprise-scale warehouses
+    max_position_digits = db.Column(db.Integer, default=6)    # Maximum digits in position field (1-6, default: 6 = 999999 max)
     
     # Template metadata
     based_on_config_id = db.Column(db.Integer, db.ForeignKey('warehouse_config.id'))
@@ -734,13 +834,14 @@ class WarehouseTemplate(db.Model):
             'format_learned_date': self.format_learned_date.isoformat() if self.format_learned_date else None,
             'has_location_format': self.has_location_format(),
             'format_summary': self.get_format_summary(),
+            'max_position_digits': self.max_position_digits,
             'based_on_config_id': self.based_on_config_id,
             'is_public': self.is_public,
             'usage_count': self.usage_count,
             'created_by': self.created_by,
             'creator_username': self.creator.username if self.creator else None,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'is_active': self.is_active
         }
 
@@ -954,11 +1055,11 @@ def get_default_rules_data():
             "category": "FLOW_TIME",
             "description": "Identifies pallets still in receiving when most of their lot has been stored",
             "conditions": {
-                "completion_threshold": 0.8,
+                "completion_threshold": 0.6,
                 "location_types": ["RECEIVING"]
             },
             "parameters": {
-                "completion_threshold": {"type": "float", "min": 0.5, "max": 1.0, "default": 0.8}
+                "completion_threshold": {"type": "float", "min": 0.5, "max": 1.0, "default": 0.6}
             },
             "priority": "VERY_HIGH"
         },
@@ -1001,21 +1102,6 @@ def get_default_rules_data():
             "priority": "HIGH"
         },
         {
-            "name": "Cold Chain Violations",
-            "rule_type": "TEMPERATURE_ZONE_MISMATCH",
-            "category": "PRODUCT",
-            "description": "Identifies temperature-sensitive products in inappropriate zones",
-            "conditions": {
-                "product_patterns": ["*FROZEN*", "*REFRIGERATED*"],
-                "prohibited_zones": ["AMBIENT", "GENERAL"],
-                "time_threshold_minutes": 30
-            },
-            "parameters": {
-                "time_threshold_minutes": {"type": "integer", "min": 5, "max": 120, "default": 30}
-            },
-            "priority": "VERY_HIGH"
-        },
-        {
             "name": "Scanner Error Detection",
             "rule_type": "DATA_INTEGRITY",
             "category": "SPACE",
@@ -1040,3 +1126,250 @@ def get_default_rules_data():
             "priority": "HIGH"
         }
     ]
+
+
+# ==== UNIT-AGNOSTIC WAREHOUSE INTELLIGENCE MODELS ====
+
+class WarehouseScopeConfig(db.Model):
+    """
+    Configuration for warehouse analysis scope - defines what locations should be analyzed
+    This enables unit-agnostic intelligence by filtering inventory data to relevant areas
+    """
+    __tablename__ = 'warehouse_scope_config'
+
+    warehouse_id = db.Column(db.String(50), primary_key=True)  # Removed FK constraint for SQLite compatibility
+    excluded_patterns = db.Column(db.Text, default='[]')  # JSON string for cross-database compatibility
+    default_unit_type = db.Column(db.String(50), default='pallets')  # Default unit type for locations
+    config_metadata = db.Column(db.Text, default='{}')  # JSON string for cross-database compatibility
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def excluded_patterns_list(self):
+        """Get excluded_patterns as a Python list"""
+        if isinstance(self.excluded_patterns, list):
+            return self.excluded_patterns
+        try:
+            return json.loads(self.excluded_patterns or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    @excluded_patterns_list.setter
+    def excluded_patterns_list(self, value):
+        """Set excluded_patterns from a Python list"""
+        if isinstance(value, list):
+            self.excluded_patterns = json.dumps(value)
+        else:
+            self.excluded_patterns = '[]'
+
+    @property
+    def config_metadata_dict(self):
+        """Get config_metadata as a Python dict"""
+        if isinstance(self.config_metadata, dict):
+            return self.config_metadata
+        try:
+            return json.loads(self.config_metadata or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    @config_metadata_dict.setter
+    def config_metadata_dict(self, value):
+        """Set config_metadata from a Python dict"""
+        if isinstance(value, dict):
+            self.config_metadata = json.dumps(value)
+        else:
+            self.config_metadata = '{}'
+
+    def to_dict(self):
+        """Convert to dictionary for API responses"""
+        return {
+            'warehouse_id': self.warehouse_id,
+            'excluded_patterns': self.excluded_patterns_list,
+            'default_unit_type': self.default_unit_type,
+            'config_metadata': self.config_metadata_dict,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    @classmethod
+    def get_or_create_default(cls, warehouse_id):
+        """Get existing scope config or create default one"""
+        config = cls.query.filter_by(warehouse_id=warehouse_id).first()
+
+        if not config:
+            config = cls(
+                warehouse_id=warehouse_id,
+                excluded_patterns='[]',  # JSON string - no exclusions by default
+                default_unit_type='pallets',
+                config_metadata='{}'  # JSON string - empty metadata
+            )
+            db.session.add(config)
+            db.session.commit()
+
+        return config
+
+
+class LocationClassificationCorrection(db.Model):
+    """
+    User corrections for location type classifications
+    Enables learning from user feedback to improve classification accuracy
+    """
+    __tablename__ = 'location_classification_correction'
+
+    id = db.Column(db.Integer, primary_key=True)
+    warehouse_id = db.Column(db.String(50), nullable=False, index=True)
+    location_code = db.Column(db.String(100), nullable=False, index=True)
+
+    # Classification details
+    original_type = db.Column(db.String(30))  # What system initially classified it as
+    corrected_type = db.Column(db.String(30), nullable=False)  # What user corrected it to
+    original_confidence = db.Column(db.Float)  # Confidence of original classification
+    original_method = db.Column(db.String(50))  # Method used for original classification
+
+    # Pattern extraction for learning
+    location_pattern = db.Column(db.String(100))  # Extracted pattern from location code
+    pattern_confidence = db.Column(db.Float, default=1.0)  # Confidence in this correction
+
+    # User and context information
+    corrected_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    correction_context = db.Column(db.Text)  # JSON string with additional context
+    correction_reason = db.Column(db.Text)  # Optional user-provided reason
+
+    # Learning and application tracking
+    applied_count = db.Column(db.Integer, default=0)  # How many times this correction has been applied
+    accuracy_score = db.Column(db.Float, default=1.0)  # Accuracy based on subsequent user feedback
+    is_active = db.Column(db.Boolean, default=True)  # Whether this correction is active
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_applied = db.Column(db.DateTime)  # When this correction was last applied
+
+    # Relationships
+    corrector = db.relationship('User', foreign_keys=[corrected_by])
+
+    # Unique constraint to prevent duplicate corrections
+    __table_args__ = (
+        db.UniqueConstraint('warehouse_id', 'location_code', 'corrected_by',
+                          name='uq_location_correction_per_user'),
+        db.Index('idx_location_correction_lookup', 'warehouse_id', 'location_pattern'),
+    )
+
+    def get_correction_context(self):
+        """Parse correction context JSON string into dict"""
+        try:
+            return json.loads(self.correction_context) if self.correction_context else {}
+        except json.JSONDecodeError:
+            return {}
+
+    def set_correction_context(self, context_dict):
+        """Set correction context from dict to JSON string"""
+        self.correction_context = json.dumps(context_dict)
+
+    def extract_pattern(self):
+        """Extract a pattern from the location code for future matching"""
+        if not self.location_code:
+            return None
+
+        location_upper = self.location_code.upper()
+
+        # Extract different types of patterns
+        patterns = []
+
+        # Exact match pattern (highest priority)
+        patterns.append(f"EXACT:{location_upper}")
+
+        # Prefix patterns
+        if '-' in location_upper:
+            parts = location_upper.split('-')
+            if len(parts) >= 2:
+                patterns.append(f"PREFIX:{parts[0]}-*")
+
+        # Suffix patterns
+        if location_upper.endswith(tuple('ABCD')):
+            patterns.append(f"SUFFIX:*-{location_upper[-1]}")
+
+        # Keyword patterns
+        for keyword in ['RECV', 'DOCK', 'STAGE', 'AISLE', 'STOR', 'RACK']:
+            if keyword in location_upper:
+                patterns.append(f"KEYWORD:{keyword}")
+
+        # Return the most specific pattern
+        return patterns[0] if patterns else f"FALLBACK:{location_upper}"
+
+    def increment_applied_count(self):
+        """Increment the applied count and update last_applied timestamp"""
+        self.applied_count = (self.applied_count or 0) + 1
+        self.last_applied = datetime.utcnow()
+
+    @classmethod
+    def find_correction_for_location(cls, warehouse_id, location_code):
+        """Find the best correction for a given location"""
+        # Try exact match first
+        exact_match = cls.query.filter_by(
+            warehouse_id=warehouse_id,
+            location_code=location_code,
+            is_active=True
+        ).order_by(cls.accuracy_score.desc()).first()
+
+        if exact_match:
+            return exact_match
+
+        # Try pattern matching
+        location_upper = location_code.upper()
+
+        # Look for applicable patterns
+        corrections = cls.query.filter_by(
+            warehouse_id=warehouse_id,
+            is_active=True
+        ).all()
+
+        for correction in corrections:
+            if correction.location_pattern:
+                if cls._pattern_matches(correction.location_pattern, location_upper):
+                    return correction
+
+        return None
+
+    @staticmethod
+    def _pattern_matches(pattern, location):
+        """Check if a pattern matches a location"""
+        if not pattern or not location:
+            return False
+
+        pattern_type, pattern_value = pattern.split(':', 1) if ':' in pattern else ('EXACT', pattern)
+
+        if pattern_type == 'EXACT':
+            return pattern_value == location
+        elif pattern_type == 'PREFIX':
+            return location.startswith(pattern_value.replace('*', ''))
+        elif pattern_type == 'SUFFIX':
+            return location.endswith(pattern_value.replace('*', ''))
+        elif pattern_type == 'KEYWORD':
+            return pattern_value in location
+        elif pattern_type == 'FALLBACK':
+            return pattern_value == location
+
+        return False
+
+    def to_dict(self):
+        """Convert to dictionary for API responses"""
+        return {
+            'id': self.id,
+            'warehouse_id': self.warehouse_id,
+            'location_code': self.location_code,
+            'original_type': self.original_type,
+            'corrected_type': self.corrected_type,
+            'original_confidence': self.original_confidence,
+            'original_method': self.original_method,
+            'location_pattern': self.location_pattern,
+            'pattern_confidence': self.pattern_confidence,
+            'correction_context': self.get_correction_context(),
+            'correction_reason': self.correction_reason,
+            'applied_count': self.applied_count,
+            'accuracy_score': self.accuracy_score,
+            'is_active': self.is_active,
+            'corrected_by': self.corrected_by,
+            'corrector_username': self.corrector.username if self.corrector else None,
+            'created_at': self.created_at.isoformat(),
+            'last_applied': self.last_applied.isoformat() if self.last_applied else None
+        }

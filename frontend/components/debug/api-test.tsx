@@ -57,7 +57,7 @@ Is your Flask backend running on http://localhost:5001?`)
     
     try {
       const testUsername = `test_${Date.now()}`
-      await authApi.register({ username: testUsername, password: 'test123' })
+      await authApi.register({ username: testUsername, password: 'test123', invitation_code: 'BOOTSTRAP2025' })
       setResult(`✅ Registration successful for user: ${testUsername}`)
     } catch (error: unknown) {
       const err = error as { message?: string; response?: { status?: number; data?: unknown } }
@@ -103,7 +103,7 @@ Data: ${JSON.stringify(err.response?.data)}
       
       // Step 1: Register
       setResult(`Step 1: Registering user ${testUsername}...`)
-      await authApi.register({ username: testUsername, password: testPassword })
+      await authApi.register({ username: testUsername, password: testPassword, invitation_code: 'BOOTSTRAP2025' })
       
       // Step 2: Login
       setResult(`Step 2: Logging in with ${testUsername}...`)

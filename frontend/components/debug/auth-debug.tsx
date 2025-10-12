@@ -46,7 +46,8 @@ export function AuthDebug() {
     try {
       setError('')
       setSuccess('')
-      await register(username, password)
+      // Use BOOTSTRAP2025 as default invitation code for debug testing
+      await register(username, password, 'BOOTSTRAP2025')
       setSuccess('Registration successful!')
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } }; message?: string }

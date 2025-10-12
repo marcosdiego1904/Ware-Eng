@@ -67,5 +67,21 @@ api.interceptors.response.use(
   }
 );
 
+// User Preferences API for Clear Anomalies Feature
+export const userPreferencesApi = {
+  async getPreferences() {
+    const response = await api.get('/user/preferences');
+    return response.data;
+  },
+
+  async updatePreferences(preferences: {
+    clear_previous_anomalies?: boolean;
+    show_clear_warning?: boolean;
+  }) {
+    const response = await api.post('/user/preferences', preferences);
+    return response.data;
+  }
+};
+
 export default api;
 export { api };

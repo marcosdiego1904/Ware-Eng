@@ -158,11 +158,12 @@ class PositionLevelAnalyzer(PatternAnalyzer):
     
     def analyze(self, examples: List[str]) -> Optional[FormatPattern]:
         """
-        Detect position+level pattern: PPPX where PPP=position, X=level
+        Detect position+level pattern: PPPX where PPP=position (3-6 digits), X=level
         
-        Examples: "010A", "325B", "245D" → "01-01-010A", "01-01-325B", "01-01-245D"
+        Examples: "010A", "325B", "1230A", "9999C" → "01-01-010A", "01-01-325B", "01-01-1230A", "01-01-9999C"
         """
-        pattern = r'^(\d{3})([A-Z])$'
+        # Support 3-6 digits for enterprise-scale warehouses (010A to 999999A)
+        pattern = r'^(\d{3,6})([A-Z])$'
         matched_examples = []
         
         for example in examples:
@@ -181,16 +182,17 @@ class PositionLevelAnalyzer(PatternAnalyzer):
         return FormatPattern(
             pattern_type=self.pattern_type,
             regex_pattern=pattern,
-            canonical_converter="01-01-{position:03d}{level}",
+            canonical_converter="01-01-{position:06d}{level}",  # Pad to 6 digits for consistency
             confidence=confidence,
             examples=matched_examples[:5],  # Keep up to 5 examples
             components={
-                'position_digits': 3,
+                'position_digits': 'variable_3_to_6',  # Support 3-6 digits for scalability
                 'level_format': 'single_letter',
                 'default_aisle': 1,
-                'default_rack': 1
+                'default_rack': 1,
+                'supports_enterprise_scale': True  # Flag for 4+ digit positions
             },
-            description=f"Position+Level format (PPP+L) detected with {confidence:.1%} confidence"
+            description=f"Position+Level format (3-6 digits + Level) detected with {confidence:.1%} confidence - supports enterprise scale"
         )
 
 
@@ -204,9 +206,10 @@ class StandardAnalyzer(PatternAnalyzer):
     
     def analyze(self, examples: List[str]) -> Optional[FormatPattern]:
         """
-        Detect standard canonical pattern: AA-RR-PPPL
+        Detect standard canonical pattern: AA-RR-PPPL (enhanced for 4+ digit positions)
         """
-        pattern = r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$'
+        # Support up to 6 digits in position field for enterprise warehouses
+        pattern = r'^(\d{1,2})-(\d{1,2})-(\d{1,6})([A-Z])$'
         matched_examples = []
         
         for example in examples:
@@ -224,15 +227,16 @@ class StandardAnalyzer(PatternAnalyzer):
         return FormatPattern(
             pattern_type=self.pattern_type,
             regex_pattern=pattern,
-            canonical_converter="{aisle:02d}-{rack:02d}-{position:03d}{level}",
+            canonical_converter="{aisle:02d}-{rack:02d}-{position:06d}{level}",  # Pad to 6 digits for consistency
             confidence=confidence,
             examples=matched_examples[:5],
             components={
                 'aisle_digits': 2,
                 'rack_digits': 2,
-                'position_digits': 3,
+                'position_digits': 'variable_1_to_6',  # Enhanced to support 1-6 digits
                 'level_format': 'single_letter',
-                'separators': ['-', '-']
+                'separators': ['-', '-'],
+                'supports_enterprise_scale': True
             },
             description=f"Standard canonical format (AA-RR-PPP+L) detected with {confidence:.1%} confidence"
         )
@@ -250,10 +254,10 @@ class LetterPrefixedAnalyzer(PatternAnalyzer):
         """
         Detect letter-prefixed patterns: A01-R02-P15, B05-R01-P03, etc.
         """
-        # Pattern for letter-prefixed segments with optional level
+        # Pattern for letter-prefixed segments with optional level (enhanced for 4+ digits)
         patterns = [
-            r'^([A-Z]\d{1,2})-([A-Z]\d{1,2})-([A-Z]\d{1,3})([A-Z])?$',  # With level: A01-R02-P15A
-            r'^([A-Z]\d{1,2})-([A-Z]\d{1,2})-([A-Z]\d{1,3})$'            # Without level: A01-R02-P15
+            r'^([A-Z]\d{1,2})-([A-Z]\d{1,2})-([A-Z]\d{1,6})([A-Z])?$',  # With level: A01-R02-P1230A
+            r'^([A-Z]\d{1,2})-([A-Z]\d{1,2})-([A-Z]\d{1,6})$'            # Without level: A01-R02-P1230
         ]
         
         best_matches = []
@@ -292,11 +296,115 @@ class LetterPrefixedAnalyzer(PatternAnalyzer):
                 'position_prefix': True,
                 'aisle_digits': 2,
                 'rack_digits': 2,
-                'position_digits': 2,
+                'position_digits': 'variable_1_to_6',  # Enhanced to support enterprise scale
                 'level_format': 'single_letter' if has_level else 'none',
                 'separators': ['-', '-']
             },
             description=f"Letter-prefixed format (A##-R##-P##) detected with {confidence:.1%} confidence"
+        )
+
+
+class MixedNumericLetterAnalyzer(PatternAnalyzer):
+    """
+    Analyzes mixed numeric-letter patterns like "01-A-1000A", "02-B-2500C"
+    Format: NN-L-NNNNL (aisle_number-rack_letter-position_number+level_letter)
+    
+    This pattern is common in warehouses where:
+    - First number(s) = aisle identifier  
+    - Letter = rack identifier within aisle
+    - Number sequence = position number (can be 1-6 digits for enterprise warehouses)
+    - Final letter = level within position
+    """
+    
+    def __init__(self):
+        super().__init__(PatternType.STANDARD)  # Use STANDARD type for canonical conversion
+    
+    def analyze(self, examples: List[str]) -> Optional[FormatPattern]:
+        """
+        Detect mixed numeric-letter pattern: NN-L-NNNNL
+        
+        Examples: "01-A-1000A", "02-B-2500C", "12-Z-999999D"
+        Converts to canonical: "01-01-1000A" (aisle-rack-position-level)
+        """
+        # Pattern: 1-2 digits, dash, single letter, dash, 1-6 digits, single letter
+        # Also handle cases where aisle might have extra text (e.g., "03Can-A-1000C")
+        pattern_strict = r'^(\d{1,2})-([A-Z])-(\d{1,6})([A-Z])$'
+        pattern_flexible = r'^(\d{1,2})[A-Za-z]*-([A-Z])-(\d{1,6})([A-Z])$'
+        
+        matched_examples = []
+        aisle_numbers = set()
+        rack_letters = set()
+        position_numbers = set()
+        level_letters = set()
+        
+        # First try strict matching
+        for example in examples:
+            clean_example = example.strip().upper()
+            match = re.match(pattern_strict, clean_example)
+            if match:
+                matched_examples.append(clean_example)
+                aisle_num, rack_letter, position_num, level_letter = match.groups()
+                aisle_numbers.add(int(aisle_num))
+                rack_letters.add(rack_letter)
+                position_numbers.add(int(position_num))
+                level_letters.add(level_letter)
+        
+        # If we have unmatched examples, try flexible matching to capture variations  
+        if len(matched_examples) < len(examples):  # Any unmatched examples
+            flexible_matches = []
+            for example in examples:
+                clean_example = example.strip().upper()
+                if clean_example not in matched_examples:  # Don't re-add strict matches
+                    match = re.match(pattern_flexible, clean_example)
+                    if match:
+                        # Normalize to strict format by removing extra letters
+                        aisle_num, rack_letter, position_num, level_letter = match.groups()
+                        normalized = f"{aisle_num}-{rack_letter}-{position_num}{level_letter}"
+                        flexible_matches.append(normalized)
+                        aisle_numbers.add(int(aisle_num))
+                        rack_letters.add(rack_letter)
+                        position_numbers.add(int(position_num))
+                        level_letters.add(level_letter)
+            
+            # Add flexible matches to our collection
+            matched_examples.extend(flexible_matches)
+        
+        if not matched_examples:
+            return None
+        
+        confidence = self._calculate_confidence(examples, matched_examples)
+        
+        # For mixed pattern, be more lenient if we can normalize inconsistent examples  
+        confidence_threshold = 0.6 if len(matched_examples) >= len(examples) * 0.7 else 0.7
+        if confidence < confidence_threshold:
+            return None
+        
+        # Analyze components for better canonical conversion
+        max_aisle = max(aisle_numbers) if aisle_numbers else 99
+        max_position = max(position_numbers) if position_numbers else 9999
+        
+        # Create canonical converter based on detected ranges
+        # Map rack letters to rack numbers: A=1, B=2, C=3, etc.
+        canonical_converter = "{aisle:02d}-{rack_num:02d}-{position:0" + str(len(str(max_position))) + "d}{level}"
+        
+        return FormatPattern(
+            pattern_type=self.pattern_type,
+            regex_pattern=pattern_strict,  # Use the strict pattern for the regex
+            canonical_converter=canonical_converter,
+            confidence=confidence,
+            examples=matched_examples[:5],  # Show first 5 examples
+            components={
+                'aisle_range': f"1-{max_aisle}",
+                'rack_letters': sorted(list(rack_letters)),
+                'position_range': f"1-{max_position}",
+                'level_letters': sorted(list(level_letters)),
+                'position_digits': len(str(max_position)),
+                'pattern_structure': 'aisle-letter_rack-position-level',
+                'canonical_conversion': 'Maps rack letters to numbers (A=1, B=2, etc.)',
+                'enterprise_scale': max_position > 9999  # Flag large warehouses
+            },
+            description=f"Mixed numeric-letter format (NN-L-NNNN+L) detected with {confidence:.1%} confidence. "
+                      f"Pattern: aisle-rack_letter-position-level. Suitable for enterprise warehouses."
         )
 
 
@@ -386,11 +494,95 @@ class SpecialAnalyzer(PatternAnalyzer):
         )
 
 
+class RackLevelPositionAnalyzer(PatternAnalyzer):
+    """
+    Analyzes rack.level+position patterns like "17.24E", "13.06B", "17.15C"
+
+    This format represents:
+    - Rack number (1-2 digits)
+    - Level number (1-2 digits)
+    - Position letter (A-Z)
+
+    Examples: "17.24E" = Rack 17, Level 24, Position E
+              "13.06B" = Rack 13, Level 06, Position B
+    """
+
+    def __init__(self):
+        super().__init__(PatternType.STANDARD)  # Use STANDARD for canonical conversion
+
+    def analyze(self, examples: List[str]) -> Optional[FormatPattern]:
+        """
+        Detect rack.level+position pattern: RR.LLX where RR=rack, LL=level, X=position
+
+        Examples: "17.24E", "13.06B", "17.15C" → "17-01-2400E", "13-01-0600B", "17-01-1500C"
+        """
+        # Pattern: 1-2 digits, dot, 1-2 digits, letter
+        pattern = r'^(\d{1,2})\.(\d{1,2})([A-Z])$'
+        matched_examples = []
+
+        for example in examples:
+            if re.match(pattern, example.strip().upper()):
+                matched_examples.append(example.strip().upper())
+
+        if not matched_examples:
+            return None
+
+        confidence = self._calculate_confidence(examples, matched_examples)
+
+        # Ensure minimum confidence threshold
+        if confidence < 0.5:
+            return None
+
+        return FormatPattern(
+            pattern_type=self.pattern_type,
+            regex_pattern=pattern,
+            canonical_converter="{rack:02d}-01-{level:02d}00{position}",  # Convert to canonical with default rack section 01
+            confidence=confidence,
+            examples=matched_examples[:5],  # Keep up to 5 examples
+            components={
+                'rack_digits': 'variable_1_to_2',
+                'level_digits': 'variable_1_to_2',
+                'position_format': 'single_letter',
+                'separator': 'dot',
+                'default_rack_section': 1,  # Default rack section when converting to canonical
+                'warehouse_style': 'rack_level_position'
+            },
+            description=f"Rack.Level+Position format (rack.level+letter) detected with {confidence:.1%} confidence - common in high-density warehouses"
+        )
+
+    def _calculate_confidence(self, all_examples: List[str], matched_examples: List[str]) -> float:
+        """Calculate confidence based on match ratio and pattern consistency"""
+        if not all_examples or not matched_examples:
+            return 0.0
+
+        base_confidence = len(matched_examples) / len(all_examples)
+
+        # Bonus for consistent rack numbers (indicates real warehouse data)
+        racks = set()
+        levels = set()
+        for example in matched_examples:
+            match = re.match(r'^(\d{1,2})\.(\d{1,2})([A-Z])$', example)
+            if match:
+                rack, level, pos = match.groups()
+                racks.add(rack)
+                levels.add(level)
+
+        # Boost confidence if we see multiple racks and reasonable level distribution
+        if len(racks) > 1 and len(levels) > 2:
+            base_confidence += 0.1
+
+        # Additional confidence for level patterns that make sense (not all same level)
+        if len(levels) >= len(matched_examples) * 0.3:  # At least 30% different levels
+            base_confidence += 0.1
+
+        return min(1.0, base_confidence)
+
+
 class ZoneAnalyzer(PatternAnalyzer):
     """
     Analyzes zone-based location patterns like "ZONE-A-001", "SECTOR-B-125"
     """
-    
+
     def __init__(self):
         super().__init__(PatternType.ZONE)
     
@@ -467,8 +659,10 @@ class SmartFormatDetector:
         self.analyzers = [
             SpecialAnalyzer(),      # Check special locations first
             ZoneAnalyzer(),         # Then zone-based patterns (ZONE-A-001)
+            RackLevelPositionAnalyzer(), # Then rack.level+position format (17.24E)
             StandardAnalyzer(),     # Then standard canonical format
             LetterPrefixedAnalyzer(), # Then letter-prefixed format (A01-R02-P15)
+            MixedNumericLetterAnalyzer(), # Then mixed numeric-letter format (01-A-1000A)
             PositionLevelAnalyzer(), # Then position+level
             CompactAnalyzer()       # Finally compact format
         ]
@@ -565,6 +759,19 @@ class SmartFormatDetector:
         
         canonical_examples = []
         
+        # First, normalize examples if they contain patterns like "03Can-A-1000C"
+        normalized_examples = []
+        for example in examples[:5]:
+            clean_example = example.strip().upper()
+            # Try to normalize mixed patterns with extra text
+            match = re.match(r'^(\d{1,2})[A-Za-z]*-([A-Z])-(\d{1,6})([A-Z])$', clean_example)
+            if match:
+                aisle_num, rack_letter, position_num, level_letter = match.groups()
+                normalized = f"{aisle_num}-{rack_letter}-{position_num}{level_letter}"
+                normalized_examples.append(normalized)
+            else:
+                normalized_examples.append(clean_example)
+        
         try:
             if pattern.pattern_type == PatternType.POSITION_LEVEL:
                 # Convert position+level to canonical
@@ -576,13 +783,37 @@ class SmartFormatDetector:
                         canonical_examples.append(f"{example} -> {canonical}")
             
             elif pattern.pattern_type == PatternType.STANDARD:
-                # Already canonical, just normalize padding
-                for example in examples[:5]:
-                    match = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$', example)
+                # Handle rack.level+position, standard format, and mixed numeric-letter format
+                for example in normalized_examples:
+                    # First try rack.level+position pattern (17.24E)
+                    match = re.match(r'^(\d{1,2})\.(\d{1,2})([A-Z])$', example)
+                    if match:
+                        rack, level, position = match.groups()
+                        # Convert to canonical: rack-01-level00+position
+                        canonical = f"{int(rack):02d}-01-{int(level):02d}00{position}"
+                        canonical_examples.append(canonical)
+                        continue
+
+                    # Then try mixed numeric-letter pattern (01-A-1000A)
+                    match = re.match(r'^(\d{1,2})-([A-Z])-(\d{1,6})([A-Z])$', example)
+                    if match:
+                        aisle, rack_letter, position, level = match.groups()
+                        # Convert rack letter to number: A=01, B=02, etc.
+                        rack_num = ord(rack_letter) - ord('A') + 1
+                        canonical = f"{int(aisle):02d}-{rack_num:02d}-{int(position):04d}{level}"
+                        canonical_examples.append(canonical)
+                        continue
+
+                    # Then try standard canonical pattern (01-01-001A)
+                    match = re.match(r'^(\d{1,2})-(\d{1,2})-(\d{1,6})([A-Z])$', example)
                     if match:
                         aisle, rack, position, level = match.groups()
-                        canonical = f"{int(aisle):02d}-{int(rack):02d}-{int(position):03d}{level}"
-                        canonical_examples.append(f"{example} -> {canonical}")
+                        canonical = f"{int(aisle):02d}-{int(rack):02d}-{int(position):04d}{level}"
+                        canonical_examples.append(canonical)
+                        continue
+
+                    # Fallback for any other STANDARD type patterns
+                    canonical_examples.append(example)
             
             elif pattern.pattern_type == PatternType.COMPACT:
                 # Convert compact to canonical

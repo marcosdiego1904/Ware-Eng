@@ -283,10 +283,24 @@ def create_template(current_user):
     """
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No template data provided'}), 400
-        
+
+        # TEMPLATE LIMIT CHECK: Enforce 5 templates per user
+        template_count = WarehouseTemplate.query.filter_by(
+            created_by=current_user.id,
+            is_active=True
+        ).count()
+
+        if template_count >= 5:
+            return jsonify({
+                'error': 'Maximum template limit reached',
+                'message': 'You have reached the maximum limit of 5 active templates per user.',
+                'current_count': template_count,
+                'limit': 5
+            }), 403
+
         # Validate required fields
         required_fields = ['name', 'num_aisles', 'racks_per_aisle', 'positions_per_rack']
         for field in required_fields:
@@ -381,10 +395,24 @@ def create_template_from_config(current_user):
     """Create template from existing warehouse configuration"""
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
+
+        # TEMPLATE LIMIT CHECK: Enforce 5 templates per user
+        template_count = WarehouseTemplate.query.filter_by(
+            created_by=current_user.id,
+            is_active=True
+        ).count()
+
+        if template_count >= 5:
+            return jsonify({
+                'error': 'Maximum template limit reached',
+                'message': 'You have reached the maximum limit of 5 active templates per user.',
+                'current_count': template_count,
+                'limit': 5
+            }), 403
+
         # Validate required fields
         if 'config_id' not in data or 'template_name' not in data:
             return jsonify({'error': 'Missing config_id or template_name'}), 400

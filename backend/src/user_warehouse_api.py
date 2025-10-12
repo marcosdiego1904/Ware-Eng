@@ -2,16 +2,42 @@
 API endpoint for user-specific warehouse detection
 """
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from flask_login import login_required, current_user
 from models import WarehouseConfig
+from core_models import User
 from database import db
+from functools import wraps
+import jwt
 
 user_warehouse_bp = Blueprint('user_warehouse', __name__)
 
+# Token authentication decorator (copied from location_api.py)
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split(" ")[1]
+
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+
+        try:
+            data = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user_id = data['user_id']
+            current_user_obj = User.query.get(current_user_id)
+            if not current_user_obj:
+                return jsonify({'error': 'User not found'}), 401
+        except:
+            return jsonify({'error': 'Token is invalid'}), 401
+
+        return f(current_user_obj, *args, **kwargs)
+    return decorated
+
 @user_warehouse_bp.route('/api/v1/user/warehouse', methods=['GET'])
-@login_required
-def get_user_warehouse():
+@token_required
+def get_user_warehouse(current_user):
     """Get the primary warehouse for the current user"""
     try:
         user_id = current_user.id
@@ -124,8 +150,8 @@ def get_user_warehouse():
         }), 500
 
 @user_warehouse_bp.route('/api/v1/user/warehouses', methods=['GET'])
-@login_required
-def get_all_user_warehouses():
+@token_required
+def get_all_user_warehouses(current_user):
     """Get all warehouses accessible to the current user"""
     try:
         user_id = current_user.id

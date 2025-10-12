@@ -3,3 +3,179 @@ Things to do in the app.
 Mobile first improvement
 rules shared through accounts
 be able to delete analysys or template.
+threat aisles as special locations.
+
+
+
+ Problem Description
+
+  Current Situation
+
+  Your warehouse intelligence engine has environment-specific
+  detection failures where the same codebase produces different
+  results:
+
+  - Local Development: Detects USER_TESTF warehouse (60.47% match
+  score)
+  - Production Environment: Detects DEFAULT warehouse (10.90% match
+  score)
+  - Different Datasets: Development has 311 locations, production has
+   1,734 locations
+  - Format Mismatch: Production data uses non-standard location
+  format variations
+
+  Technical Analysis Results
+
+  1. Database Architecture Issues
+
+  - Development: SQLite with USER_TESTF warehouse only
+  - Production: PostgreSQL with DEFAULT warehouse containing
+  different location formats
+  - No Synchronization: Environments contain completely different
+  warehouse data
+  - Poor Isolation: No proper multi-tenant architecture
+
+  2. Location Format Standards Violation
+
+  - Industry Standard: Zero-padded format (01-01-001A)
+  - Production Reality: Mixed formats (01-1-001A, 01-01-001A)
+  - Detection Failure: Exact string matching fails on format
+  variations
+  - No Normalization: System lacks location format standardization
+
+  3. Detection Algorithm Limitations
+
+  - Brittle Matching: Relies on exact string matches without
+  normalization
+  - No Fallbacks: Single detection strategy with no alternatives
+  - Environment Blind: No awareness of cross-environment data
+  differences
+  - Poor Confidence Scoring: Limited scoring mechanisms for match
+  quality
+
+  Long-Term Solution Strategy
+
+  Phase 1: Foundation & Data Architecture (4 weeks)
+
+  Objective: Establish consistent data foundation and environment
+  parity
+
+  Key Components:
+  1. Environment Data Audit
+    - Catalog all location formats across environments
+    - Document detection failure patterns
+    - Create location pattern library
+  2. Multi-Tenant Schema Design
+    - Implement Bridge Model architecture (shared DB, isolated
+  schemas)
+    - Design tenant-aware database structure
+    - Plan zero-downtime migration strategy
+  3. ChromaDB Integration
+    - Set up knowledge repository for location patterns
+    - Store warehouse configurations and detection rules
+    - Enable semantic search for location matching
+
+  Phase 2: Location Normalization Engine (4 weeks)
+
+  Objective: Build intelligent location format handling
+
+  Key Components:
+  1. Smart Normalization Algorithm
+  def normalize_location(raw_location):
+      # Handle multiple formats: 01-1-001A → 01-01-001A
+      # Support fuzzy matching with confidence scoring
+      # ChromaDB-powered pattern recognition
+  2. Pattern Recognition System
+    - Support format variations automatically
+    - Implement confidence-based matching
+    - Create fallback detection mechanisms
+  3. Validation Framework
+    - 95%+ accuracy target for location detection
+    - Comprehensive test suite with real data
+    - Performance monitoring dashboard
+
+  Phase 3: Multi-Tenant Infrastructure (4 weeks)
+
+  Objective: Scale to support multiple warehouses reliably
+
+  Key Components:
+  1. Bridge Model Implementation
+    - PostgreSQL with tenant-isolated schemas
+    - Tenant-aware API routing and queries
+    - Configuration management system
+  2. Environment Synchronization
+    - Automated dev/staging/production data sync
+    - Configuration drift detection
+    - Environment parity validation
+  3. Tenant Management Interface
+    - Web interface for warehouse setup
+    - Location format configuration
+    - Detection rule customization
+
+  Phase 4: AI Enhancement & Self-Improvement (4 weeks)
+
+  Objective: Build adaptive, learning detection system
+
+  Key Components:
+  1. Machine Learning Integration
+    - Train models on historical location patterns
+    - Continuous learning from detection results
+    - Confidence-based recommendations
+  2. Self-Improving Detection
+    - Feedback loop integration
+    - Automatic rule optimization
+    - A/B testing for detection algorithms
+  3. Advanced Analytics
+    - Pattern analysis and insights
+    - Predictive detection capabilities
+    - Performance optimization recommendations
+
+  Resource Requirements
+
+  Development Team
+
+  - 2 Full-stack Developers (16 weeks total)
+  - 1 DevOps Engineer (part-time, weeks 9-16)
+  - 1 QA Engineer (part-time, weeks 5-16)
+
+  Infrastructure
+
+  - ChromaDB: Knowledge repository and semantic search
+  - PostgreSQL: Multi-tenant database with proper isolation
+  - CI/CD Pipeline: Automated testing and deployment
+  - Monitoring: Performance and business metrics tracking
+
+  Success Metrics
+
+  - Phase 1: 100% environment data cataloged, multi-tenant schema
+  deployed
+  - Phase 2: 95%+ location detection accuracy, <100ms response time
+  - Phase 3: 99.9% environment parity, <5 minute tenant onboarding
+  - Phase 4: 98%+ AI-enhanced accuracy, 50% reduction in manual
+  validation
+
+  Implementation Strategy
+
+  Immediate Actions (Next 2 weeks)
+
+  1. Audit Current State
+    - Document all location formats in production
+    - Catalog environment differences
+    - Identify critical detection failure patterns
+  2. Design Foundation
+    - Create multi-tenant database schema
+    - Plan ChromaDB integration architecture
+    - Design location normalization algorithm
+
+  Risk Mitigation
+
+  - Phased Rollout: Gradual migration with comprehensive testing
+  - Environment Parity: Automated validation and sync procedures
+  - Performance Monitoring: Real-time detection accuracy tracking
+  - Fallback Mechanisms: Multiple detection strategies with
+  confidence scoring
+
+  This comprehensive approach addresses the root causes while
+  building a scalable, maintainable foundation for reliable warehouse
+   auto-detection across all environments and location format
+  variations.

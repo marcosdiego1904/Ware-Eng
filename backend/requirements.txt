@@ -7,6 +7,9 @@ gunicorn
 # Data Processing
 pandas==2.2.3
 openpyxl==3.1.5
+rapidfuzz==3.10.0  # Fast fuzzy string matching for intelligent column mapping
+python-dateutil==2.9.0  # Flexible date parsing for smart date format detection
+xlrd==2.0.1  # Excel date handling support
 
 # Security & Authentication  
 PyJWT==2.8.0

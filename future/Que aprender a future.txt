@@ -1,0 +1,24 @@
+Que aprender a future 
+
+Roadmap Específico para Ti
+Próximos 3 meses (Conceptos Core):
+Mes 1: System Design
+
+Week 1: Database design patterns, ACID vs BASE
+Week 2: API design principles, RESTful vs GraphQL vs gRPC
+Week 3: Caching strategies, CDN concepts
+Week 4: Authentication/Authorization patterns
+
+Mes 2: Scalability & Performance
+
+Week 1: Horizontal vs vertical scaling
+Week 2: Message queues and async processing
+Week 3: Monitoring and observability
+Week 4: Disaster recovery and backup strategies
+
+Mes 3: Architecture Patterns
+
+Week 1: Microservices vs modular monoliths
+Week 2: Event-driven architecture
+Week 3: CQRS and Event Sourcing
+Week 4: Domain-Driven Design basics

@@ -18,6 +18,7 @@ class LogFilter:
     """Smart log filter to reduce noise while preserving important information"""
     
     def __init__(self):
+        self._original_print = None  # Initialize this attribute
         self.suppressed_patterns = {
             "Virtual classification failed for",
             "STAGNANT_PALLETS_DEBUG",
@@ -26,15 +27,22 @@ class LogFilter:
             "Enhanced location type distribution:",
             "WAREHOUSE_RESOLVER",
             "VIRTUAL_ENGINE_FACTORY",
-            "VIRTUAL_TEMPLATE"
+            "VIRTUAL_TEMPLATE",
+            "[UNIT_AGNOSTIC] Location",  # Suppress individual location logs
+            "[UNIT_AGNOSTIC] Error accessing scope service",  # Suppress scope errors
+            "[ENHANCED_CLASSIFIER] Virtual engine error:"  # Suppress virtual engine errors
         }
         
         self.important_patterns = {
             "RULE_ENGINE_DEBUG] -------------------- RULE",
             "RULE_ENGINE_DEBUG] Result: SUCCESS",
-            "RULE_ENGINE_DEBUG] Result: FAILED", 
+            "RULE_ENGINE_DEBUG] Result: FAILED",
             "[ANALYSIS]",
             "Total anomalies found:",
+            "[UNIT_AGNOSTIC] Starting unit-agnostic",  # Keep start message
+            "[UNIT_AGNOSTIC] Found",  # Keep summary message
+            "[UNIT_AGNOSTIC] Analyzing",  # Keep analysis summary
+            "[UNIT_AGNOSTIC] OVERCAPACITY:",  # Keep the first few overcapacity messages
             "❌",
             "✅"
         }

@@ -10,6 +10,8 @@ import { Building2 } from 'lucide-react'
 import { reportsApi } from '@/lib/reports'
 import { useDashboardStore } from '@/lib/store'
 import useLocationStore from '@/lib/location-store'
+import { userPreferencesApi } from '@/lib/api'
+import { ClearAnomaliesModal } from '@/components/ui/clear-anomalies-modal'
 
 type AnalysisStep = 'upload' | 'mapping' | 'processing' | 'complete'
 
@@ -21,9 +23,17 @@ export function NewAnalysisView() {
   })
   const [error, setError] = useState<string | null>(null)
   const { setCurrentView } = useDashboardStore()
-  
+
   // NEW: Get current warehouse configuration from applied template
   const { currentWarehouseConfig } = useLocationStore()
+
+  // Clear Anomalies Modal State
+  const [clearAnomaliesModal, setClearAnomaliesModal] = useState({
+    open: false,
+    anomaliesCount: 0,
+    isLoading: false,
+    pendingMapping: null as Record<string, string> | null
+  })
 
   const handleFilesSelected = (files: { inventory: File | null; rules: File | null }) => {
     setSelectedFiles(files)
@@ -37,17 +47,50 @@ export function NewAnalysisView() {
   }
 
   const handleMappingComplete = async (mapping: Record<string, string>) => {
+    try {
+      // Check user preferences and previous anomalies count
+      const preferences = await userPreferencesApi.getPreferences()
+
+      if (preferences.success &&
+          preferences.preferences.show_clear_warning &&
+          preferences.unresolved_anomaly_count > 0) {
+
+        // Show clear anomalies modal
+        setClearAnomaliesModal({
+          open: true,
+          anomaliesCount: preferences.unresolved_anomaly_count,
+          isLoading: false,
+          pendingMapping: mapping
+        })
+
+        console.log(`Found ${preferences.unresolved_anomaly_count} previous anomalies, showing modal`)
+        return // Wait for user decision
+      }
+
+      // No previous anomalies or user doesn't want to see warning - proceed directly
+      await submitAnalysis(mapping, false) // false = don't clear (no anomalies to clear)
+
+    } catch (error) {
+      console.error('Failed to check preferences:', error)
+      // If preferences check fails, proceed without clearing
+      await submitAnalysis(mapping, false)
+    }
+  }
+
+  const submitAnalysis = async (mapping: Record<string, string>, clearPrevious: boolean = false) => {
     setCurrentStep('processing')
+    setClearAnomaliesModal(prev => ({ ...prev, open: false }))
 
     try {
       // NEW: Include warehouse_id from applied template
       const warehouseId = currentWarehouseConfig?.warehouse_id
-      
+
       console.log('Starting analysis with:', {
         inventory_file: selectedFiles.inventory?.name,
         rules_file: selectedFiles.rules?.name,
         column_mapping: mapping,
-        warehouse_id: warehouseId  // NEW: Show warehouse context
+        warehouse_id: warehouseId,
+        clear_previous: clearPrevious
       })
 
       // Submit to backend API
@@ -55,7 +98,8 @@ export function NewAnalysisView() {
         inventory_file: selectedFiles.inventory!,
         rules_file: selectedFiles.rules || undefined,
         column_mapping: mapping,
-        warehouse_id: warehouseId  // NEW: Pass warehouse context from applied template
+        warehouse_id: warehouseId,
+        clear_previous: clearPrevious  // CLEAR ANOMALIES: Pass user decision
       })
 
       console.log('Analysis response:', response)
@@ -66,23 +110,74 @@ export function NewAnalysisView() {
       }, 5000) // 5 second delay to show the processing animation
 
     } catch (err: unknown) {
-      const error = err as { response?: { status?: number; data?: { message?: string } }; message?: string }
       console.error('Analysis failed:', err)
-      console.error('Error details:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message
-      })
-      setError(error.response?.data?.message || `Analysis failed: ${error.message}`)
+
+      // Enhanced error handling with better type checking
+      let errorMessage = 'Analysis failed. Please try again.'
+
+      if (err && typeof err === 'object') {
+        const error = err as {
+          response?: {
+            status?: number;
+            statusText?: string;
+            data?: { message?: string; error?: string }
+          };
+          message?: string;
+          details?: { userMessage?: string }
+        }
+
+        // Log detailed error information
+        console.error('Error details:', {
+          status: error.response?.status || 'N/A',
+          statusText: error.response?.statusText || 'N/A',
+          data: error.response?.data || null,
+          message: error.message || 'N/A'
+        })
+
+        // Extract the best error message available
+        errorMessage = error.details?.userMessage ||
+                      error.response?.data?.message ||
+                      error.response?.data?.error ||
+                      error.message ||
+                      'Analysis failed. Please check your files and try again.'
+      } else {
+        console.error('Unexpected error type:', typeof err, err)
+      }
+
+      setError(errorMessage)
       setCurrentStep('mapping')
     }
   }
 
   const handleProcessingComplete = () => {
-    // Redirect to the reports view to show the new report
-    setCurrentView('reports')
-    // Or you could navigate to a specific report view
-    // router.push(`/report/${reportId}`)
+    // Redirect to the dashboard overview to show Smart Landing Hub
+    setCurrentView('overview')
+  }
+
+  // Clear Anomalies Modal Handlers
+  const handleClearAnomaliesConfirm = async (dontShowAgain: boolean) => {
+    if (dontShowAgain) {
+      // Update user preference to not show warning again
+      try {
+        await userPreferencesApi.updatePreferences({
+          show_clear_warning: false
+        })
+        console.log('Updated user preference: show_clear_warning = false')
+      } catch (error) {
+        console.error('Failed to update user preference:', error)
+      }
+    }
+
+    // Proceed with analysis and clear previous anomalies
+    if (clearAnomaliesModal.pendingMapping) {
+      await submitAnalysis(clearAnomaliesModal.pendingMapping, true) // true = clear previous
+    }
+  }
+
+  const handleClearAnomaliesCancel = () => {
+    // Cancel the analysis completely, go back to mapping step
+    setClearAnomaliesModal(prev => ({ ...prev, open: false, pendingMapping: null }))
+    console.log('User cancelled clear anomalies modal')
   }
 
   const handleProcessingError = (errorMessage: string) => {
@@ -131,34 +226,34 @@ export function NewAnalysisView() {
         </Card>
       )}
       
-      {/* Progress Steps */}
+      {/* Progress Steps - Brand Aligned */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
           {[
-            { key: 'upload', label: 'Upload Files', step: 1 },
-            { key: 'mapping', label: 'Column Mapping', step: 2 },
-            { key: 'processing', label: 'Processing', step: 3 }
+            { key: 'upload', label: 'Import Inventory', step: 1 },
+            { key: 'mapping', label: 'Map Columns', step: 2 },
+            { key: 'processing', label: 'Run Analysis', step: 3 }
           ].map(({ key, label, step }, index) => (
             <div key={key} className="flex items-center">
               <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
                 currentStep === key
-                  ? 'border-blue-500 bg-blue-500 text-white'
+                  ? 'border-orange-500 bg-orange-500 text-white'
                   : index < ['upload', 'mapping', 'processing'].indexOf(currentStep)
-                  ? 'border-green-500 bg-green-500 text-white'
-                  : 'border-gray-300 text-gray-400'
+                  ? 'border-green-600 bg-green-600 text-white'
+                  : 'border-slate-300 text-slate-400'
               }`}>
                 {index < ['upload', 'mapping', 'processing'].indexOf(currentStep) ? '✓' : step}
               </div>
               <span className={`ml-2 text-sm font-medium ${
-                currentStep === key ? 'text-blue-600' : 'text-gray-500'
+                currentStep === key ? 'text-orange-600' : 'text-slate-600'
               }`}>
                 {label}
               </span>
               {index < 2 && (
                 <div className={`mx-4 h-0.5 w-16 ${
                   index < ['upload', 'mapping', 'processing'].indexOf(currentStep)
-                    ? 'bg-green-500'
-                    : 'bg-gray-300'
+                    ? 'bg-green-600'
+                    : 'bg-slate-300'
                 }`} />
               )}
             </div>
@@ -210,6 +305,16 @@ export function NewAnalysisView() {
           onBack={handleStartOver}
         />
       )}
+
+      {/* Clear Anomalies Modal */}
+      <ClearAnomaliesModal
+        open={clearAnomaliesModal.open}
+        onOpenChange={(open) => setClearAnomaliesModal(prev => ({ ...prev, open }))}
+        anomaliesCount={clearAnomaliesModal.anomaliesCount}
+        isLoading={clearAnomaliesModal.isLoading}
+        onConfirm={handleClearAnomaliesConfirm}
+        onCancel={handleClearAnomaliesCancel}
+      />
     </div>
   )
 }

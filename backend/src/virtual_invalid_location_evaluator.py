@@ -142,11 +142,12 @@ class VirtualInvalidLocationEvaluator:
             print(f"[LOCATION_VALIDATION] Using basic pattern validation (no virtual engine)")
         
         anomalies = []
+        # Enhanced validation patterns supporting enterprise-scale locations
         basic_invalid_patterns = [
             r'^$',                    # Empty strings
             r'^\s*$',                # Whitespace only  
             r'.*[@#$%^&*()!~`].*',   # Special characters
-            r'^.{50,}$',             # Very long codes
+            r'^.{50,}$',             # Very long codes (database limit)
             r'INVALID',              # Contains "INVALID"
             r'ERROR',                # Contains "ERROR"
             r'NULL',                 # Contains "NULL"

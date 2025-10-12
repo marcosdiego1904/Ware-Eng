@@ -43,6 +43,7 @@ export interface ValidationResponse {
 
 export interface WarehouseSetupData {
   warehouse_id?: string;
+  force_recreate?: boolean;
   configuration: {
     warehouse_name: string;
     num_aisles: number;
@@ -73,7 +74,6 @@ export interface WarehouseSetupData {
     zone: string;
   }>;
   generate_locations?: boolean;
-  force_recreate?: boolean;
   create_template?: boolean;
   template_name?: string;
   template_description?: string;
@@ -175,6 +175,66 @@ export const locationApi = {
       const response = await api.get(`/locations/export?${params.toString()}`);
       return response.data;
     }
+  },
+
+  // Bulk create location range (W-01 to W-15, etc.)
+  async bulkCreateLocationRange(rangeData: {
+    prefix: string;
+    start_number: number;
+    end_number: number;
+    use_leading_zeros?: boolean;
+    location_type: 'RECEIVING' | 'STAGING' | 'DOCK' | 'TRANSITIONAL';
+    zone?: string;
+    pallet_capacity: number;
+    warehouse_id?: string;
+    special_requirements?: Record<string, any>;
+    allowed_products?: string[];
+  }): Promise<{
+    message: string;
+    created_count: number;
+    skipped_count: number;
+    error_count: number;
+    errors: string[];
+    warnings: string[];
+    created_locations: Location[];
+    summary: {
+      total_capacity: number;
+      location_codes: string[];
+      prefix: string;
+      start_number: number;
+      end_number: number;
+      location_type: string;
+      zone: string;
+      pallet_capacity: number;
+    };
+  }> {
+    const response = await api.post('/locations/bulk-range', rangeData);
+    return response.data;
+  },
+
+  // Preview location range without creating
+  async previewLocationRange(rangeData: {
+    prefix: string;
+    start_number: number;
+    end_number: number;
+    use_leading_zeros?: boolean;
+    warehouse_id?: string;
+    pallet_capacity?: number;
+  }): Promise<{
+    location_codes: string[];
+    duplicates: string[];
+    warnings: string[];
+    summary: {
+      total_locations: number;
+      total_new: number;
+      total_duplicates: number;
+      total_capacity: number;
+      prefix: string;
+      padding_width: number;
+    };
+  }> {
+    const response = await api.post('/locations/bulk-range/preview', rangeData);
+    return response.data;
   }
 };
 

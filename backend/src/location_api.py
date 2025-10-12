@@ -642,6 +642,283 @@ def bulk_create_locations(current_user):
         db.session.rollback()
         return jsonify({'error': f'Bulk operation failed: {str(e)}'}), 500
 
+@location_bp.route('/bulk-range', methods=['POST'])
+@token_required
+def bulk_create_location_range(current_user):
+    """
+    Create a range of sequential special locations (e.g., W-01 to W-15)
+    Request body: {
+        'prefix': 'W-',
+        'start_number': 1,
+        'end_number': 15,
+        'use_leading_zeros': true,
+        'location_type': 'TRANSITIONAL',
+        'zone': 'W',
+        'pallet_capacity': 10,
+        'warehouse_id': 'DEFAULT',
+        'special_requirements': {},
+        'allowed_products': []
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        # Validate required fields
+        required_fields = ['prefix', 'start_number', 'end_number', 'location_type', 'pallet_capacity']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+
+        # Extract parameters
+        prefix = str(data['prefix']).strip().upper()  # Normalize to uppercase
+        start_number = int(data['start_number'])
+        end_number = int(data['end_number'])
+        use_leading_zeros = data.get('use_leading_zeros', True)
+        location_type = data['location_type']
+        zone = data.get('zone', prefix.replace('-', '').replace('_', '')).upper()  # Normalize zone to uppercase
+        pallet_capacity = int(data['pallet_capacity'])
+        warehouse_id = data.get('warehouse_id', 'DEFAULT')
+        special_requirements = data.get('special_requirements', {})
+        allowed_products = data.get('allowed_products', [])
+
+        # Validate inputs
+        if not prefix:
+            return jsonify({'error': 'Prefix cannot be empty'}), 400
+
+        if len(prefix) > 10:
+            return jsonify({'error': 'Prefix must be 10 characters or less'}), 400
+
+        if start_number >= end_number:
+            return jsonify({'error': 'Start number must be less than end number'}), 400
+
+        # Calculate range size
+        range_size = end_number - start_number + 1
+
+        if range_size > 100:
+            return jsonify({
+                'error': f'Range too large ({range_size} locations). Maximum: 100 locations per batch',
+                'suggestion': f'Create {prefix}{start_number} to {prefix}{start_number + 99}, then {prefix}{start_number + 100} to {prefix}{end_number}'
+            }), 400
+
+        if pallet_capacity < 1 or pallet_capacity > 1000:
+            return jsonify({'error': 'Pallet capacity must be between 1 and 1000'}), 400
+
+        # Validate location type
+        valid_types = ['RECEIVING', 'STORAGE', 'STAGING', 'DOCK', 'TRANSITIONAL']
+        if location_type not in valid_types:
+            return jsonify({'error': f'Invalid location type. Must be one of: {valid_types}'}), 400
+
+        # Auto-detect padding width
+        if use_leading_zeros:
+            padding_width = len(str(end_number))
+        else:
+            padding_width = 0
+
+        # Generate location codes and check for duplicates
+        location_codes = []
+        duplicates = []
+
+        for num in range(start_number, end_number + 1):
+            if use_leading_zeros:
+                code = f"{prefix}{str(num).zfill(padding_width)}"
+            else:
+                code = f"{prefix}{num}"
+
+            location_codes.append(code)
+
+            # Check if location already exists
+            existing = Location.query.filter_by(
+                warehouse_id=warehouse_id,
+                code=code,
+                created_by=current_user.id
+            ).first()
+
+            if existing:
+                duplicates.append(code)
+
+        # If duplicates found, return warning
+        if duplicates:
+            return jsonify({
+                'error': 'Duplicate locations detected',
+                'duplicates': duplicates,
+                'total_duplicates': len(duplicates),
+                'message': f'{len(duplicates)} location(s) already exist. Please remove them first or use different codes.'
+            }), 409
+
+        # Create locations
+        created_locations = []
+        errors = []
+
+        print(f"[BULK_RANGE] Creating {len(location_codes)} locations: {location_codes[:5]}{'...' if len(location_codes) > 5 else ''}")
+
+        for i, code in enumerate(location_codes):
+            try:
+                location = Location(
+                    code=code,
+                    location_type=location_type,
+                    capacity=pallet_capacity,
+                    pallet_capacity=pallet_capacity,
+                    zone=zone,
+                    warehouse_id=warehouse_id,
+                    created_by=current_user.id,
+                    is_active=True
+                )
+
+                # Set JSON fields if provided
+                if special_requirements:
+                    location.set_special_requirements(special_requirements)
+
+                if allowed_products:
+                    location.set_allowed_products(allowed_products)
+
+                db.session.add(location)
+                created_locations.append(location)
+
+            except Exception as e:
+                errors.append(f'{code}: {str(e)}')
+                print(f"[BULK_RANGE] Error creating {code}: {str(e)}")
+
+        # Commit all locations
+        if created_locations:
+            try:
+                db.session.commit()
+                print(f"[BULK_RANGE] Successfully committed {len(created_locations)} locations")
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({
+                    'error': f'Database commit failed: {str(e)}',
+                    'created_count': 0,
+                    'errors': errors
+                }), 500
+
+        # Calculate summary
+        total_capacity = len(created_locations) * pallet_capacity
+
+        return jsonify({
+            'message': f'Successfully created {len(created_locations)} location(s)',
+            'created_count': len(created_locations),
+            'skipped_count': 0,
+            'error_count': len(errors),
+            'errors': errors,
+            'warnings': [],
+            'created_locations': [loc.to_dict() for loc in created_locations],
+            'summary': {
+                'total_capacity': total_capacity,
+                'location_codes': location_codes,
+                'prefix': prefix,
+                'start_number': start_number,
+                'end_number': end_number,
+                'location_type': location_type,
+                'zone': zone,
+                'pallet_capacity': pallet_capacity
+            }
+        }), 201
+
+    except ValueError as e:
+        return jsonify({'error': f'Invalid number format: {str(e)}'}), 400
+    except Exception as e:
+        db.session.rollback()
+        print(f"[BULK_RANGE] Unexpected error: {str(e)}")
+        return jsonify({'error': f'Bulk range operation failed: {str(e)}'}), 500
+
+@location_bp.route('/bulk-range/preview', methods=['POST'])
+@token_required
+def preview_location_range(current_user):
+    """
+    Preview location codes that would be generated without creating them
+    Request body: Same as bulk-range endpoint
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        # Extract parameters
+        prefix = str(data.get('prefix', '')).strip().upper()  # Normalize to uppercase
+        start_number = int(data.get('start_number', 1))
+        end_number = int(data.get('end_number', 10))
+        use_leading_zeros = data.get('use_leading_zeros', True)
+        warehouse_id = data.get('warehouse_id', 'DEFAULT')
+        pallet_capacity = int(data.get('pallet_capacity', 1))
+
+        # Basic validation
+        if not prefix:
+            return jsonify({'error': 'Prefix is required'}), 400
+
+        if start_number >= end_number:
+            return jsonify({'error': 'Start number must be less than end number'}), 400
+
+        # Calculate range size
+        range_size = end_number - start_number + 1
+
+        # Auto-detect padding width
+        if use_leading_zeros:
+            padding_width = len(str(end_number))
+        else:
+            padding_width = 0
+
+        # Generate preview codes
+        location_codes = []
+        duplicates = []
+
+        for num in range(start_number, end_number + 1):
+            if use_leading_zeros:
+                code = f"{prefix}{str(num).zfill(padding_width)}"
+            else:
+                code = f"{prefix}{num}"
+
+            location_codes.append(code)
+
+            # Check if location already exists
+            existing = Location.query.filter_by(
+                warehouse_id=warehouse_id,
+                code=code,
+                created_by=current_user.id
+            ).first()
+
+            if existing:
+                duplicates.append(code)
+
+        # Generate warnings
+        warnings = []
+
+        if range_size > 100:
+            warnings.append(f'Range too large ({range_size} locations). Maximum: 100 locations per batch')
+
+        if range_size > 50:
+            warnings.append(f'Creating {range_size} locations may take a moment')
+
+        if duplicates:
+            warnings.append(f'{len(duplicates)} location(s) already exist and will need to be handled')
+
+        # Capacity warnings
+        if pallet_capacity > 50:
+            warnings.append(f'Very high capacity ({pallet_capacity} pallets). Please verify this is correct.')
+
+        return jsonify({
+            'location_codes': location_codes,
+            'duplicates': duplicates,
+            'warnings': warnings,
+            'summary': {
+                'total_locations': len(location_codes),
+                'total_new': len(location_codes) - len(duplicates),
+                'total_duplicates': len(duplicates),
+                'total_capacity': (len(location_codes) - len(duplicates)) * pallet_capacity,
+                'prefix': prefix,
+                'padding_width': padding_width
+            }
+        }), 200
+
+    except ValueError as e:
+        return jsonify({'error': f'Invalid number format: {str(e)}'}), 400
+    except Exception as e:
+        print(f"[BULK_RANGE_PREVIEW] Error: {str(e)}")
+        return jsonify({'error': f'Preview failed: {str(e)}'}), 500
+
 @location_bp.route('/generate', methods=['POST'])
 @token_required
 def generate_warehouse_locations(current_user):
@@ -885,6 +1162,329 @@ def validate_locations(current_user):
         
     except Exception as e:
         return jsonify({'error': f'Validation failed: {str(e)}'}), 500
+
+# Location Classification Correction Endpoints
+
+@location_bp.route('/classification/correct', methods=['POST'])
+@login_required
+def correct_location_classification():
+    """
+    Submit a correction for location type classification
+    Enables users to improve system accuracy through feedback
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        # Validate required fields
+        required_fields = ['warehouse_id', 'location_code', 'corrected_type']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        if missing_fields:
+            return jsonify({'error': f'Missing required fields: {missing_fields}'}), 400
+
+        warehouse_id = data['warehouse_id']
+        location_code = data['location_code']
+        corrected_type = data['corrected_type']
+
+        # Validate corrected_type
+        valid_types = ['RECEIVING', 'STORAGE', 'TRANSITIONAL', 'STAGING', 'DOCK', 'AISLE', 'SPECIAL']
+        if corrected_type not in valid_types:
+            return jsonify({'error': f'Invalid location type. Must be one of: {valid_types}'}), 400
+
+        # Import here to avoid circular imports
+        from models import LocationClassificationCorrection
+
+        # Check if correction already exists for this user
+        existing_correction = LocationClassificationCorrection.query.filter_by(
+            warehouse_id=warehouse_id,
+            location_code=location_code,
+            corrected_by=current_user.id
+        ).first()
+
+        if existing_correction:
+            # Update existing correction
+            existing_correction.corrected_type = corrected_type
+            existing_correction.original_type = data.get('original_type')
+            existing_correction.original_confidence = data.get('original_confidence')
+            existing_correction.original_method = data.get('original_method')
+            existing_correction.correction_reason = data.get('correction_reason')
+            existing_correction.is_active = True
+
+            # Update context if provided
+            if data.get('correction_context'):
+                existing_correction.set_correction_context(data['correction_context'])
+
+            # Extract and update pattern
+            existing_correction.location_pattern = existing_correction.extract_pattern()
+
+            correction = existing_correction
+        else:
+            # Create new correction
+            correction = LocationClassificationCorrection(
+                warehouse_id=warehouse_id,
+                location_code=location_code,
+                corrected_type=corrected_type,
+                original_type=data.get('original_type'),
+                original_confidence=data.get('original_confidence'),
+                original_method=data.get('original_method'),
+                correction_reason=data.get('correction_reason'),
+                corrected_by=current_user.id
+            )
+
+            # Set context if provided
+            if data.get('correction_context'):
+                correction.set_correction_context(data['correction_context'])
+
+            # Extract pattern for learning
+            correction.location_pattern = correction.extract_pattern()
+
+            db.session.add(correction)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'correction': correction.to_dict(),
+            'message': f'Classification correction saved for {location_code}'
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to save correction: {str(e)}'}), 500
+
+
+@location_bp.route('/classification/corrections', methods=['GET'])
+@login_required
+def get_classification_corrections():
+    """
+    Get classification corrections for a warehouse
+    Supports filtering by location, type, and user
+    """
+    try:
+        warehouse_id = request.args.get('warehouse_id')
+        if not warehouse_id:
+            return jsonify({'error': 'warehouse_id parameter required'}), 400
+
+        # Import here to avoid circular imports
+        from models import LocationClassificationCorrection
+
+        # Build query
+        query = LocationClassificationCorrection.query.filter_by(
+            warehouse_id=warehouse_id,
+            is_active=True
+        )
+
+        # Apply filters
+        if request.args.get('location_code'):
+            query = query.filter_by(location_code=request.args.get('location_code'))
+
+        if request.args.get('corrected_type'):
+            query = query.filter_by(corrected_type=request.args.get('corrected_type'))
+
+        if request.args.get('corrected_by'):
+            query = query.filter_by(corrected_by=request.args.get('corrected_by'))
+
+        # Order by most recent first
+        corrections = query.order_by(LocationClassificationCorrection.created_at.desc()).all()
+
+        # Calculate summary statistics
+        total_corrections = len(corrections)
+        type_distribution = {}
+        method_distribution = {}
+
+        for correction in corrections:
+            # Count by corrected type
+            type_distribution[correction.corrected_type] = type_distribution.get(
+                correction.corrected_type, 0) + 1
+
+            # Count by original method
+            if correction.original_method:
+                method_distribution[correction.original_method] = method_distribution.get(
+                    correction.original_method, 0) + 1
+
+        return jsonify({
+            'corrections': [correction.to_dict() for correction in corrections],
+            'summary': {
+                'total_corrections': total_corrections,
+                'type_distribution': type_distribution,
+                'method_distribution': method_distribution,
+                'most_corrected_locations': [
+                    correction.location_code for correction in corrections[:10]
+                ]
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get corrections: {str(e)}'}), 500
+
+
+@location_bp.route('/classification/test', methods=['POST'])
+@login_required
+def test_location_classification():
+    """
+    Test the enhanced location classification system
+    Useful for debugging and validation
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        locations = data.get('locations', [])
+        if not locations:
+            return jsonify({'error': 'No locations provided for testing'}), 400
+
+        warehouse_context = {
+            'warehouse_id': data.get('warehouse_id', 'DEFAULT')
+        }
+
+        # Import classifier
+        from enhanced_location_classifier import EnhancedLocationClassifier
+
+        # Initialize classifier
+        classifier = EnhancedLocationClassifier(db_session=db)
+
+        # Test each location
+        results = {}
+        for location in locations:
+            try:
+                result = classifier.classify_location(
+                    location=location,
+                    warehouse_context=warehouse_context
+                )
+                results[location] = {
+                    'location_type': result.location_type,
+                    'confidence': result.confidence,
+                    'method': result.method,
+                    'reasoning': result.reasoning
+                }
+            except Exception as e:
+                results[location] = {
+                    'error': str(e),
+                    'location_type': 'ERROR',
+                    'confidence': 0.0,
+                    'method': 'error',
+                    'reasoning': f'Classification failed: {str(e)}'
+                }
+
+        # Generate summary
+        summary = classifier.get_classification_summary({
+            location: type(
+                'MockResult',
+                (),
+                {
+                    'location_type': result['location_type'],
+                    'confidence': result['confidence'],
+                    'method': result['method']
+                }
+            )() for location, result in results.items() if 'error' not in result
+        })
+
+        return jsonify({
+            'test_results': results,
+            'summary': summary,
+            'warehouse_context': warehouse_context
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Classification test failed: {str(e)}'}), 500
+
+
+@location_bp.route('/classification/bulk-correct', methods=['POST'])
+@login_required
+def bulk_correct_classifications():
+    """
+    Apply corrections to multiple locations at once
+    Useful for batch learning from user feedback
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        corrections = data.get('corrections', [])
+        if not corrections:
+            return jsonify({'error': 'No corrections provided'}), 400
+
+        warehouse_id = data.get('warehouse_id')
+        if not warehouse_id:
+            return jsonify({'error': 'warehouse_id required'}), 400
+
+        from models import LocationClassificationCorrection
+
+        success_count = 0
+        error_count = 0
+        results = []
+
+        for correction_data in corrections:
+            try:
+                location_code = correction_data.get('location_code')
+                corrected_type = correction_data.get('corrected_type')
+
+                if not location_code or not corrected_type:
+                    results.append({
+                        'location_code': location_code,
+                        'success': False,
+                        'error': 'Missing location_code or corrected_type'
+                    })
+                    error_count += 1
+                    continue
+
+                # Create or update correction
+                existing = LocationClassificationCorrection.query.filter_by(
+                    warehouse_id=warehouse_id,
+                    location_code=location_code,
+                    corrected_by=current_user.id
+                ).first()
+
+                if existing:
+                    existing.corrected_type = corrected_type
+                    existing.is_active = True
+                    existing.location_pattern = existing.extract_pattern()
+                    correction = existing
+                else:
+                    correction = LocationClassificationCorrection(
+                        warehouse_id=warehouse_id,
+                        location_code=location_code,
+                        corrected_type=corrected_type,
+                        corrected_by=current_user.id
+                    )
+                    correction.location_pattern = correction.extract_pattern()
+                    db.session.add(correction)
+
+                db.session.commit()
+
+                results.append({
+                    'location_code': location_code,
+                    'success': True,
+                    'correction_id': correction.id
+                })
+                success_count += 1
+
+            except Exception as e:
+                results.append({
+                    'location_code': correction_data.get('location_code', 'unknown'),
+                    'success': False,
+                    'error': str(e)
+                })
+                error_count += 1
+                db.session.rollback()
+
+        return jsonify({
+            'results': results,
+            'summary': {
+                'total_processed': len(corrections),
+                'success_count': success_count,
+                'error_count': error_count,
+                'success_rate': success_count / len(corrections) * 100
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Bulk correction failed: {str(e)}'}), 500
+
 
 # Register error handlers
 @location_bp.errorhandler(404)

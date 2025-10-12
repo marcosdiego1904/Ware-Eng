@@ -67,12 +67,27 @@ def create_standalone_template(current_user):
     """
     try:
         data = request.get_json()
-        
+
+        # TEMPLATE LIMIT CHECK: Enforce 5 templates per user
+        template_count = WarehouseTemplate.query.filter_by(
+            created_by=current_user.id,
+            is_active=True
+        ).count()
+
+        if template_count >= 5:
+            return jsonify({
+                'error': 'Maximum template limit reached',
+                'message': 'You have reached the maximum limit of 5 active templates per user.',
+                'current_count': template_count,
+                'limit': 5,
+                'suggestion': 'Please deactivate or delete an existing template before creating a new one.'
+            }), 403
+
         # Required fields
         name = data.get('name', '').strip()
         if not name:
             return jsonify({'error': 'Template name is required'}), 400
-            
+
         # Structure configuration
         num_aisles = data.get('num_aisles', 4)
         racks_per_aisle = data.get('racks_per_aisle', 2)

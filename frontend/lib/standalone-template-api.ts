@@ -40,10 +40,18 @@ export interface StandaloneTemplateData {
     zone: string;
   }>;
   
-  // Location Format Configuration
+  // Location Format Configuration (DEPRECATED - use location_format instead)
   format_config?: object;
   format_pattern_name?: string;
   format_examples?: string[];
+  
+  // NEW: Structured location format data (replaces flat format fields above)
+  location_format?: {
+    format_config?: object;
+    pattern_name?: string;
+    examples?: string[];
+    confidence?: number;
+  };
 }
 
 export interface CreatedTemplate extends StandaloneTemplateData {

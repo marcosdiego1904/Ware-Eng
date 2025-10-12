@@ -1,0 +1,30 @@
+pip install -r requirements.txt
+
+python src/app.py
+
+
+
+
+
+
+
+Connection Details
+Connection Name: Base de Datos de Prueba (Docker) (O cualquier nombre que tú prefieras para identificarla)
+Connector Type: MySQL (ya está seleccionado)
+Credentials
+Host: localhost
+Port: 3307
+User: test_user
+Password: test_password
+Database Name: test_ware_engine
+Data Mapping
+Esta sección le dice a la aplicación cómo se llaman las columnas en tu base de datos.
+Table Name: inventory_data
+Ubicación Column: location_code
+Pallet ID Column: pallet_id
+Article ID Column: item_sku
+Description Column: item_description
+Quantity Column: quantity
+Expiry Date Column: expiry_date
+Creation Date Column: creation_date
+Receipt Number Column: receipt_number

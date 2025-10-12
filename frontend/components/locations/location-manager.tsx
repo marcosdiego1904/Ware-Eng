@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { LocationList } from './location-list';
 import { LocationForm } from './location-form';
 import { LocationImportExport } from './location-import-export';
-import { WarehouseSetupWizard } from './setup-wizard/warehouse-wizard';
+import { TemplateCreationWizard } from './templates/template-creation-wizard';
 import { SimplifiedReconfigureWizard } from './setup-wizard/simplified-reconfigure-wizard';
 import { EnhancedTemplateManagerV2 } from './templates/enhanced-template-manager-v2';
 import useLocationStore, { Location } from '@/lib/location-store';
@@ -61,7 +61,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   const [locationSearchCode, setLocationSearchCode] = useState('');
   const debouncedSearchCode = useDebounce(locationSearchCode, 500); // 500ms debounce
   const [showLocationForm, setShowLocationForm] = useState(false);
-  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [showTemplateWizard, setShowTemplateWizard] = useState(false);
   const [showReconfigureWizard, setShowReconfigureWizard] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [searchingLocation, setSearchingLocation] = useState(false);
@@ -517,7 +517,8 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           </p>
         </div>
         
-        {currentWarehouseConfig && (
+        {/* Add Location and Reconfigure buttons - HIDDEN for cleaner interface */}
+        {/* {currentWarehouseConfig && (
           <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0">
             <Button
               variant="outline"
@@ -536,7 +537,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
               Reconfigure
             </Button>
           </div>
-        )}
+        )} */}
       </div>
 
       {/* Error Alert */}
@@ -562,9 +563,9 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
               Before you can manage locations, you need to set up your warehouse configuration. 
               This includes defining your aisles, racks, and storage areas.
             </p>
-            <Button onClick={() => setShowSetupWizard(true)} className="flex items-center gap-2">
+            <Button onClick={() => setShowTemplateWizard(true)} className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Start Warehouse Setup
+              Setup Your Warehouse
             </Button>
           </CardContent>
         </Card>
@@ -754,13 +755,24 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
             {/* Location Management - Smart Display */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
-                  Special Areas Management
-                </CardTitle>
-                <CardDescription>
-                  Manage your receiving, staging, and dock areas. Changes here will be reflected in template editing.
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Building2 className="h-5 w-5" />
+                      Special Areas Management
+                    </CardTitle>
+                    <CardDescription>
+                      Manage your receiving, staging, and dock areas. Changes here will be reflected in template editing.
+                    </CardDescription>
+                  </div>
+                  <Button 
+                    onClick={() => setShowLocationForm(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add New Location
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {specialLocations.length > 0 ? (
@@ -817,7 +829,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                           </Button>
                           <Button 
                             variant="outline"
-                            onClick={() => setShowSetupWizard(true)}
+                            onClick={() => setShowTemplateWizard(true)}
                             className="flex items-center gap-2"
                           >
                             <Settings className="h-4 w-4" />
@@ -834,7 +846,8 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
               </CardContent>
             </Card>
 
-            {/* Storage Location Search-to-Edit */}
+            {/* Storage Location Search-to-Edit - HIDDEN */}
+            {/* Commented out to clean up the interface
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -867,7 +880,6 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                   </Button>
                 </div>
 
-                {/* Search Warnings */}
                 {searchWarnings.length > 0 && (
                   <div className="space-y-2">
                     {searchWarnings.map((warning, index) => (
@@ -888,8 +900,10 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                 </div>
               </CardContent>
             </Card>
+            */}
 
-            {/* Quick Actions */}
+            {/* Quick Actions - HIDDEN */}
+            {/* Commented out to clean up the interface - moved Add New Location button to header
             <Card>
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
@@ -913,7 +927,6 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                           description: `Successfully imported ${result.created_count} locations!`,
                           variant: "success",
                         });
-                        // Refresh locations
                         fetchLocations({ warehouse_id: warehouseId }, 1, 100);
                       }
                       if (result.errors.length > 0) {
@@ -929,6 +942,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                 </div>
               </CardContent>
             </Card>
+            */}
           </TabsContent>
 
           <TabsContent value="templates">
@@ -1070,7 +1084,8 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                             onChange={(e) => handleFormChange('default_pallet_capacity', parseInt(e.target.value) || 0)}
                           />
                         </div>
-                        <div className="space-y-2 md:col-span-2">
+                        {/* Bidimensional Racks toggle - HIDDEN for cleaner interface */}
+                        {/* <div className="space-y-2 md:col-span-2">
                           <div className="flex items-center gap-2">
                             <Switch
                               id="bidimensional_racks"
@@ -1081,7 +1096,7 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
                               Bidimensional Racks (2 pallets per level)
                             </Label>
                           </div>
-                        </div>
+                        </div> */}
                       </div>
 
                       <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
@@ -1176,24 +1191,28 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
         />
       )}
 
-      {showSetupWizard && (
-        <WarehouseSetupWizard
-          existingConfig={currentWarehouseConfig}
+      {showTemplateWizard && (
+        <TemplateCreationWizard
+          open={showTemplateWizard}
+          isFirstTimeSetup={true}
           warehouseId={warehouseId}
-          onClose={() => setShowSetupWizard(false)}
-          onComplete={async () => {
-            setShowSetupWizard(false);
+          onClose={() => setShowTemplateWizard(false)}
+          onTemplateCreated={async (template, _warehouseConfig) => {
+            setShowTemplateWizard(false);
             
-            // First, clear any existing filters that might interfere with the refresh
+            // Clear any existing filters
             const freshFilters = { warehouse_id: warehouseId };
             setFilters(freshFilters);
             
-            // Refresh the config first
+            // Refresh warehouse config and locations
             await fetchWarehouseConfig(warehouseId);
-            
-            // Then explicitly fetch first page with fresh filters for consistent behavior
-            // This ensures proper location display after reconfiguration
             await fetchLocations(freshFilters, 1, 100);
+            
+            // Success notification
+            toast({
+              title: "Warehouse Ready! 🎉",
+              description: `Your warehouse "${template.name}" has been set up successfully.`,
+            });
           }}
         />
       )}

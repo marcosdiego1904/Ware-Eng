@@ -2,12 +2,14 @@
 
 import { useDashboardStore } from '@/lib/store'
 import { Sidebar } from './sidebar'
-import { DashboardHeader } from './header'
-import { OverviewView } from './views/overview'
+import { EnhancedOverviewView } from './views/overview-enhanced'
 import { NewAnalysisView } from './views/new-analysis'
 import { ReportsView } from './views/reports'
 import { RulesView } from './views/rules'
 import { WarehouseSettingsView } from './views/warehouse-settings'
+import { ActionCenterView } from './views/action-center'
+import { LocationIntelligenceView } from './views/location-intelligence'
+import { RuleCenterView } from './views/rule-center'
 
 export function WarehouseDashboard() {
   const { currentView } = useDashboardStore()
@@ -15,17 +17,23 @@ export function WarehouseDashboard() {
   const renderCurrentView = () => {
     switch (currentView) {
       case 'overview':
-        return <OverviewView />
+        return <EnhancedOverviewView />
       case 'new-analysis':
         return <NewAnalysisView />
       case 'reports':
         return <ReportsView />
+      case 'rule-center':
+        return <RuleCenterView />
       case 'rules':
         return <RulesView />
       case 'warehouse-settings':
         return <WarehouseSettingsView />
+      case 'action-center':
+        return <ActionCenterView />
+      case 'analytics':
+        return <LocationIntelligenceView />
       default:
-        return <OverviewView />
+        return <EnhancedOverviewView />
     }
   }
 
@@ -33,16 +41,10 @@ export function WarehouseDashboard() {
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
       <Sidebar />
-      
+
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <DashboardHeader />
-        
-        {/* Content Area */}
-        <main className="flex-1 overflow-auto">
-          {renderCurrentView()}
-        </main>
+      <div className="flex-1 overflow-auto">
+        {renderCurrentView()}
       </div>
     </div>
   )

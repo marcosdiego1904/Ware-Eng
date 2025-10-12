@@ -199,9 +199,16 @@ def _deduplicate_and_prioritize(anomalies: List[Dict[str, Any]]) -> List[Dict[st
     seen_anomalies = set()
     
     for anomaly in anomalies:
-        # Create unique signature
-        signature = (anomaly.get('pallet_id'), anomaly.get('anomaly_type'))
-        
+        # Create unique signature - convert to strings to handle pandas Series
+        pallet_id = anomaly.get('pallet_id')
+        anomaly_type = anomaly.get('anomaly_type')
+
+        # Convert to string to handle pandas Series or other unhashable types
+        pallet_id_str = str(pallet_id) if pallet_id is not None else 'None'
+        anomaly_type_str = str(anomaly_type) if anomaly_type is not None else 'None'
+
+        signature = (pallet_id_str, anomaly_type_str)
+
         if signature not in seen_anomalies:
             unique_anomalies.append(anomaly)
             seen_anomalies.add(signature)

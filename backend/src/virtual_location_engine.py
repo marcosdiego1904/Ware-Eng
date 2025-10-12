@@ -88,34 +88,47 @@ class VirtualLocationEngine:
         return [chr(ord('A') + i) for i in range(racks_per_aisle)]
     
     def _build_special_areas_lookup(self) -> Dict[str, Dict[str, Any]]:
-        """Build lookup table for special areas from warehouse config"""
+        """Build lookup table for special areas from warehouse config AND Location table"""
         special_areas = {}
         
-        # Add receiving areas - RESPECT zone from config
+        # CRITICAL ARCHITECTURE FIX: Read from BOTH WarehouseConfig and Location table
+        # Some locations are created via template (WarehouseConfig JSON)
+        # Some locations are created via "Add New Location" button (Location table)
+        
+        # SOURCE 1: Add receiving areas from WarehouseConfig - RESPECT zone from config
         for area in self.config.get('receiving_areas', []):
             if isinstance(area, dict) and 'code' in area:
-                special_areas[area['code']] = {
+                # CRITICAL FIX: Trim whitespace from location codes to prevent lookup failures
+                clean_code = str(area['code']).strip().upper()
+                special_areas[clean_code] = {
                     'location_type': 'RECEIVING',
                     'capacity': area.get('capacity', 10),
-                    'zone': area.get('zone', 'RECEIVING')  # Use config zone or default
+                    'zone': area.get('zone', 'RECEIVING'),  # Use config zone or default
+                    'source': 'template'
                 }
         
-        # Add staging areas - RESPECT zone from config
+        # SOURCE 1: Add staging areas from WarehouseConfig - RESPECT zone from config
         for area in self.config.get('staging_areas', []):
             if isinstance(area, dict) and 'code' in area:
-                special_areas[area['code']] = {
+                # CRITICAL FIX: Trim whitespace from location codes to prevent lookup failures
+                clean_code = str(area['code']).strip().upper()
+                special_areas[clean_code] = {
                     'location_type': 'STAGING',
                     'capacity': area.get('capacity', 5),
-                    'zone': area.get('zone', 'STAGING')  # Use config zone or default
+                    'zone': area.get('zone', 'STAGING'),  # Use config zone or default
+                    'source': 'template'
                 }
         
-        # Add dock areas - RESPECT zone from config
+        # SOURCE 1: Add dock areas from WarehouseConfig - RESPECT zone from config
         for area in self.config.get('dock_areas', []):
             if isinstance(area, dict) and 'code' in area:
-                special_areas[area['code']] = {
+                # CRITICAL FIX: Trim whitespace from location codes to prevent lookup failures
+                clean_code = str(area['code']).strip().upper()
+                special_areas[clean_code] = {
                     'location_type': 'DOCK',
                     'capacity': area.get('capacity', 2),
-                    'zone': area.get('zone', 'DOCK')  # Use config zone or default
+                    'zone': area.get('zone', 'DOCK'),  # Use config zone or default
+                    'source': 'template'
                 }
         
         # Add AISLE transitional areas (one per aisle) - enabled by default for consistency
@@ -126,8 +139,42 @@ class VirtualLocationEngine:
                 special_areas[aisle_code] = {
                     'location_type': 'TRANSITIONAL',
                     'capacity': 10,  # Standard transitional capacity
-                    'zone': 'GENERAL'
+                    'zone': 'GENERAL',
+                    'source': 'auto_generated'
                 }
+        
+        # SOURCE 2: CRITICAL ARCHITECTURE FIX - Add locations from Location table
+        # These are locations created via "Add New Location" button in the UI
+        try:
+            # Import here to avoid circular imports
+            from models import Location
+            from database import db
+            
+            # Get warehouse_id from config
+            warehouse_id = self.config.get('warehouse_id', 'DEFAULT')
+            
+            # Query special area locations (non-STORAGE types) from Location table
+            db_locations = Location.query.filter(
+                Location.warehouse_id == warehouse_id,
+                Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL']),
+                Location.is_active == True
+            ).all()
+            
+            for loc in db_locations:
+                clean_code = str(loc.code).strip().upper()
+                
+                # Don't override template-based locations (template takes precedence)
+                if clean_code not in special_areas:
+                    special_areas[clean_code] = {
+                        'location_type': loc.location_type,
+                        'capacity': loc.capacity or loc.pallet_capacity or 1,
+                        'zone': loc.zone or loc.location_type,
+                        'source': 'location_table'
+                    }
+                    
+        except Exception as e:
+            # Log error but don't crash - virtual engine should be resilient
+            print(f"[VIRTUAL_ENGINE] Warning: Could not load Location table data: {e}")
         
         return special_areas
     
@@ -225,11 +272,14 @@ class VirtualLocationEngine:
                     
                     position = int(position_str)
                     
-                    # CRITICAL FIX: For position_level format, position is a direct identifier, not rack position
-                    # The position number can be any valid number (e.g., 001-999), not limited by rack capacity
-                    # Only validate that it's a reasonable position number and level exists
-                    if position < 1 or position > 999:  # Allow positions 1-999 for position_level format
-                        return False, f"Position {position} out of reasonable range (1-999)"
+                    # ENHANCED FIX: For position_level format, position is a direct identifier, not rack position
+                    # Support enterprise-scale warehouses with 4+ digit positions (1000-999999)
+                    # Get configurable max digits from warehouse config (default: 6 digits = 999999 max)
+                    max_position_digits = self.config.get('max_position_digits', 6)
+                    max_position = int('9' * max_position_digits)  # 999, 9999, 99999, 999999, etc.
+                    
+                    if position < 1 or position > max_position:
+                        return False, f"Position {position} out of configured range (1-{max_position})"
                     
                     # Validate level against available levels (A, B, C, D, etc.)
                     if level not in self.storage_space['levels']:
@@ -253,21 +303,45 @@ class VirtualLocationEngine:
         - 01-A-001-A (aisle-rack-position-level) 
         - 02-B15-C (aisle-rack+position-level)
         """
-        # Try different storage location patterns
+        # Try different storage location patterns with configurable position digits
+        # Support up to 6 digits for enterprise-scale warehouses
+        max_position_digits = self.config.get('max_position_digits', 6)
+        position_pattern = fr'\d{{1,{max_position_digits}}}'
+        
         storage_patterns = [
-            # Pattern 1: XX-YZZ-W (aisle-rack+position-level)
-            r'^(\d{1,2})-([A-Z])(\d{1,3})-([A-Z])$',
-            # Pattern 2: XX-Y-ZZZ-W (aisle-rack-position-level)  
-            r'^(\d{1,2})-([A-Z])-(\d{1,3})-([A-Z])$',
-            # Pattern 3: XX-YY-ZZZ-W (aisle-rack-position-level with 2-digit rack)
-            r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$'
+            # Pattern 1: ENTERPRISE POSITION+LEVEL (1230A, 5678B, 999999C) - NEW PRIORITY!
+            rf'^({position_pattern})([A-Z])$',
+            # Pattern 2: XX-YZZ-W (aisle-rack+position-level) - enhanced for 4+ digits
+            rf'^(\d{{1,2}})-([A-Z])({position_pattern})-([A-Z])$',
+            # Pattern 3: XX-Y-ZZZ-W (aisle-rack-position-level) - enhanced for 4+ digits
+            rf'^(\d{{1,2}})-([A-Z])-({position_pattern})-([A-Z])$',
+            # Pattern 4: XX-YY-ZZZ-W (aisle-rack-position-level with 2-digit rack) - enhanced for 4+ digits
+            rf'^(\d{{1,2}})-(\d{{1,2}})-({position_pattern})([A-Z])$'
         ]
         
         for pattern in storage_patterns:
             match = re.match(pattern, location_code)
             if match:
                 try:
-                    if len(match.groups()) == 4:
+                    # Handle position+level format (2 groups: position, level)
+                    if len(match.groups()) == 2:
+                        position_str, level = match.groups()
+                        position = int(position_str)
+                        level = level.upper()
+                        
+                        # Validate position range
+                        max_position = int('9' * max_position_digits)
+                        if position < 1 or position > max_position:
+                            return False, f"Position {position} out of configured range (1-{max_position})"
+                        
+                        # Validate level
+                        if level not in self.storage_space['levels']:
+                            return False, f"Level '{level}' not available (available: {', '.join(self.storage_space['levels'])})"
+                        
+                        return True, "Valid position+level storage location"
+                    
+                    # Handle standard 4-group patterns (aisle-rack-position-level)
+                    elif len(match.groups()) == 4:
                         aisle_str, rack_str, position_str, level = match.groups()
                         
                         # Convert to integers for validation
@@ -361,10 +435,16 @@ class VirtualLocationEngine:
     def _derive_storage_properties(self, original_code: str, normalized_code: str) -> VirtualLocationProperties:
         """Derive properties for storage locations"""
         # Parse storage location components
+        # Use configurable position digits for property derivation as well
+        max_position_digits = self.config.get('max_position_digits', 6)
+        position_pattern = fr'\d{{1,{max_position_digits}}}'
+        
         storage_patterns = [
-            r'^(\d{1,2})-([A-Z])(\d{1,3})-([A-Z])$',
-            r'^(\d{1,2})-([A-Z])-(\d{1,3})-([A-Z])$',
-            r'^(\d{1,2})-(\d{1,2})-(\d{1,3})([A-Z])$'
+            # Enterprise position+level pattern for properties derivation
+            rf'^({position_pattern})([A-Z])$',
+            rf'^(\d{{1,2}})-([A-Z])({position_pattern})-([A-Z])$',
+            rf'^(\d{{1,2}})-([A-Z])-({position_pattern})-([A-Z])$',
+            rf'^(\d{{1,2}})-(\d{{1,2}})-({position_pattern})([A-Z])$'
         ]
         
         aisle_number = None
@@ -376,10 +456,20 @@ class VirtualLocationEngine:
             match = re.match(pattern, normalized_code)
             if match:
                 groups = match.groups()
-                aisle_number = int(groups[0])
                 level = groups[-1].upper()
                 
-                if len(groups) == 4:
+                # Handle position+level format (2 groups)
+                if len(groups) == 2:
+                    # Default values for position+level format
+                    aisle_number = 1  # Default aisle
+                    rack_identifier = 'A'  # Default rack
+                    position_number = int(groups[0])
+                    break
+                
+                # Handle standard 4-group patterns
+                elif len(groups) == 4:
+                    aisle_number = int(groups[0])
+                    
                     if groups[1].isalpha():
                         rack_identifier = groups[1].upper()
                         position_number = int(groups[2])

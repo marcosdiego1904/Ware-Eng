@@ -150,6 +150,8 @@ interface LocationStore {
   deleteLocation: (id: number) => Promise<void>;
   bulkCreateLocations: (locationsData: Partial<Location>[]) => Promise<{ created_count: number; errors: string[] }>;
   validateLocations: (locationsData: Partial<Location>[]) => Promise<any>;
+  bulkCreateLocationRange: (rangeData: any) => Promise<{ created_count: number; errors: string[]; warnings: string[] }>;
+  previewLocationRange: (rangeData: any) => Promise<{ location_codes: string[]; duplicates: string[]; warnings: string[] }>;
   
   // Actions - Warehouse Configuration
   fetchWarehouseConfig: (warehouseId?: string) => Promise<void>;
@@ -418,9 +420,50 @@ const useLocationStore = create<LocationStore>()(
           const { api } = await import('./api');
           const response = await api.post('/locations/validate', { locations: locationsData });
           return response.data;
-          
+
         } catch (error: any) {
           console.error('Error validating locations:', error);
+          throw error;
+        }
+      },
+
+      bulkCreateLocationRange: async (rangeData) => {
+        set({ loading: true, error: null });
+
+        try {
+          const { locationApi } = await import('./location-api');
+          const response = await locationApi.bulkCreateLocationRange(rangeData);
+
+          const { created_count, errors, warnings, created_locations } = response;
+
+          // Add created locations to current list
+          if (created_locations && created_locations.length > 0) {
+            set(state => ({
+              locations: [...state.locations, ...created_locations]
+            }));
+          }
+
+          set({ loading: false });
+          return { created_count, errors, warnings };
+
+        } catch (error: any) {
+          console.error('Error bulk creating location range:', error);
+          set({
+            error: error.response?.data?.error || 'Failed to bulk create location range',
+            loading: false
+          });
+          throw error;
+        }
+      },
+
+      previewLocationRange: async (rangeData) => {
+        try {
+          const { locationApi } = await import('./location-api');
+          const response = await locationApi.previewLocationRange(rangeData);
+          return response;
+
+        } catch (error: any) {
+          console.error('Error previewing location range:', error);
           throw error;
         }
       },
