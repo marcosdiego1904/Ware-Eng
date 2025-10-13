@@ -86,7 +86,7 @@ class User(db.Model, UserMixin):
 class AnalysisReport(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     report_name = db.Column(db.String(120), nullable=False, default=f"Analysis Report")
-    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime(timezone=True), index=True, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     anomalies = db.relationship('Anomaly', backref='report', lazy=True, cascade="all, delete-orphan")
     location_summary = db.Column(db.Text, nullable=True) # Stores a JSON string of the location summary
@@ -110,7 +110,7 @@ class AnomalyHistory(db.Model):
     comment = db.Column(db.Text, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     user = db.relationship('User')
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
 class UserWarehouseAccess(db.Model):
@@ -125,8 +125,8 @@ class UserWarehouseAccess(db.Model):
     warehouse_id = db.Column(db.String(50), nullable=False)
     access_level = db.Column(db.String(20), default='READ')  # READ, WRITE, ADMIN
     is_default = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Indexes for performance
     __table_args__ = (
@@ -150,12 +150,12 @@ class InvitationCode(db.Model):
     code = db.Column(db.String(50), unique=True, nullable=False, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
     used_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    used_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    used_at = db.Column(db.DateTime(timezone=True))
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     max_uses = db.Column(db.Integer, default=1, nullable=False)
     current_uses = db.Column(db.Integer, default=0, nullable=False)
-    expires_at = db.Column(db.DateTime)  # Optional expiration
+    expires_at = db.Column(db.DateTime(timezone=True))  # Optional expiration
     notes = db.Column(db.String(255))  # Optional notes about the invitation
 
     # Relationships

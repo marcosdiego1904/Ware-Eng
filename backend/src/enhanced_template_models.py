@@ -17,7 +17,7 @@ class Organization(db.Model):
     organization_name = db.Column(db.String(150), nullable=False)
     organization_code = db.Column(db.String(50), unique=True, nullable=False)
     industry = db.Column(db.String(50))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
@@ -100,8 +100,8 @@ class EnhancedWarehouseTemplate(db.Model):
     
     # System fields
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
@@ -221,7 +221,7 @@ class TemplatePermission(db.Model):
     organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'))
     permission_type = db.Column(db.String(20), default='VIEW')  # VIEW, USE, EDIT
     granted_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    granted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    granted_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     user = db.relationship('User', foreign_keys=[user_id])
@@ -253,7 +253,7 @@ class TemplateReview(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     rating = db.Column(db.Integer, nullable=False)  # 1-5 stars
     review_text = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     user = db.relationship('User', foreign_keys=[user_id])

@@ -472,32 +472,28 @@ IS_VERCEL = os.environ.get('VERCEL') == '1'
 # Environment-aware configuration for database and uploads
 IS_PRODUCTION = os.environ.get('RENDER') == 'true' or os.environ.get('VERCEL') == '1'
 
-if IS_PRODUCTION:
-    # Production environment (Render/Vercel): Use PostgreSQL
-    database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
-        print("WARNING: DATABASE_URL environment variable is not set in production")
-        # Fallback to local SQLite for debugging
-        instance_path = os.path.join('/tmp', 'instance')
-        os.makedirs(instance_path, exist_ok=True)
-        db_path = os.path.join(instance_path, 'database.db')
-        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    else:
-        # SQLAlchemy requires 'postgresql://' but Render provides 'postgres://'
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+# Database configuration: Use PostgreSQL if DATABASE_URL is set, otherwise SQLite
+database_url = os.environ.get('DATABASE_URL')
+
+if database_url:
+    # PostgreSQL connection (production or development)
+    # SQLAlchemy requires 'postgresql://' but some providers use 'postgres://'
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    print(f"Using PostgreSQL database")
 else:
-    # Local development environment: use the instance folder with SQLite
-    instance_path = os.path.join(_project_root, 'instance')
+    # SQLite fallback for local development without PostgreSQL
+    if IS_PRODUCTION:
+        print("WARNING: DATABASE_URL not set in production, falling back to SQLite")
+        instance_path = os.path.join('/tmp', 'instance')
+    else:
+        instance_path = os.path.join(_project_root, 'instance')
+
     os.makedirs(instance_path, exist_ok=True)
     db_path = os.path.join(instance_path, 'database.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    # Local environment: use the instance folder
-    instance_path = os.path.join(_project_root, 'instance')
-    os.makedirs(instance_path, exist_ok=True)
-    db_path = os.path.join(instance_path, 'database.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    print(f"Using SQLite database: {db_path}")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Import shared database instance

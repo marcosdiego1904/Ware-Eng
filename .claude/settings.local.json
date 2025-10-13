@@ -136,7 +136,10 @@
       "Bash(if exist backenddatanul del backenddatanul)",
       "Bash(if exist backendnul del backendnul)",
       "Bash(if exist nul del nul)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(psql:*)",
+      "Bash(where psql)",
+      "Bash(sc query:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",

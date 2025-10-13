@@ -36,7 +36,7 @@ class RuleCategory(db.Model):
     priority = db.Column(db.Integer, nullable=False)  # 1=highest
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     rules = db.relationship('Rule', backref='category', lazy=True, cascade="all, delete-orphan")
@@ -72,8 +72,8 @@ class Rule(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     is_default = db.Column(db.Boolean, default=False)  # System default rules
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     history = db.relationship('RuleHistory', backref='rule', lazy=True, cascade="all, delete-orphan")
@@ -153,7 +153,7 @@ class RuleHistory(db.Model):
     version = db.Column(db.Integer, nullable=False)
     changes = db.Column(db.Text, nullable=False)  # JSON string describing changes
     changed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     user = db.relationship('User', foreign_keys=[changed_by])
@@ -195,7 +195,7 @@ class RuleTemplate(db.Model):
     is_public = db.Column(db.Boolean, default=False)  # Public templates available to all users
     usage_count = db.Column(db.Integer, default=0)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     creator = db.relationship('User', foreign_keys=[created_by])
@@ -242,7 +242,7 @@ class RulePerformance(db.Model):
     anomalies_detected = db.Column(db.Integer, default=0)
     false_positives = db.Column(db.Integer, default=0)
     execution_time_ms = db.Column(db.Integer)  # Execution time in milliseconds
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     report = db.relationship('AnalysisReport', foreign_keys=[report_id])
@@ -291,7 +291,7 @@ class Location(db.Model):
 
     # System fields
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
     
     # Relationships
@@ -473,15 +473,15 @@ class WarehouseConfig(db.Model):
     location_format_config = db.Column(db.Text)  # JSON configuration from SmartFormatDetector
     format_confidence = db.Column(db.Float, default=0.0)      # Detection confidence score (0.0-1.0)
     format_examples = db.Column(db.Text)         # JSON array of original user examples
-    format_learned_date = db.Column(db.DateTime) # When format was detected/learned
+    format_learned_date = db.Column(db.DateTime(timezone=True)) # When format was detected/learned
     
     # Enhanced Location Configuration - Support for enterprise-scale warehouses
     max_position_digits = db.Column(db.Integer, default=6)    # Maximum digits in position field (1-6, default: 6 = 999999 max)
     
     # Metadata
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
@@ -662,7 +662,7 @@ class WarehouseTemplate(db.Model):
     location_format_config = db.Column(db.Text)  # JSON configuration from SmartFormatDetector
     format_confidence = db.Column(db.Float, default=0.0)      # Detection confidence score (0.0-1.0)
     format_examples = db.Column(db.Text)         # JSON array of original user examples
-    format_learned_date = db.Column(db.DateTime) # When format was detected/learned
+    format_learned_date = db.Column(db.DateTime(timezone=True)) # When format was detected/learned
     
     # Enhanced Location Configuration - Support for enterprise-scale warehouses
     max_position_digits = db.Column(db.Integer, default=6)    # Maximum digits in position field (1-6, default: 6 = 999999 max)
@@ -674,8 +674,8 @@ class WarehouseTemplate(db.Model):
     
     # System fields
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
     # Relationships
@@ -859,14 +859,14 @@ class LocationFormatHistory(db.Model):
     # Format change tracking
     original_format = db.Column(db.Text)  # JSON of previous format configuration
     new_format = db.Column(db.Text)       # JSON of detected new format configuration
-    detected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    detected_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     confidence_score = db.Column(db.Float, nullable=False)  # Confidence of new pattern detection
     
     # User interaction
     user_confirmed = db.Column(db.Boolean, default=False)  # User approved the change
     applied = db.Column(db.Boolean, default=False)         # Change was applied to template
     reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # User who reviewed
-    reviewed_at = db.Column(db.DateTime)
+    reviewed_at = db.Column(db.DateTime(timezone=True))
     
     # Supporting data
     sample_locations = db.Column(db.Text)  # JSON array of sample locations that triggered detection
@@ -1141,8 +1141,8 @@ class WarehouseScopeConfig(db.Model):
     excluded_patterns = db.Column(db.Text, default='[]')  # JSON string for cross-database compatibility
     default_unit_type = db.Column(db.String(50), default='pallets')  # Default unit type for locations
     config_metadata = db.Column(db.Text, default='{}')  # JSON string for cross-database compatibility
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @property
     def excluded_patterns_list(self):
@@ -1241,8 +1241,8 @@ class LocationClassificationCorrection(db.Model):
     is_active = db.Column(db.Boolean, default=True)  # Whether this correction is active
 
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    last_applied = db.Column(db.DateTime)  # When this correction was last applied
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    last_applied = db.Column(db.DateTime(timezone=True))  # When this correction was last applied
 
     # Relationships
     corrector = db.relationship('User', foreign_keys=[corrected_by])
