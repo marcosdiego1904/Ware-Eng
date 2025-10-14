@@ -150,52 +150,52 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
   useEffect(() => {
     let isMounted = true;
     let timeoutId: NodeJS.Timeout;
-    
+
     const loadData = async () => {
-      if (!warehouseId || !isMountedRef.current) return;
-      
+      if (!warehouseId) return;
+
       try {
         // Clear errors first
         clearError();
-        
+
         // Reset store only if switching warehouses
         if (currentWarehouseConfig?.warehouse_id && currentWarehouseConfig.warehouse_id !== warehouseId) {
           resetStore();
         }
-        
+
         // Load config and templates first
         await Promise.all([
           fetchWarehouseConfig(warehouseId),
           fetchTemplates('my')
         ]);
-        
-        // Then load locations with a slight delay to ensure config is available
-        if (isMounted && isMountedRef.current) {
+
+        // Then load locations
+        if (isMounted) {
           const locationFilters = { warehouse_id: warehouseId };
           setFilters(locationFilters);
           await fetchLocations(locationFilters, 1, 100);
         }
       } catch (error) {
-        if (isMounted && isMountedRef.current) {
-          console.error('Failed to load data:', error);
+        if (isMounted) {
+          console.error('Failed to load warehouse data:', error);
         }
       }
     };
-    
+
     // Debounce to prevent rapid calls during warehouse switching
     timeoutId = setTimeout(() => {
       if (isMounted) {
         loadData();
       }
     }, 150);
-    
+
     return () => {
       isMounted = false;
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
     };
-  }, [warehouseId]); // Only depend on warehouseId to prevent cascading
+  }, [warehouseId]);
 
   // Refresh locations only when switching to locations tab
   useEffect(() => {
@@ -573,35 +573,23 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
 
       {/* Warehouse Overview */}
       {currentWarehouseConfig && (() => {
-        // Debug: Log the current warehouse config to identify the data issue
-        console.log('📊 WAREHOUSE OVERVIEW DEBUG:', currentWarehouseConfig);
-        
         // Calculate accurate metrics from current warehouse configuration
-        // Handle new accounts with incomplete/empty config data
         const numAisles = currentWarehouseConfig.num_aisles || 0;
         const racksPerAisle = currentWarehouseConfig.racks_per_aisle || 0;
         const positionsPerRack = currentWarehouseConfig.positions_per_rack || 0;
         const levelsPerPosition = currentWarehouseConfig.levels_per_position || 0;
         const defaultPalletCapacity = currentWarehouseConfig.default_pallet_capacity || 0;
-        
+
         const storageLocations = numAisles * racksPerAisle * positionsPerRack * levelsPerPosition;
         const storageCapacity = storageLocations * defaultPalletCapacity;
-        
-        // CRITICAL FIX: Use actual location data instead of config JSON
-        // Get special areas from the actual locations store (includes AISLE locations!)
-        const specialAreaLocations = locations.filter(loc => 
+
+        // Get special areas from the actual locations store
+        const specialAreaLocations = locations.filter(loc =>
           ['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'].includes(loc.location_type)
         );
-        
+
         const specialAreaCount = specialAreaLocations.length;
         const specialAreaCapacity = specialAreaLocations.reduce((sum, loc) => sum + (loc.capacity || 0), 0);
-        
-        console.log('📊 Summary Card Debug:', {
-          totalLocationsInStore: locations.length,
-          specialAreaLocations: specialAreaLocations.length,
-          specialAreaCapacity,
-          specialAreaCodes: specialAreaLocations.map(loc => loc.code)
-        });
         
         // IMPORTANT: totalLocations = virtual storage + actual special areas
         // Storage locations are virtual (not in store), special areas are physical (in store)
@@ -1197,17 +1185,22 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           isFirstTimeSetup={true}
           warehouseId={warehouseId}
           onClose={() => setShowTemplateWizard(false)}
-          onTemplateCreated={async (template, _warehouseConfig) => {
+          onTemplateCreated={async (template, warehouseConfig) => {
             setShowTemplateWizard(false);
-            
+
             // Clear any existing filters
             const freshFilters = { warehouse_id: warehouseId };
             setFilters(freshFilters);
-            
-            // Refresh warehouse config and locations
+
+            // Force refresh warehouse config to ensure state is updated
             await fetchWarehouseConfig(warehouseId);
+
+            // Small delay to ensure state propagates
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Refresh locations to show the newly created special areas
             await fetchLocations(freshFilters, 1, 100);
-            
+
             // Success notification
             toast({
               title: "Warehouse Ready! 🎉",

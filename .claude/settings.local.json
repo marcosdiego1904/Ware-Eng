@@ -139,7 +139,9 @@
       "Bash(test:*)",
       "Bash(psql:*)",
       "Bash(where psql)",
-      "Bash(sc query:*)"
+      "Bash(sc query:*)",
+      "Bash(venvScriptspython.exe:*)",
+      "Bash(.venvScriptspython.exe -c \"from src.app import app, db; from src.models import WarehouseTemplate; app.app_context().push(); templates = WarehouseTemplate.query.all(); print(f''Total templates in database: {len(templates)}''); [print(f''  - {t.name} (ID: {t.id}, Code: {t.template_code}, Active: {t.is_active}, User: {t.created_by})'') for t in templates]\")"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",

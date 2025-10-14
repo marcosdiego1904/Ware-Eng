@@ -470,26 +470,32 @@ const useLocationStore = create<LocationStore>()(
       
       // Warehouse Configuration Actions
       fetchWarehouseConfig: async (warehouseId = 'DEFAULT') => {
+        console.log('[STORE] fetchWarehouseConfig called for:', warehouseId);
         set({ configLoading: true, error: null });
-        
+
         try {
           const { api } = await import('./api');
           const response = await api.get(`/warehouse/config?warehouse_id=${warehouseId}`);
-          
+
+          console.log('[STORE] fetchWarehouseConfig response:', response.data);
+
           set({
             currentWarehouseConfig: response.data.config,
             configLoading: false
           });
-          
+
+          console.log('[STORE] currentWarehouseConfig updated:', response.data.config);
+
         } catch (error: any) {
-          console.error('Error fetching warehouse config:', error);
+          console.error('[STORE] Error fetching warehouse config:', error);
           if (error.response?.status === 404) {
             // No config found - this is normal for new warehouses
+            console.log('[STORE] Config not found (404), setting to null');
             set({ currentWarehouseConfig: null, configLoading: false });
           } else {
-            set({ 
+            set({
               error: error.response?.data?.error || 'Failed to fetch warehouse configuration',
-              configLoading: false 
+              configLoading: false
             });
           }
         }
@@ -603,26 +609,32 @@ const useLocationStore = create<LocationStore>()(
       
       // Template Management Actions
       fetchTemplates: async (scope = 'my', search = '') => {
+        console.log('[STORE] fetchTemplates called:', { scope, search });
         set({ templatesLoading: true, error: null });
-        
+
         try {
           const { api } = await import('./api');
-          
+
           const params = new URLSearchParams({ scope });
           if (search) params.append('search', search);
-          
+
+          console.log('[STORE] Fetching templates from:', `/templates?${params}`);
           const response = await api.get(`/templates?${params}`);
-          
+
+          console.log('[STORE] Templates response:', response.data);
+          console.log('[STORE] Number of templates returned:', response.data.templates?.length || 0);
+
           set({
             templates: response.data.templates,
             templatesLoading: false
           });
-          
+
         } catch (error: any) {
-          console.error('Error fetching templates:', error);
-          set({ 
+          console.error('[STORE] Error fetching templates:', error);
+          console.error('[STORE] Error details:', error.response?.data);
+          set({
             error: error.response?.data?.error || 'Failed to fetch templates',
-            templatesLoading: false 
+            templatesLoading: false
           });
         }
       },
@@ -774,8 +786,9 @@ const useLocationStore = create<LocationStore>()(
       },
       
       applyTemplateByCode: async (templateCode, warehouseId, warehouseName) => {
+        console.log('[STORE] applyTemplateByCode called:', { templateCode, warehouseId, warehouseName });
         set({ loading: true, error: null });
-        
+
         try {
           const { api } = await import('./api');
           const response = await api.post('/templates/apply-by-code', {
@@ -783,14 +796,18 @@ const useLocationStore = create<LocationStore>()(
             warehouse_id: warehouseId,
             warehouse_name: warehouseName
           });
-          
+
+          console.log('[STORE] applyTemplateByCode response:', response.data);
           const { configuration } = response.data;
-          
+          console.log('[STORE] Extracted configuration:', configuration);
+
           set({
             currentWarehouseConfig: configuration,
             loading: false
           });
-          
+
+          console.log('[STORE] currentWarehouseConfig updated in state');
+
           // Reload locations after template is applied by code
           console.log('🔄 Template applied by code, reloading locations...');
           if (warehouseId) {
@@ -799,14 +816,15 @@ const useLocationStore = create<LocationStore>()(
             const filters = { warehouse_id: warehouseId };
             await get().fetchLocations(filters, 1, 100);
           }
-          
+
+          console.log('[STORE] Returning response.data with configuration');
           return response.data;
-          
+
         } catch (error: any) {
-          console.error('Error applying template by code:', error);
-          set({ 
+          console.error('[STORE] Error applying template by code:', error);
+          set({
             error: error.response?.data?.error || 'Failed to apply template',
-            loading: false 
+            loading: false
           });
           throw error;
         }
