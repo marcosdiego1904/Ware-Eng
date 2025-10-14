@@ -38,7 +38,6 @@ export function WarehouseSettingsView() {
   useEffect(() => {
     const fetchUserWarehouse = async () => {
       if (!user) {
-        setUserWarehouseId('DEFAULT');
         setWarehouseLoading(false);
         return;
       }
@@ -47,12 +46,10 @@ export function WarehouseSettingsView() {
         setWarehouseLoading(true);
         const { api } = await import('@/lib/api');
         const response = await api.get('/user/warehouse');
-        
+
         if (response.data.success && response.data.primary_warehouse) {
           const primaryWarehouse = response.data.primary_warehouse;
-          setUserWarehouseId(primaryWarehouse);
-          setWarehouseInfo(response.data);
-          
+
           console.log('🏢 Dynamic warehouse detected:', {
             user: user.username,
             warehouse: primaryWarehouse,
@@ -60,16 +57,24 @@ export function WarehouseSettingsView() {
             specialAreas: response.data.special_areas_count,
             method: response.data.detection_method
           });
+
+          setWarehouseInfo(response.data);
+          setUserWarehouseId(primaryWarehouse);
         } else {
           // Fallback to username-based warehouse ID
           const fallbackWarehouse = `USER_${user.username.toUpperCase()}`;
-          setUserWarehouseId(fallbackWarehouse);
           console.log('⚠️ No dynamic warehouse found, using fallback:', fallbackWarehouse);
+          setUserWarehouseId(fallbackWarehouse);
         }
       } catch (error) {
         console.error('❌ Failed to fetch user warehouse:', error);
-        // Final fallback to DEFAULT
-        setUserWarehouseId('DEFAULT');
+        // Final fallback to username-based
+        if (user) {
+          const fallbackWarehouse = `USER_${user.username.toUpperCase()}`;
+          setUserWarehouseId(fallbackWarehouse);
+        } else {
+          setUserWarehouseId('DEFAULT');
+        }
       } finally {
         setWarehouseLoading(false);
       }
