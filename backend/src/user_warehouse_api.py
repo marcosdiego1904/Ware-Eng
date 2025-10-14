@@ -106,7 +106,10 @@ def get_user_warehouse(current_user):
         # Determine primary warehouse
         if all_user_warehouses:
             primary_warehouse = all_user_warehouses[0]
-            
+
+            print(f"[USER_WAREHOUSE] ✅ Found primary warehouse: {primary_warehouse['warehouse_id']}")
+            print(f"[USER_WAREHOUSE] All user warehouses count: {len(all_user_warehouses)}")
+
             return jsonify({
                 'success': True,
                 'primary_warehouse': primary_warehouse['warehouse_id'],
@@ -117,6 +120,11 @@ def get_user_warehouse(current_user):
             })
         else:
             # No user-specific warehouses found, use DEFAULT
+            print(f"[USER_WAREHOUSE] ⚠️ No warehouses found for user {username} (id={user_id})")
+            print(f"[USER_WAREHOUSE] Checked patterns: {possible_patterns}")
+            print(f"[USER_WAREHOUSE] User created warehouses: {len(user_created_warehouses)}")
+            print(f"[USER_WAREHOUSE] Pattern matches: {len(pattern_warehouses)}")
+
             default_warehouse = WarehouseConfig.query.filter_by(warehouse_id='DEFAULT').first()
             if default_warehouse:
                 # CRITICAL FIX: Count physical special location records, not config JSON
