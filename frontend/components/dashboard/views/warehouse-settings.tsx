@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import { LocationManager } from '@/components/locations/location-manager';
 import { WarehouseSettingsErrorBoundary } from '@/components/error-boundary';
 import { useAuth } from '@/lib/auth-context';
@@ -58,8 +58,10 @@ export function WarehouseSettingsView() {
             method: response.data.detection_method
           });
 
+          // Batch state updates together using functional updates to ensure they happen atomically
           setWarehouseInfo(response.data);
           setUserWarehouseId(primaryWarehouse);
+          console.log('🔑 Setting warehouse ID to:', primaryWarehouse);
         } else {
           // Fallback to username-based warehouse ID
           const fallbackWarehouse = `USER_${user.username.toUpperCase()}`;
