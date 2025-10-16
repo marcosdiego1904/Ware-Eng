@@ -273,11 +273,12 @@ def _get_virtual_locations(current_user, warehouse_id, location_type, zone, is_a
         
         # Get compatibility manager
         compat_manager = get_compatibility_manager()
-        
+
         # Get all virtual locations for the warehouse (with safety limit)
-        all_locations = compat_manager.get_all_warehouse_locations(warehouse_id)
+        # MULTI-TENANCY FIX: Pass current_user.id to filter locations by user
+        all_locations = compat_manager.get_all_warehouse_locations(warehouse_id, created_by=current_user.id)
         if page == 1:
-            print(f"[LOCATION_API] Retrieved {len(all_locations)} virtual locations")
+            print(f"[LOCATION_API] Retrieved {len(all_locations)} virtual locations for user {current_user.id}")
         
         if not all_locations:
             print(f"[LOCATION_API] No virtual locations found - warehouse may not be properly configured")

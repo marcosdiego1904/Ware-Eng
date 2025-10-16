@@ -120,41 +120,57 @@ class VirtualLocationCompatibilityManager:
                 print(f"[VIRTUAL_COMPAT] Physical location lookup failed: {e}")
             return None
     
-    def get_all_warehouse_locations(self, warehouse_id: str) -> List[Dict[str, Any]]:
+    def get_all_warehouse_locations(self, warehouse_id: str, created_by: int = None) -> List[Dict[str, Any]]:
         """
         Get all locations for a warehouse (virtual or physical)
-        
+
         WARNING: For virtual warehouses with large location spaces, this could
         return millions of locations. Use with caution or implement pagination.
+
+        Args:
+            warehouse_id: The warehouse identifier
+            created_by: User ID to filter locations (for multi-tenancy)
         """
         if self.debug_compatibility:
-            print(f"[VIRTUAL_COMPAT] Getting all locations for warehouse '{warehouse_id}'")
-        
+            print(f"[VIRTUAL_COMPAT] Getting all locations for warehouse '{warehouse_id}', user={created_by}")
+
         # Check if this is a virtual warehouse
         if self.enable_virtual_locations:
             virtual_engine = get_virtual_engine_for_warehouse(warehouse_id)
             if virtual_engine:
-                return self._get_all_virtual_locations(virtual_engine, limit=1000)  # Safety limit
-        
+                return self._get_all_virtual_locations(virtual_engine, limit=1000, created_by=created_by)  # Safety limit
+
         # Fall back to physical locations
-        return self._get_all_physical_locations(warehouse_id)
+        return self._get_all_physical_locations(warehouse_id, created_by=created_by)
     
-    def _get_all_virtual_locations(self, virtual_engine, limit: int = 1000) -> List[Dict[str, Any]]:
+    def _get_all_virtual_locations(self, virtual_engine, limit: int = 1000, created_by: int = None) -> List[Dict[str, Any]]:
         """
         Generate a representative sample of virtual locations
-        
+
         NOTE: For large virtual warehouses, we don't generate ALL possible locations
         as that could be millions. Instead, we return a sample or specific locations.
         PRIORITY: Special areas are ALWAYS included and generated first
+
+        Args:
+            virtual_engine: The virtual warehouse engine
+            limit: Maximum number of locations to return
+            created_by: User ID to filter physical locations (for multi-tenancy)
         """
         locations = []
-        
+
         # CRITICAL FIX: Add PHYSICAL special areas first (AISLE locations, etc.)
         # These are the locations we created with our fixes that virtual engine doesn't know about
-        physical_special_areas = Location.query.filter(
+        # MULTI-TENANCY FIX: Filter by created_by to ensure proper data isolation
+        query = Location.query.filter(
             Location.warehouse_id == virtual_engine.warehouse_id,
             Location.location_type.in_(['RECEIVING', 'STAGING', 'DOCK', 'TRANSITIONAL'])
-        ).all()
+        )
+
+        # Apply user filter if provided (for multi-tenancy)
+        if created_by is not None:
+            query = query.filter(Location.created_by == created_by)
+
+        physical_special_areas = query.all()
         
         print(f"[VIRTUAL_COMPAT] Found {len(physical_special_areas)} physical special areas for warehouse {virtual_engine.warehouse_id}")
         
@@ -272,11 +288,24 @@ class VirtualLocationCompatibilityManager:
         
         return sample_locations
     
-    def _get_all_physical_locations(self, warehouse_id: str) -> List[Dict[str, Any]]:
-        """Get all physical locations from database"""
+    def _get_all_physical_locations(self, warehouse_id: str, created_by: int = None) -> List[Dict[str, Any]]:
+        """
+        Get all physical locations from database
+
+        Args:
+            warehouse_id: The warehouse identifier
+            created_by: User ID to filter locations (for multi-tenancy)
+        """
         try:
-            locations = Location.query.filter_by(warehouse_id=warehouse_id).all()
-            
+            # Build query with multi-tenancy support
+            query = Location.query.filter_by(warehouse_id=warehouse_id)
+
+            # Apply user filter if provided (for multi-tenancy)
+            if created_by is not None:
+                query = query.filter_by(created_by=created_by)
+
+            locations = query.all()
+
             return [{
                 'code': loc.code,
                 'location_type': loc.location_type,
@@ -291,7 +320,7 @@ class VirtualLocationCompatibilityManager:
                 'is_active': loc.is_active,
                 'source': 'physical'
             } for loc in locations]
-            
+
         except Exception as e:
             if self.debug_compatibility:
                 print(f"[VIRTUAL_COMPAT] Failed to get physical locations: {e}")
