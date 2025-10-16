@@ -169,6 +169,7 @@ export function LocationList({
                 <TableHead className="min-w-[80px]">Zone</TableHead>
                 <TableHead className="min-w-[80px]">Capacity</TableHead>
                 <TableHead className="min-w-[120px]">Structure</TableHead>
+                <TableHead className="min-w-[150px]">Template</TableHead>
                 <TableHead className="min-w-[80px]">Status</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
@@ -200,7 +201,12 @@ export function LocationList({
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge 
+                    <div className="text-sm text-muted-foreground">
+                      {location.warehouse_config_name || '—'}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
                       variant={location.is_active ? "default" : "secondary"}
                     >
                       {location.is_active ? "Active" : "Inactive"}

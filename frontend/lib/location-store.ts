@@ -11,6 +11,8 @@ export interface Location {
   allowed_products: string[];
   zone: string;
   warehouse_id: string;
+  warehouse_config_id?: number;
+  warehouse_config_name?: string;
   aisle_number?: number;
   rack_number?: number;
   position_number?: number;
