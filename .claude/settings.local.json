@@ -1,15 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(python:*)"
     ],
     "deny": [],
+    "ask": [],
     "defaultMode": "acceptEdits",
     "additionalDirectories": [
       "C:\\mnt\\c\\Users\\juanb\\Documents\\Diego\\Projects\\ware2",
       "C:\\c\\Users\\juanb\\Documents\\Diego\\Projects\\ware2"
-    ],
-    "ask": []
+    ]
   },
   "outputStyle": "Explanatory"
 }

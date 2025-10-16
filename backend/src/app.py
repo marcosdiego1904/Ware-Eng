@@ -2575,6 +2575,14 @@ try:
 except ImportError as e:
     print(f"User Warehouse API not available: {e}")
 
+# Register User Reset API (User data cleanup)
+try:
+    from user_reset_api import user_reset_bp
+    app.register_blueprint(user_reset_bp)
+    print("User Reset API registered successfully")
+except ImportError as e:
+    print(f"User Reset API not available: {e}")
+
 # Register Track Your Wins API (Gamification & analytics)
 try:
     from wins_api import wins_bp
