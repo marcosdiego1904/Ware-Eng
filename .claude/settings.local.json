@@ -9,7 +9,9 @@
       "Bash(do [ -f \"$file\" ])",
       "Bash(echo:*)",
       "Bash(done)",
-      "Bash(timeout 5 python:*)"
+      "Bash(timeout 5 python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": [],
