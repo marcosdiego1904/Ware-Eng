@@ -73,6 +73,25 @@ def token_required(f):
         return f(current_user_obj, *args, **kwargs)
     return decorated
 
+def _get_active_warehouse_config(warehouse_id: str, user_id: int):
+    """
+    Get the active warehouse configuration for a warehouse and user.
+    This is crucial for template-location binding.
+
+    Returns:
+        WarehouseConfig object or None if not found
+    """
+    try:
+        config = WarehouseConfig.query.filter_by(
+            warehouse_id=warehouse_id,
+            created_by=user_id,
+            is_active=True
+        ).first()
+        return config
+    except Exception as e:
+        print(f"[LOCATION_API] Error getting warehouse config: {e}")
+        return None
+
 @location_bp.route('', methods=['GET'])
 @token_required
 def get_locations(current_user):

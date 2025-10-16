@@ -275,6 +275,7 @@ class Location(db.Model):
     
     # Warehouse structure fields for hierarchical organization
     warehouse_id = db.Column(db.String(50), default='DEFAULT')  # Multi-warehouse support
+    warehouse_config_id = db.Column(db.Integer, db.ForeignKey('warehouse_config.id'))  # Template binding
     aisle_number = db.Column(db.Integer)  # Aisle number (1, 2, 3, 4, etc.)
     rack_number = db.Column(db.Integer)   # Rack number within aisle (1, 2, etc.)
     position_number = db.Column(db.Integer)  # Position number (001-100, etc.)
@@ -293,10 +294,11 @@ class Location(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    
+
     # Relationships
     creator = db.relationship('User', foreign_keys=[created_by])
-    
+    warehouse_config = db.relationship('WarehouseConfig', foreign_keys=[warehouse_config_id], backref='locations')
+
     # Database indexes and constraints for performance optimization and multi-tenancy
     __table_args__ = (
         # MULTI-TENANCY: Compound unique constraint for proper tenant isolation
@@ -309,6 +311,9 @@ class Location(db.Model):
         db.Index('idx_location_code_active', 'code', 'is_active'),
         db.Index('idx_location_created_by', 'created_by'),
         db.Index('idx_location_tracking', 'warehouse_id', 'is_tracked', 'unit_type'),
+        # TEMPLATE-BINDING: Index for filtering locations by template/config
+        db.Index('idx_location_warehouse_config', 'warehouse_config_id'),
+        db.Index('idx_location_config_type', 'warehouse_config_id', 'location_type'),
     )
     
     def get_allowed_products(self):
@@ -425,6 +430,8 @@ class Location(db.Model):
             'allowed_products': self.get_allowed_products(),
             'zone': self.zone,
             'warehouse_id': self.warehouse_id,
+            'warehouse_config_id': self.warehouse_config_id,
+            'warehouse_config_name': self.warehouse_config.warehouse_name if self.warehouse_config else None,
             'aisle_number': self.aisle_number,
             'rack_number': self.rack_number,
             'position_number': self.position_number,
