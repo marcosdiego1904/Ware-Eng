@@ -476,7 +476,14 @@ def create_location(current_user):
         
         # Use normalized code
         data['code'] = code
-        
+
+        # Get warehouse_id
+        warehouse_id = data.get('warehouse_id', 'DEFAULT')
+
+        # TEMPLATE BINDING: Get active warehouse config to bind location to template
+        warehouse_config = _get_active_warehouse_config(warehouse_id, current_user.id)
+        warehouse_config_id = warehouse_config.id if warehouse_config else None
+
         # Create location
         location = Location(
             code=data['code'],
@@ -484,7 +491,8 @@ def create_location(current_user):
             location_type=data['location_type'],
             capacity=data.get('capacity', 1),
             zone=data.get('zone', 'GENERAL'),
-            warehouse_id=data.get('warehouse_id', 'DEFAULT'),
+            warehouse_id=warehouse_id,
+            warehouse_config_id=warehouse_config_id,  # Bind to active template
             aisle_number=data.get('aisle_number'),
             rack_number=data.get('rack_number'),
             position_number=data.get('position_number'),
@@ -626,24 +634,35 @@ def bulk_create_locations(current_user):
         
         created_locations = []
         errors = []
-        
+
+        # TEMPLATE BINDING: Cache warehouse configs to avoid repeated queries
+        config_cache = {}
+
         for i, location_data in enumerate(locations_data):
             try:
                 # Validate required fields
                 if 'code' not in location_data or 'location_type' not in location_data:
                     errors.append(f'Location {i + 1}: Missing required fields (code, location_type)')
                     continue
-                
+
+                warehouse_id = location_data.get('warehouse_id', 'DEFAULT')
+
                 # Check for duplicate codes within user's locations
                 existing = Location.query.filter_by(
                     code=location_data['code'],
-                    warehouse_id=location_data.get('warehouse_id', 'DEFAULT'),
+                    warehouse_id=warehouse_id,
                     created_by=current_user.id
                 ).first()
                 if existing:
                     errors.append(f'Location {i + 1}: Code {location_data["code"]} already exists')
                     continue
-                
+
+                # TEMPLATE BINDING: Get warehouse config (use cache)
+                if warehouse_id not in config_cache:
+                    config_cache[warehouse_id] = _get_active_warehouse_config(warehouse_id, current_user.id)
+                warehouse_config = config_cache[warehouse_id]
+                warehouse_config_id = warehouse_config.id if warehouse_config else None
+
                 # Create location
                 location = Location(
                     code=location_data['code'],
@@ -651,7 +670,8 @@ def bulk_create_locations(current_user):
                     location_type=location_data['location_type'],
                     capacity=location_data.get('capacity', 1),
                     zone=location_data.get('zone', 'GENERAL'),
-                    warehouse_id=location_data.get('warehouse_id', 'DEFAULT'),
+                    warehouse_id=warehouse_id,
+                    warehouse_config_id=warehouse_config_id,  # Bind to active template
                     aisle_number=location_data.get('aisle_number'),
                     rack_number=location_data.get('rack_number'),
                     position_number=location_data.get('position_number'),
@@ -797,11 +817,17 @@ def bulk_create_location_range(current_user):
                 'message': f'{len(duplicates)} location(s) already exist. Please remove them first or use different codes.'
             }), 409
 
+        # TEMPLATE BINDING: Get active warehouse config once for all locations
+        warehouse_config = _get_active_warehouse_config(warehouse_id, current_user.id)
+        warehouse_config_id = warehouse_config.id if warehouse_config else None
+
         # Create locations
         created_locations = []
         errors = []
 
         print(f"[BULK_RANGE] Creating {len(location_codes)} locations: {location_codes[:5]}{'...' if len(location_codes) > 5 else ''}")
+        if warehouse_config_id:
+            print(f"[BULK_RANGE] Binding to warehouse config ID: {warehouse_config_id}")
 
         for i, code in enumerate(location_codes):
             try:
@@ -812,6 +838,7 @@ def bulk_create_location_range(current_user):
                     pallet_capacity=pallet_capacity,
                     zone=zone,
                     warehouse_id=warehouse_id,
+                    warehouse_config_id=warehouse_config_id,  # Bind to active template
                     created_by=current_user.id,
                     is_active=True
                 )
@@ -1008,10 +1035,14 @@ def generate_warehouse_locations(current_user):
                 'error': f'Warehouse {warehouse_id} already has {existing_count} locations. Use force_recreate=true to override.'
             }), 409
         
+        # TEMPLATE BINDING: Get active warehouse config for location binding
+        warehouse_config = _get_active_warehouse_config(warehouse_id, current_user.id)
+        warehouse_config_id = warehouse_config.id if warehouse_config else None
+
         # Generate storage locations
         created_locations = []
         errors = []
-        
+
         for aisle in range(1, num_aisles + 1):
             for rack in range(1, racks_per_aisle + 1):
                 # Calculate position range for this rack
@@ -1043,7 +1074,8 @@ def generate_warehouse_locations(current_user):
                                 pallet_capacity=pallet_capacity,
                                 zone=zone,
                                 location_type='STORAGE',
-                                created_by=current_user.id
+                                created_by=current_user.id,
+                                warehouse_config_id=warehouse_config_id  # Bind to active template
                             )
                             
                             db.session.add(location)
@@ -1063,6 +1095,7 @@ def generate_warehouse_locations(current_user):
                     pallet_capacity=area.get('capacity', 10),
                     zone=area.get('zone', 'RECEIVING'),
                     warehouse_id=warehouse_id,
+                    warehouse_config_id=warehouse_config_id,  # Bind to active template
                     created_by=current_user.id
                 )
                 
