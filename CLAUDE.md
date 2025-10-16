@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Backend (Flask API)
+
+**Prerequisites**: PostgreSQL 18.0+ must be installed and running. See `/backend/SETUP.md` for detailed setup.
+
 ```bash
 # Navigate to backend directory
 cd backend
@@ -15,6 +18,14 @@ venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Configure environment (REQUIRED)
+# Copy .env.example to .env and set DATABASE_URL
+copy .env.example .env
+# Edit .env and set: DATABASE_URL=postgresql://postgres:password@localhost:5432/ware_eng_dev
+
+# Initialize database
+python src/migrate.py
 
 # Run development server
 python run_server.py
@@ -50,9 +61,11 @@ This is a **Warehouse Intelligence Engine** - a full-stack web application for a
 ### Technology Stack
 - **Backend**: Flask (Python) with SQLAlchemy ORM, JWT authentication, CORS-enabled REST API
 - **Frontend**: Next.js 15 (React 19) with TypeScript, Tailwind CSS, Zustand state management
-- **Database**: PostgreSQL (with SQLite fallback for development)
+- **Database**: PostgreSQL (required for both development and production)
 - **Data Processing**: Pandas for Excel/CSV analysis
 - **UI**: Radix UI components with custom design system
+
+**Important**: This application requires PostgreSQL for both development and production to ensure complete dev/prod parity. SQLite is no longer supported.
 
 ### Key Components
 

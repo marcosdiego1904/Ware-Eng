@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(npm run build)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(for file in simple_migration.py simple_migration_script.py fix_postgresql_migration.py apply_smart_config_migration.py test_database_migration.py direct_postgresql_migration.py web_postgresql_migration.py setup_postgres_simple.py test_all_fixes_sqlite.py debug_sqlite_virtual.py test_database_compatibility.py)",
+      "Bash(do [ -f \"$file\" ])",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(timeout 5 python:*)"
     ],
     "deny": [],
     "ask": [],

@@ -472,28 +472,22 @@ IS_VERCEL = os.environ.get('VERCEL') == '1'
 # Environment-aware configuration for database and uploads
 IS_PRODUCTION = os.environ.get('RENDER') == 'true' or os.environ.get('VERCEL') == '1'
 
-# Database configuration: Use PostgreSQL if DATABASE_URL is set, otherwise SQLite
+# Database configuration: PostgreSQL is required for dev and prod parity
 database_url = os.environ.get('DATABASE_URL')
 
-if database_url:
-    # PostgreSQL connection (production or development)
-    # SQLAlchemy requires 'postgresql://' but some providers use 'postgres://'
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"Using PostgreSQL database")
-else:
-    # SQLite fallback for local development without PostgreSQL
-    if IS_PRODUCTION:
-        print("WARNING: DATABASE_URL not set in production, falling back to SQLite")
-        instance_path = os.path.join('/tmp', 'instance')
-    else:
-        instance_path = os.path.join(_project_root, 'instance')
+if not database_url:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is required.\n"
+        "Please set DATABASE_URL in your .env file.\n"
+        "Example: DATABASE_URL=postgresql://postgres:password@localhost:5432/ware_eng_dev"
+    )
 
-    os.makedirs(instance_path, exist_ok=True)
-    db_path = os.path.join(instance_path, 'database.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    print(f"Using SQLite database: {db_path}")
+# SQLAlchemy requires 'postgresql://' but some providers use 'postgres://'
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+print(f"Using PostgreSQL database")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Import shared database instance
