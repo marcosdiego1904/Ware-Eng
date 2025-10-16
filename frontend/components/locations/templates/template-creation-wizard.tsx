@@ -48,6 +48,7 @@ import { standaloneTemplateAPI, type StandaloneTemplateData } from '@/lib/standa
 import { templateApi } from '@/lib/location-api';
 import { SpecialAreaEditor } from './special-area-editor';
 import { LocationFormatStep } from './LocationFormatStep';
+import { useAuth } from '@/lib/auth-context';
 
 interface TemplateCreationWizardProps {
   open: boolean;
@@ -179,13 +180,14 @@ const STARTER_TEMPLATES = [
   }
 ];
 
-export function TemplateCreationWizard({ 
-  open, 
-  onClose, 
-  onTemplateCreated, 
-  isFirstTimeSetup = false, 
-  warehouseId 
+export function TemplateCreationWizard({
+  open,
+  onClose,
+  onTemplateCreated,
+  isFirstTimeSetup = false,
+  warehouseId
 }: TemplateCreationWizardProps) {
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [templateData, setTemplateData] = useState<TemplateData>(INITIAL_TEMPLATE_DATA);
   const [loading, setLoading] = useState(false);
@@ -379,15 +381,28 @@ export function TemplateCreationWizard({
       
       // Step 1: Create template (existing behavior)
       const createdTemplate = await standaloneTemplateAPI.createTemplate(apiData);
-      
+
       // Step 2: Apply template to warehouse (NEW for first-time setup)
-      if (isFirstTimeSetup && warehouseId) {
+      if (isFirstTimeSetup) {
+        // Generate user-specific warehouse ID if warehouseId is DEFAULT or not provided
+        let targetWarehouseId = warehouseId;
+
+        if (!targetWarehouseId || targetWarehouseId === 'DEFAULT') {
+          if (user?.username) {
+            targetWarehouseId = `USER_${user.username.toUpperCase()}`;
+            console.log(`[TEMPLATE_WIZARD] Generated user-specific warehouse ID: ${targetWarehouseId}`);
+          } else {
+            targetWarehouseId = warehouseId || 'DEFAULT';
+            console.warn(`[TEMPLATE_WIZARD] No user found, using warehouse ID: ${targetWarehouseId}`);
+          }
+        }
+
         const applyResult = await templateApi.applyTemplateByCode(
           createdTemplate.template_code,
-          warehouseId,
+          targetWarehouseId,
           templateData.name
         );
-        
+
         onTemplateCreated?.(createdTemplate, applyResult.configuration);
       } else {
         // Existing template-only creation
