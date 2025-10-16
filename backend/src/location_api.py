@@ -147,12 +147,26 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
     try:
         if page == 1:
             print(f"[LOCATION_API] Getting physical locations for warehouse {warehouse_id}")
-        
-        # Build query - CRITICAL: Filter by user to ensure data isolation
+
+        # TEMPLATE BINDING: Get active warehouse config to filter locations by template
+        warehouse_config = _get_active_warehouse_config(warehouse_id, current_user.id)
+
+        # Build query - CRITICAL: Filter by user AND active template for data isolation
         query = Location.query.filter_by(
             warehouse_id=warehouse_id,
             created_by=current_user.id  # Essential: Only show user's own locations
         )
+
+        # TEMPLATE BINDING: Filter by active warehouse config
+        if warehouse_config:
+            query = query.filter_by(warehouse_config_id=warehouse_config.id)
+            if page == 1:
+                print(f"[LOCATION_API] Filtering by warehouse_config_id={warehouse_config.id}")
+        else:
+            # No active config - show only locations without config binding
+            query = query.filter_by(warehouse_config_id=None)
+            if page == 1:
+                print(f"[LOCATION_API] No active config - showing only unbound locations")
         
         if location_type:
             query = query.filter_by(location_type=location_type)
@@ -236,25 +250,34 @@ def _get_physical_locations(current_user, warehouse_id, location_type, zone, is_
         if page == 1:
             print(f"DEBUG: Physical query returned {len(locations)} locations")
         
-        # Get summary statistics - CRITICAL: Filter by created_by for multi-tenancy
-        total_locations = Location.query.filter_by(
+        # Get summary statistics - CRITICAL: Filter by created_by AND warehouse_config_id for template isolation
+        summary_query_base = Location.query.filter_by(
             warehouse_id=warehouse_id,
             is_active=True,
             created_by=current_user.id
-        ).count()
-        storage_locations = Location.query.filter_by(
-            warehouse_id=warehouse_id,
-            location_type='STORAGE',
-            is_active=True,
-            created_by=current_user.id
-        ).count()
-        total_capacity = db.session.query(db.func.sum(Location.pallet_capacity)).filter(
-            and_(
-                Location.warehouse_id == warehouse_id,
-                Location.is_active == True,
-                Location.created_by == current_user.id
-            )
-        ).scalar() or 0
+        )
+
+        # Apply template filtering to summary queries
+        if warehouse_config:
+            summary_query_base = summary_query_base.filter_by(warehouse_config_id=warehouse_config.id)
+        else:
+            summary_query_base = summary_query_base.filter_by(warehouse_config_id=None)
+
+        total_locations = summary_query_base.count()
+        storage_locations = summary_query_base.filter_by(location_type='STORAGE').count()
+
+        # Calculate total capacity with template filtering
+        capacity_filter = and_(
+            Location.warehouse_id == warehouse_id,
+            Location.is_active == True,
+            Location.created_by == current_user.id
+        )
+        if warehouse_config:
+            capacity_filter = and_(capacity_filter, Location.warehouse_config_id == warehouse_config.id)
+        else:
+            capacity_filter = and_(capacity_filter, Location.warehouse_config_id == None)
+
+        total_capacity = db.session.query(db.func.sum(Location.pallet_capacity)).filter(capacity_filter).scalar() or 0
         
         return jsonify({
             'locations': [location.to_dict() for location in locations],
