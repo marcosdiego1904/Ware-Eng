@@ -75,6 +75,54 @@ def reset_user_templates(current_user):
             'error': f'Failed to reset templates: {str(e)}'
         }), 500
 
+@user_reset_bp.route('/cleanup-all', methods=['POST'])
+@token_required
+def cleanup_all_user_data(current_user):
+    """
+    Complete cleanup: deactivate templates, delete warehouse configs and locations
+    This is a complete reset for users having issues
+    """
+    try:
+        username = current_user.username
+        user_id = current_user.id
+
+        # 1. Deactivate all templates
+        templates = WarehouseTemplate.query.filter_by(
+            created_by=user_id,
+            is_active=True
+        ).all()
+
+        templates_deactivated = 0
+        for template in templates:
+            template.is_active = False
+            templates_deactivated += 1
+
+        # 2. Delete all locations created by this user
+        locations_deleted = Location.query.filter_by(created_by=user_id).delete()
+
+        # 3. Delete all warehouse configs created by this user
+        configs_deleted = WarehouseConfig.query.filter_by(created_by=user_id).delete()
+
+        db.session.commit()
+
+        print(f"[USER_CLEANUP_ALL] User {username} (ID={user_id}): {templates_deactivated} templates deactivated, {locations_deleted} locations deleted, {configs_deleted} configs deleted")
+
+        return jsonify({
+            'success': True,
+            'message': 'Complete cleanup successful',
+            'templates_deactivated': templates_deactivated,
+            'locations_deleted': locations_deleted,
+            'warehouse_configs_deleted': configs_deleted,
+            'recommended_next_step': 'You can now create a new template from scratch'
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Failed to cleanup: {str(e)}'
+        }), 500
+
 @user_reset_bp.route('/cleanup-default-warehouse', methods=['POST'])
 @token_required
 def cleanup_default_warehouse(current_user):

@@ -1188,12 +1188,16 @@ export function LocationManager({ warehouseId = 'DEFAULT' }: LocationManagerProp
           onTemplateCreated={async (template, warehouseConfig) => {
             setShowTemplateWizard(false);
 
-            // Clear any existing filters
-            const freshFilters = { warehouse_id: warehouseId };
+            // CRITICAL FIX: Use the warehouse_id from the config, not the prop
+            const actualWarehouseId = warehouseConfig?.warehouse_id || warehouseId;
+            console.log('[TEMPLATE_CREATED] Using warehouse ID:', actualWarehouseId, 'from config:', warehouseConfig);
+
+            // Clear any existing filters with the correct warehouse ID
+            const freshFilters = { warehouse_id: actualWarehouseId };
             setFilters(freshFilters);
 
             // Force refresh warehouse config to ensure state is updated
-            await fetchWarehouseConfig(warehouseId);
+            await fetchWarehouseConfig(actualWarehouseId);
 
             // Small delay to ensure state propagates
             await new Promise(resolve => setTimeout(resolve, 500));
