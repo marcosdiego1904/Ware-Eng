@@ -67,7 +67,8 @@ class Rule(db.Model):
     conditions = db.Column(db.Text, nullable=False)  # JSON string for rule conditions
     parameters = db.Column(db.Text)  # JSON string for configurable parameters
     priority = db.Column(db.String(20), default='MEDIUM')  # VERY_HIGH, HIGH, MEDIUM, LOW
-    precedence_level = db.Column(db.Integer, default=4)  # 1=highest (data integrity), 4=lowest (data quality)
+    # MIGRATION REQUIRED: Temporarily commented out until migration runs on production
+    # precedence_level = db.Column(db.Integer, default=4)  # 1=highest (data integrity), 4=lowest (data quality)
     exclusion_rules = db.Column(db.Text)  # JSON string for custom exclusion patterns
     is_active = db.Column(db.Boolean, default=True)
     is_default = db.Column(db.Boolean, default=False)  # System default rules
@@ -101,17 +102,18 @@ class Rule(db.Model):
     def set_exclusion_rules(self, exclusion_dict):
         """Set exclusion rules from dict to JSON string"""
         self.exclusion_rules = json.dumps(exclusion_dict) if exclusion_dict else None
-    
-    def get_precedence_name(self):
-        """Get human-readable precedence level name"""
-        precedence_names = {
-            1: "Data Integrity (Highest)",
-            2: "Operational Safety", 
-            3: "Process Efficiency",
-            4: "Data Quality (Lowest)"
-        }
-        return precedence_names.get(self.precedence_level, f"Level {self.precedence_level}")
-    
+
+    # MIGRATION REQUIRED: Temporarily commented out until precedence_level column exists in production
+    # def get_precedence_name(self):
+    #     """Get human-readable precedence level name"""
+    #     precedence_names = {
+    #         1: "Data Integrity (Highest)",
+    #         2: "Operational Safety",
+    #         3: "Process Efficiency",
+    #         4: "Data Quality (Lowest)"
+    #     }
+    #     return precedence_names.get(self.precedence_level, f"Level {self.precedence_level}")
+
     def get_parameters(self):
         """Parse parameters JSON string into dict"""
         try:
