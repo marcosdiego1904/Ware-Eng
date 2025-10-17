@@ -95,7 +95,9 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
         throw new Error('Authentication required. Please log in again.')
       }
 
-      const response = await fetch('http://localhost:5000/api/v1/suggest-column-mapping', {
+      // Use environment variable for API URL (production-ready)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1'
+      const response = await fetch(`${apiUrl}/suggest-column-mapping`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
