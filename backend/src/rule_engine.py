@@ -2017,8 +2017,12 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         print(f"\n[UNIT_AGNOSTIC] Starting unit-agnostic overcapacity detection for warehouse {warehouse_id}")
 
         try:
-            # Initialize scope service for unit-aware capacity detection
-            scope_service = SimpleScopeService(str(warehouse_id))
+            # Use CACHED scope service instance (shared with _get_location_capacity fallback)
+            # This ensures bulk loading benefits ALL code paths, not just the main one
+            warehouse_id_str = str(warehouse_id)
+            if warehouse_id_str not in self._scope_service_cache:
+                self._scope_service_cache[warehouse_id_str] = SimpleScopeService(warehouse_id_str)
+            scope_service = self._scope_service_cache[warehouse_id_str]
 
             # Get scope summary for debugging
             scope_summary = scope_service.get_scope_summary()
@@ -2029,11 +2033,12 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
 
             print(f"[UNIT_AGNOSTIC] Analyzing {len(location_counts)} locations with inventory")
 
-            # PERFORMANCE OPTIMIZATION: Bulk load all locations to avoid N+1 database queries
+            # PERFORMANCE OPTIMIZATION: Bulk load all locations into CACHED instance
             # This prevents worker timeout on large inventories (1000+ locations)
+            # The cached instance is also used by _get_location_capacity fallback path
             unique_locations = location_counts.index.tolist()
             scope_service.bulk_load_locations(unique_locations)
-            print(f"[UNIT_AGNOSTIC] Bulk loaded {len(unique_locations)} locations")
+            print(f"[UNIT_AGNOSTIC] Bulk loaded {len(unique_locations)} locations into cached instance")
 
             overcapacity_found = 0
             for location, count in location_counts.items():
@@ -2043,9 +2048,10 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 capacity = scope_service.get_location_capacity(location_str)
 
                 if capacity is None:
-                    # Fallback to traditional capacity lookup
+                    # Fallback to traditional capacity lookup (virtual engine, etc.)
+                    # Skip scope service query since we already checked it above
                     location_obj = self._find_location_by_code(location_str)
-                    capacity = self._get_location_capacity(location_obj, location_str, warehouse_context)
+                    capacity = self._get_location_capacity(location_obj, location_str, warehouse_context, skip_scope_service=True)
 
                 # Get unit type for better anomaly reporting
                 unit_type = scope_service.get_location_unit_type(location_str)
@@ -2228,7 +2234,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         
         return reverse_map[adjusted_level]
     
-    def _get_location_capacity(self, location_obj, location_str: str, warehouse_context: dict = None, is_validated: bool = None) -> int:
+    def _get_location_capacity(self, location_obj, location_str: str, warehouse_context: dict = None, is_validated: bool = None, skip_scope_service: bool = False) -> int:
         """
         Get location capacity with unit-agnostic integration and invalid location handling
 
@@ -2263,7 +2269,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         if warehouse_context and warehouse_context.get('warehouse_id'):
             warehouse_id = warehouse_context['warehouse_id']
 
-        if warehouse_id:
+        if warehouse_id and not skip_scope_service:  # Skip if already queried by caller
             try:
                 # Use CACHED scope service to avoid creating new instances per location
                 warehouse_id_str = str(warehouse_id)
@@ -2482,6 +2488,19 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         # Use virtual location engine for validation consistency
         warehouse_id = warehouse_context.get('warehouse_id') if warehouse_context else None
         virtual_engine = None
+
+        # PERFORMANCE OPTIMIZATION: Bulk load all locations for cached scope service
+        # This prevents N+1 queries when _get_location_capacity is called in the loop
+        if warehouse_id:
+            warehouse_id_str = str(warehouse_id)
+            if warehouse_id_str not in self._scope_service_cache:
+                self._scope_service_cache[warehouse_id_str] = SimpleScopeService(warehouse_id_str)
+
+            # Bulk load all unique locations from inventory
+            unique_locations = inventory_df['location'].unique().tolist()
+            self._scope_service_cache[warehouse_id_str].bulk_load_locations(unique_locations)
+            print(f"[LOCATION_DIFF] Bulk loaded {len(unique_locations)} locations into cached scope service")
+
         if warehouse_id:
             try:
                 from virtual_template_integration import get_virtual_engine_for_warehouse
