@@ -58,10 +58,19 @@ class VirtualInvalidLocationEvaluator:
         
         if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
             print(f"[{self.name}] Using warehouse_id: {warehouse_id}")
-        
-        # Get virtual location engine for this warehouse
-        virtual_engine = get_virtual_engine_for_warehouse(warehouse_id)
-        
+
+        # PERFORMANCE: Use cached virtual engine from warehouse context (avoid redundant initialization)
+        virtual_engine = warehouse_context.get('virtual_engine') if warehouse_context else None
+
+        # Fallback: Initialize if not cached (backward compatibility)
+        if not virtual_engine:
+            if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
+                print(f"[{self.name}] No cached virtual engine, initializing...")
+            virtual_engine = get_virtual_engine_for_warehouse(warehouse_id)
+        else:
+            if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
+                print(f"[{self.name}] ✅ Using cached virtual engine")
+
         if not virtual_engine:
             if self.logger.should_log(LogLevel.DIAGNOSTIC, LogCategory.VIRTUAL_ENGINE):
                 print(f"[{self.name}] ❌ No virtual engine available for warehouse {warehouse_id} - falling back to basic validation")
