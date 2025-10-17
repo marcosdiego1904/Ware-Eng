@@ -11,7 +11,10 @@
       "Bash(done)",
       "Bash(timeout 5 python:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 10 bash:*)"
     ],
     "deny": [],
     "ask": [],
