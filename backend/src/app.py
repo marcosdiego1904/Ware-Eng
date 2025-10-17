@@ -490,6 +490,19 @@ app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 print(f"Using PostgreSQL database")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Connection pooling configuration for PostgreSQL performance
+# This optimizes database connection reuse and reduces connection overhead
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_size': 10,            # Base connection pool size
+    'max_overflow': 20,          # Additional connections under load
+    'pool_pre_ping': True,       # Verify connections before use
+    'pool_recycle': 3600,        # Recycle connections after 1 hour
+    'echo_pool': False,          # Disable pool logging in production
+    'pool_timeout': 30,          # Wait 30s for available connection
+}
+print(f"[DB_CONFIG] Connection pooling configured: pool_size=10, max_overflow=20")
+
 # Import shared database instance
 from database import db
 db.init_app(app)

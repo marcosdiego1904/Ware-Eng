@@ -465,7 +465,46 @@ class RuleEngine:
             except Exception as e:
                 print(f"[RULE_ENGINE_V2] Warehouse context resolution failed: {e}")
                 warehouse_context = {'warehouse_id': None, 'confidence': 'RESOLVER_ERROR', 'coverage': 0.0}
-        
+
+        # PERFORMANCE OPTIMIZATION: Initialize LocationRepository for bulk location loading
+        # This eliminates N+1 query problem by loading all locations in SINGLE query
+        warehouse_id = warehouse_context.get('warehouse_id') if warehouse_context else None
+        if warehouse_id:
+            try:
+                from services.location_repository import LocationRepository
+                from database import db
+
+                # Get all unique locations from inventory for bulk loading
+                unique_locations = inventory_df['location'].unique().tolist()
+
+                # Create repository for this warehouse
+                location_repository = LocationRepository(
+                    warehouse_id=str(warehouse_id),
+                    db_session=db.session
+                )
+
+                # CRITICAL: Bulk load all locations in SINGLE query
+                location_repository.bulk_load_locations(unique_locations)
+
+                # Add repository to warehouse context for evaluators
+                warehouse_context['location_repository'] = location_repository
+
+                # Log performance stats
+                stats = location_repository.get_cache_stats()
+                print(f"[LOCATION_REPO] ✅ Initialized and loaded {stats['total_cached']} locations in {stats['load_time_ms']}ms")
+                print(f"[LOCATION_REPO] Special locations: {stats['special_locations']}")
+
+            except Exception as e:
+                print(f"[LOCATION_REPO] ❌ Failed to initialize LocationRepository: {e}")
+                print(f"[LOCATION_REPO] Evaluators will fall back to direct queries (degraded performance)")
+                # Set to None to signal evaluators to use fallback
+                if warehouse_context:
+                    warehouse_context['location_repository'] = None
+        else:
+            print(f"[LOCATION_REPO] No warehouse_id available - skipping repository initialization")
+            if warehouse_context:
+                warehouse_context['location_repository'] = None
+
         for i, rule in enumerate(rules, 1):
             rule_precedence = getattr(rule, 'precedence_level', 4)
             precedence_name = getattr(rule, 'get_precedence_name', lambda: f"Level {rule_precedence}")()
