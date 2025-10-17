@@ -40,6 +40,7 @@ class SimpleScopeService:
         self.warehouse_id = warehouse_id
         self._config_cache = None
         self._locations_cache = {}
+        self._bulk_loaded = False
 
     def filter_inventory_to_scope(self, inventory_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """
@@ -118,9 +119,11 @@ class SimpleScopeService:
         if not location_code:
             return self._get_default_unit_type()
 
-        # Check cache first
+        # Check cache first - use .get() to safely handle incomplete cache entries
         if location_code in self._locations_cache:
-            return self._locations_cache[location_code]['unit_type']
+            cached_unit_type = self._locations_cache[location_code].get('unit_type')
+            if cached_unit_type is not None:
+                return cached_unit_type
 
         # Query database for location record
         try:
@@ -170,9 +173,11 @@ class SimpleScopeService:
         if not location_code:
             return None
 
-        # Check cache first
+        # Check cache first - use .get() to safely handle incomplete cache entries
         if location_code in self._locations_cache:
-            return self._locations_cache[location_code]['capacity']
+            cached_capacity = self._locations_cache[location_code].get('capacity')
+            if cached_capacity is not None:
+                return cached_capacity
 
         # Query database
         try:
@@ -184,11 +189,14 @@ class SimpleScopeService:
 
             if location_record:
                 capacity = location_record.capacity
+                unit_type = location_record.unit_type or self._get_default_unit_type()
 
-                # Update cache
+                # Update cache with BOTH fields to maintain consistency
                 if location_code not in self._locations_cache:
                     self._locations_cache[location_code] = {}
+
                 self._locations_cache[location_code]['capacity'] = capacity
+                self._locations_cache[location_code]['unit_type'] = unit_type
 
                 return capacity
 
@@ -322,7 +330,67 @@ class SimpleScopeService:
         """Clear internal caches (useful for testing or configuration updates)"""
         self._config_cache = None
         self._locations_cache = {}
+        self._bulk_loaded = False
         logger.info(f"[SCOPE] Cleared cache for warehouse {self.warehouse_id}")
+
+    def bulk_load_locations(self, location_codes: List[str]) -> None:
+        """
+        Bulk load location data for multiple locations at once to avoid N+1 queries.
+
+        This dramatically improves performance when processing large inventories by
+        replacing 1000+ individual queries with a single batch query.
+
+        Args:
+            location_codes (List[str]): List of location codes to preload
+        """
+        if self._bulk_loaded or not location_codes:
+            return
+
+        # Get unique location codes that aren't already cached
+        uncached_codes = [
+            str(code).strip() for code in location_codes
+            if str(code).strip() and str(code).strip() not in self._locations_cache
+        ]
+
+        if not uncached_codes:
+            self._bulk_loaded = True
+            return
+
+        logger.info(f"[SCOPE] Bulk loading {len(uncached_codes)} locations for warehouse {self.warehouse_id}")
+
+        try:
+            from app import db
+
+            # Single batch query for all locations
+            location_records = db.session.query(Location).filter(
+                Location.code.in_(uncached_codes),
+                Location.warehouse_id == self.warehouse_id
+            ).all()
+
+            # Cache all results
+            default_unit_type = self._get_default_unit_type()
+            for record in location_records:
+                self._locations_cache[record.code] = {
+                    'unit_type': record.unit_type or default_unit_type,
+                    'capacity': record.capacity
+                }
+
+            # For locations not found in DB, cache defaults
+            found_codes = {record.code for record in location_records}
+            for code in uncached_codes:
+                if code not in found_codes:
+                    self._locations_cache[code] = {
+                        'unit_type': default_unit_type,
+                        'capacity': None
+                    }
+
+            self._bulk_loaded = True
+            logger.info(f"[SCOPE] Bulk loaded {len(location_records)} location records, {len(uncached_codes) - len(location_records)} defaults")
+
+        except Exception as e:
+            logger.error(f"[SCOPE] Failed to bulk load locations: {e}")
+            # Don't mark as bulk_loaded so it can retry later
+            pass
 
 
 # Utility functions for external use

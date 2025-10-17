@@ -1837,6 +1837,8 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         except ImportError:
             from location_classification_service import LocationClassificationService
         self.location_classifier = LocationClassificationService()
+        # Cache for scope service instances to avoid recreating them per location
+        self._scope_service_cache = {}
     
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
@@ -2026,6 +2028,12 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             location_counts = inventory_df['location'].value_counts()
 
             print(f"[UNIT_AGNOSTIC] Analyzing {len(location_counts)} locations with inventory")
+
+            # PERFORMANCE OPTIMIZATION: Bulk load all locations to avoid N+1 database queries
+            # This prevents worker timeout on large inventories (1000+ locations)
+            unique_locations = location_counts.index.tolist()
+            scope_service.bulk_load_locations(unique_locations)
+            print(f"[UNIT_AGNOSTIC] Bulk loaded {len(unique_locations)} locations")
 
             overcapacity_found = 0
             for location, count in location_counts.items():
@@ -2257,8 +2265,12 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
 
         if warehouse_id:
             try:
-                # Use scope service to get location capacity with unit type awareness
-                scope_service = SimpleScopeService(str(warehouse_id))
+                # Use CACHED scope service to avoid creating new instances per location
+                warehouse_id_str = str(warehouse_id)
+                if warehouse_id_str not in self._scope_service_cache:
+                    self._scope_service_cache[warehouse_id_str] = SimpleScopeService(warehouse_id_str)
+                scope_service = self._scope_service_cache[warehouse_id_str]
+
                 scope_capacity = scope_service.get_location_capacity(location_str)
 
                 if scope_capacity is not None:
