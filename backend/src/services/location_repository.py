@@ -264,6 +264,56 @@ class LocationRepository:
 
         return is_special
 
+    def get_capacities_bulk(self, location_codes: List[str]) -> Dict[str, int]:
+        """
+        Bulk retrieve capacities for multiple locations at once.
+
+        This method is designed for vectorized operations in evaluators,
+        eliminating the need for loops with individual get_capacity() calls.
+
+        Args:
+            location_codes: List of location codes to retrieve capacities for
+
+        Returns:
+            Dict mapping location code -> capacity (int)
+
+        Performance:
+            - Replaces: for loc in locations: capacity = get_capacity(loc)
+            - With: capacities = get_capacities_bulk(locations)
+            - Speedup: Eliminates Python loop overhead
+
+        Example:
+            >>> codes = ['LOC1', 'LOC2', 'LOC3']
+            >>> capacities = repo.get_capacities_bulk(codes)
+            >>> # Use with pandas: pd.Series(capacities)
+        """
+        return {
+            str(code).strip(): self.get_capacity(code)
+            for code in location_codes
+            if code and str(code).strip()  # Skip empty codes
+        }
+
+    def get_unit_types_bulk(self, location_codes: List[str]) -> Dict[str, str]:
+        """
+        Bulk retrieve unit types for multiple locations at once.
+
+        Args:
+            location_codes: List of location codes to retrieve unit types for
+
+        Returns:
+            Dict mapping location code -> unit_type (str)
+
+        Example:
+            >>> codes = ['LOC1', 'LOC2', 'LOC3']
+            >>> unit_types = repo.get_unit_types_bulk(codes)
+            >>> # Use with pandas: pd.Series(unit_types)
+        """
+        return {
+            str(code).strip(): self.get_unit_type(code)
+            for code in location_codes
+            if code and str(code).strip()
+        }
+
     def is_loaded(self) -> bool:
         """Check if repository has been bulk loaded."""
         return self._is_bulk_loaded

@@ -218,6 +218,57 @@ class SimpleScopeService:
         excluded_patterns = self._get_excluded_patterns()
         return not self._is_location_excluded(str(location_code), excluded_patterns)
 
+    def get_capacities_bulk(self, location_codes: List[str]) -> Dict[str, Optional[int]]:
+        """
+        Bulk retrieve capacities for multiple locations at once.
+
+        This method is designed for vectorized operations in evaluators,
+        eliminating the need for loops with individual get_location_capacity() calls.
+
+        Args:
+            location_codes: List of location codes to retrieve capacities for
+
+        Returns:
+            Dict mapping location code -> capacity (Optional[int])
+            None values indicate locations not found or without capacity
+
+        Performance:
+            - Replaces: for loc in locations: capacity = get_location_capacity(loc)
+            - With: capacities = get_capacities_bulk(locations)
+            - Use with pandas: capacities_series = pd.Series(capacities_dict)
+
+        Example:
+            >>> codes = ['LOC1', 'LOC2', 'LOC3']
+            >>> capacities = scope_service.get_capacities_bulk(codes)
+            >>> capacities_series = pd.Series(capacities)
+        """
+        return {
+            str(code).strip(): self.get_location_capacity(code)
+            for code in location_codes
+            if code
+        }
+
+    def get_unit_types_bulk(self, location_codes: List[str]) -> Dict[str, str]:
+        """
+        Bulk retrieve unit types for multiple locations at once.
+
+        Args:
+            location_codes: List of location codes to retrieve unit types for
+
+        Returns:
+            Dict mapping location code -> unit_type (str)
+
+        Example:
+            >>> codes = ['LOC1', 'LOC2', 'LOC3']
+            >>> unit_types = scope_service.get_unit_types_bulk(codes)
+            >>> unit_types_series = pd.Series(unit_types)
+        """
+        return {
+            str(code).strip(): self.get_location_unit_type(code)
+            for code in location_codes
+            if code
+        }
+
     def get_scope_summary(self) -> Dict:
         """
         Get a summary of the current scope configuration.
