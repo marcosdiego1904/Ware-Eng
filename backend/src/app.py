@@ -1906,6 +1906,7 @@ def create_analysis_report(current_user):
             
             db.session.add(new_report)
             db.session.flush()
+            print(f"[DB] Report {new_report.id} created and flushed, adding {len(anomalies)} anomalies...")
 
             for item in anomalies:
                 anomaly = Anomaly()
@@ -1930,8 +1931,15 @@ def create_analysis_report(current_user):
                     anomaly.details = None
                 anomaly.report_id = new_report.id
                 db.session.add(anomaly)
-                
+
+            # CRITICAL: Ensure all changes are flushed before committing
+            print(f"[DB] Flushing all {len(anomalies)} anomalies to database...")
+            db.session.flush()
+
+            # CRITICAL: Explicit commit to make data visible immediately
+            print(f"[DB] Committing transaction for report {new_report.id}...")
             db.session.commit()
+            print(f"[DB] ✅ Transaction committed successfully - report {new_report.id} is now visible")
         except Exception as db_error:
             db.session.rollback()
             raise db_error

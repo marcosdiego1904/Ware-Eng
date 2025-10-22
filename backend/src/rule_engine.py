@@ -2217,20 +2217,52 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             print(f"[UNIT_AGNOSTIC] Found {len(overcapacity_locations)} overcapacity locations (vectorized detection)")
 
             # Step 5: Pre-group DataFrame for O(1) location lookups (CRITICAL OPTIMIZATION)
-            # Avoids 105 DataFrame filtering operations (105 × 55ms = 5,775ms)
-            # Instead: Single groupby (200ms) + 105 fast lookups (0.5ms each)
-            grouped_inventory = inventory_df.groupby('location')
+            # FIX: Ensure type consistency to prevent get_group() KeyError failures
+            import time
+
+            # Create copy and ensure location column is string type
+            inventory_df_typed = inventory_df.copy()
+            inventory_df_typed['location'] = inventory_df_typed['location'].astype(str)
+
+            # Group with timing instrumentation
+            t_groupby_start = time.time()
+            grouped_inventory = inventory_df_typed.groupby('location')
+            t_groupby_end = time.time()
+            groupby_time_ms = (t_groupby_end - t_groupby_start) * 1000
+            print(f"[PERF] DataFrame groupby completed in {groupby_time_ms:.0f}ms for {len(inventory_df_typed)} rows")
 
             # Step 6: Loop through ONLY overcapacity locations (105, not 845!)
-            # With pre-grouped DataFrame, each iteration is now fast
+            # With pre-grouped DataFrame and exception handling for robustness
+            groupby_successes = 0
+            filter_fallbacks = 0
+
             for i, (location, count) in enumerate(overcapacity_locations.items()):
-                location_str = str(location)
+                location_str = str(location).strip()  # Ensure string and strip whitespace
                 capacity = capacities[location]
                 unit_type = unit_types[location]
                 excess = count - capacity
 
-                # Get representative pallet from pre-grouped data (O(1) lookup)
-                location_items = grouped_inventory.get_group(location)
+                # Get representative pallet with exception handling
+                t_lookup_start = time.time()
+                try:
+                    location_items = grouped_inventory.get_group(location_str)
+                    lookup_method = "groupby"
+                    groupby_successes += 1
+                except KeyError:
+                    # Fallback: Direct filter (slower but guarantees result)
+                    location_items = inventory_df_typed[inventory_df_typed['location'] == location_str]
+                    lookup_method = "filter_fallback"
+                    filter_fallbacks += 1
+                    if i < 3:
+                        print(f"[PERF] WARNING: get_group() KeyError for '{location_str}', using filter fallback")
+
+                t_lookup_end = time.time()
+                lookup_time_ms = (t_lookup_end - t_lookup_start) * 1000
+
+                # Log first few for diagnostics
+                if i < 3:
+                    print(f"[PERF] Location '{location_str}': {lookup_method} took {lookup_time_ms:.1f}ms")
+
                 representative_item = location_items.iloc[0]
 
                 anomaly = {
@@ -2252,6 +2284,12 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                     print(f"[UNIT_AGNOSTIC] OVERCAPACITY: {location_str} has {count}/{capacity} {unit_type} (+{excess} excess)")
                 elif i == 3:
                     print(f"[UNIT_AGNOSTIC] ... (additional overcapacity locations found, details in results)")
+
+            # Performance summary
+            print(f"[PERF] Lookup summary: {groupby_successes} groupby hits, {filter_fallbacks} filter fallbacks")
+            if filter_fallbacks > 0:
+                fallback_pct = (filter_fallbacks / len(overcapacity_locations)) * 100
+                print(f"[PERF] WARNING: {fallback_pct:.1f}% of lookups used slow filter fallback!")
 
             # ========== END VECTORIZED DETECTION ==========
 
