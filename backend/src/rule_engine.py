@@ -2231,65 +2231,61 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             groupby_time_ms = (t_groupby_end - t_groupby_start) * 1000
             print(f"[PERF] DataFrame groupby completed in {groupby_time_ms:.0f}ms for {len(inventory_df_typed)} rows")
 
-            # Step 6: Loop through ONLY overcapacity locations (105, not 845!)
-            # With pre-grouped DataFrame and exception handling for robustness
-            groupby_successes = 0
-            filter_fallbacks = 0
+            # Step 6: VECTORIZED anomaly creation (eliminate Python loop overhead)
+            print(f"[PERF] Creating {len(overcapacity_locations)} anomalies using vectorized operations...")
+            t_vectorize_start = time.time()
 
-            for i, (location, count) in enumerate(overcapacity_locations.items()):
-                location_str = str(location).strip()  # Ensure string and strip whitespace
-                capacity = capacities[location]
-                unit_type = unit_types[location]
-                excess = count - capacity
+            # Phase 1: Extract representative pallets in ONE bulk operation
+            # Get first item from each location group (O(1) for all groups)
+            all_representatives = grouped_inventory.first()
 
-                # Get representative pallet with exception handling
-                t_lookup_start = time.time()
-                try:
-                    location_items = grouped_inventory.get_group(location_str)
-                    lookup_method = "groupby"
-                    groupby_successes += 1
-                except KeyError:
-                    # Fallback: Direct filter (slower but guarantees result)
-                    location_items = inventory_df_typed[inventory_df_typed['location'] == location_str]
-                    lookup_method = "filter_fallback"
-                    filter_fallbacks += 1
-                    if i < 3:
-                        print(f"[PERF] WARNING: get_group() KeyError for '{location_str}', using filter fallback")
+            # Filter to only overcapacity locations
+            overcap_representatives = all_representatives.loc[overcapacity_locations.index]
 
-                t_lookup_end = time.time()
-                lookup_time_ms = (t_lookup_end - t_lookup_start) * 1000
+            # Phase 2: Build metadata DataFrame (vectorized operations)
+            anomalies_df = pd.DataFrame({
+                'pallet_id': overcap_representatives['pallet_id'].values,
+                'location': overcapacity_locations.index.astype(str),
+                'anomaly_type': 'Overcapacity',
+                'priority': rule.priority,
+                'affected_pallets': overcapacity_locations.values,
+                'capacity': capacities[overcapacity_locations.index].values,
+                'unit_type': unit_types[overcapacity_locations.index].values,
+            })
 
-                # Log first few for diagnostics
-                if i < 3:
-                    print(f"[PERF] Location '{location_str}': {lookup_method} took {lookup_time_ms:.1f}ms")
+            # Calculate excess (vectorized)
+            anomalies_df['excess_pallets'] = anomalies_df['affected_pallets'] - anomalies_df['capacity']
 
-                representative_item = location_items.iloc[0]
+            # Phase 3: Vectorized string formatting (NO f-strings in loop!)
+            anomalies_df['details'] = (
+                "Location '" + anomalies_df['location'] + "' has " +
+                anomalies_df['affected_pallets'].astype(str) + " " + anomalies_df['unit_type'] +
+                " (capacity: " + anomalies_df['capacity'].astype(str) +
+                ", +" + anomalies_df['excess_pallets'].astype(str) + " excess)"
+            )
 
-                anomaly = {
-                    'pallet_id': representative_item['pallet_id'],
-                    'location': location_str,
-                    'anomaly_type': 'Overcapacity',
-                    'priority': rule.priority,
-                    'details': f"Location '{location_str}' has {count} {unit_type} (capacity: {capacity}, +{excess} excess)",
-                    'affected_pallets': count,
-                    'excess_pallets': excess,
-                    'unit_type': unit_type,
-                    'capacity_source': 'scope_service' if location_str in capacities_dict else 'fallback'
-                }
+            # Phase 4: Capacity source determination (vectorized)
+            # Create a mask for locations that came from scope_service
+            anomalies_df['capacity_source'] = 'fallback'  # Default
+            scope_locations_mask = anomalies_df['location'].isin(capacities_dict.keys())
+            anomalies_df.loc[scope_locations_mask, 'capacity_source'] = 'scope_service'
 
-                anomalies.append(anomaly)
+            # Phase 5: Convert to list of dicts in ONE operation
+            anomalies = anomalies_df.to_dict('records')
 
-                # Print only first few overcapacity locations to reduce log spam
-                if i < 3:
-                    print(f"[UNIT_AGNOSTIC] OVERCAPACITY: {location_str} has {count}/{capacity} {unit_type} (+{excess} excess)")
-                elif i == 3:
-                    print(f"[UNIT_AGNOSTIC] ... (additional overcapacity locations found, details in results)")
+            t_vectorize_end = time.time()
+            vectorize_time_ms = (t_vectorize_end - t_vectorize_start) * 1000
 
-            # Performance summary
-            print(f"[PERF] Lookup summary: {groupby_successes} groupby hits, {filter_fallbacks} filter fallbacks")
-            if filter_fallbacks > 0:
-                fallback_pct = (filter_fallbacks / len(overcapacity_locations)) * 100
-                print(f"[PERF] WARNING: {fallback_pct:.1f}% of lookups used slow filter fallback!")
+            # Performance metrics
+            print(f"[PERF] ✅ Vectorized anomaly creation completed in {vectorize_time_ms:.0f}ms")
+            print(f"[PERF] Average time per anomaly: {vectorize_time_ms / len(anomalies):.2f}ms (was ~45ms with Python loop)")
+
+            # Sample output for verification (first 3)
+            for i in range(min(3, len(anomalies))):
+                a = anomalies[i]
+                print(f"[UNIT_AGNOSTIC] OVERCAPACITY: {a['location']} has {a['affected_pallets']}/{a['capacity']} {a['unit_type']} (+{a['excess_pallets']} excess)")
+            if len(anomalies) > 3:
+                print(f"[UNIT_AGNOSTIC] ... (additional {len(anomalies) - 3} overcapacity locations found, details in results)")
 
             # ========== END VECTORIZED DETECTION ==========
 
