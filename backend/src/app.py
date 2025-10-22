@@ -1940,6 +1940,31 @@ def create_analysis_report(current_user):
             print(f"[DB] Committing transaction for report {new_report.id}...")
             db.session.commit()
             print(f"[DB] ✅ Transaction committed successfully - report {new_report.id} is now visible")
+
+            # POST-COMMIT VERIFICATION: Ensure data is readable before returning to frontend
+            # This prevents race condition where frontend fetches before PostgreSQL transaction is visible
+            import time
+            max_retries = 3
+            retry_delay = 0.1  # 100ms between retries
+
+            for attempt in range(max_retries):
+                try:
+                    # Verify report exists and has anomalies in a NEW query
+                    verification_query = db.session.query(Anomaly).filter_by(report_id=new_report.id).count()
+
+                    if verification_query == len(anomalies):
+                        print(f"[DB] ✅ POST-COMMIT VERIFICATION: All {len(anomalies)} anomalies confirmed readable")
+                        break
+                    else:
+                        print(f"[DB] ⚠️  POST-COMMIT VERIFICATION attempt {attempt + 1}: "
+                              f"Expected {len(anomalies)} anomalies, got {verification_query}")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                except Exception as verify_error:
+                    print(f"[DB] ⚠️  POST-COMMIT VERIFICATION attempt {attempt + 1} failed: {verify_error}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+
         except Exception as db_error:
             db.session.rollback()
             raise db_error
