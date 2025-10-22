@@ -1654,7 +1654,7 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
     def evaluate(self, rule: Rule, inventory_df: pd.DataFrame, warehouse_context: dict = None) -> List[Dict[str, Any]]:
         conditions = self._parse_conditions(rule)
         parameters = self._parse_parameters(rule)
-        
+
         # Parse different condition formats
         time_threshold_hours = conditions.get('time_threshold_hours', 10)
         max_days_in_location = conditions.get('max_days_in_location')
@@ -1667,6 +1667,12 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
         # Convert max_days_in_location to hours if specified
         if max_days_in_location is not None:
             time_threshold_hours = max_days_in_location * 24
+
+        # ==================== DETAILED LOGGING START ====================
+        print(f"[STAGNANT_DEBUG] ==================== STAGNANT PALLETS EVALUATION ====================")
+        print(f"[STAGNANT_DEBUG] Total pallets to evaluate: {len(inventory_df)}")
+        print(f"[STAGNANT_DEBUG] Time threshold: {time_threshold_hours}h")
+        print(f"[STAGNANT_DEBUG] Location criteria: location_types={location_types}, patterns={location_patterns}, excluded={excluded_patterns}")
 
         anomalies = []
         now = datetime.now()
@@ -1686,16 +1692,37 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
             print(f"[STAGNANT_PALLETS] Converting location_types to patterns: {location_types}")
             patterns = self._get_patterns_for_location_types(location_types)
             valid_pallets = self._filter_by_location_patterns(inventory_df, patterns)
-        
+
+        print(f"[STAGNANT_DEBUG] Pallets matching location criteria: {len(valid_pallets)}")
+
+        # Show location distribution
+        if len(valid_pallets) > 0:
+            location_counts = valid_pallets['location'].value_counts()
+            print(f"[STAGNANT_DEBUG] Location distribution (top 10):")
+            for loc, count in location_counts.head(10).items():
+                print(f"[STAGNANT_DEBUG]   {loc}: {count} pallets")
+
+        print(f"[STAGNANT_DEBUG] -------------------- EVALUATING PALLETS --------------------")
+
+        evaluated_count = 0
+        skipped_no_date = 0
+        below_threshold_count = 0
+
         for _, pallet in valid_pallets.iterrows():
+            evaluated_count += 1
+
             if pd.isna(pallet.get('creation_date')):
+                skipped_no_date += 1
                 continue
 
             time_diff = now - pallet['creation_date']
+            age_hours = time_diff.total_seconds() / 3600
 
             if time_diff > timedelta(hours=time_threshold_hours):
                 # Determine location category from location pattern for reporting
                 location_category = self._get_location_category(pallet['location'])
+
+                print(f"[STAGNANT_DEBUG] ✅ ANOMALY #{len(anomalies)+1}: Pallet '{pallet['pallet_id']}' in '{pallet['location']}' (age: {age_hours:.1f}h > {time_threshold_hours}h)")
 
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
@@ -1704,7 +1731,81 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
                     'priority': rule.priority,
                     'issue_description': f"Pallet in {location_category} location '{pallet['location']}' for {time_diff.total_seconds()/3600:.1f}h (threshold: {time_threshold_hours:.1f}h)"
                 })
-        
+            else:
+                below_threshold_count += 1
+
+        # ==================== SUMMARY STATISTICS ====================
+        print(f"[STAGNANT_DEBUG] ==================== EVALUATION SUMMARY ====================")
+        print(f"[STAGNANT_DEBUG] Total pallets evaluated: {evaluated_count}")
+        print(f"[STAGNANT_DEBUG] Skipped (no creation_date): {skipped_no_date}")
+        print(f"[STAGNANT_DEBUG] Below threshold: {below_threshold_count}")
+        print(f"[STAGNANT_DEBUG] Anomalies detected: {len(anomalies)}")
+
+        # Pattern breakdown analysis
+        if len(anomalies) > 0:
+            print(f"[STAGNANT_DEBUG] -------------------- PATTERN BREAKDOWN --------------------")
+
+            # Analyze pallet ID patterns
+            pattern_counts = {
+                'STAGNANT-': 0,
+                'OVERCAP-': 0,
+                'LOT.*-STRAGGLER': 0,
+                'AISLE-STUCK-': 0,
+                'DUPLICATE-': 0,
+                'INVALID-': 0,
+                'PLT-': 0,
+                'OTHER': 0
+            }
+
+            for anomaly in anomalies:
+                pallet_id = anomaly['pallet_id']
+                matched = False
+
+                if 'STAGNANT-' in pallet_id:
+                    pattern_counts['STAGNANT-'] += 1
+                    matched = True
+                elif 'OVERCAP-' in pallet_id:
+                    pattern_counts['OVERCAP-'] += 1
+                    matched = True
+                elif 'STRAGGLER' in pallet_id:
+                    pattern_counts['LOT.*-STRAGGLER'] += 1
+                    matched = True
+                elif 'AISLE-STUCK-' in pallet_id:
+                    pattern_counts['AISLE-STUCK-'] += 1
+                    matched = True
+                elif 'DUPLICATE-' in pallet_id:
+                    pattern_counts['DUPLICATE-'] += 1
+                    matched = True
+                elif 'INVALID-' in pallet_id:
+                    pattern_counts['INVALID-'] += 1
+                    matched = True
+                elif pallet_id.startswith('PLT-'):
+                    pattern_counts['PLT-'] += 1
+                    matched = True
+
+                if not matched:
+                    pattern_counts['OTHER'] += 1
+
+            print(f"[STAGNANT_DEBUG] Pallet ID pattern analysis:")
+            for pattern, count in pattern_counts.items():
+                if count > 0:
+                    percentage = (count / len(anomalies)) * 100
+                    status = "✅ INJECTED" if pattern == 'STAGNANT-' else "⚠️ CROSS-CONTAMINATION"
+                    print(f"[STAGNANT_DEBUG]   {pattern}: {count} pallets ({percentage:.1f}%) {status}")
+
+            # Location breakdown
+            anomaly_locations = {}
+            for anomaly in anomalies:
+                loc = anomaly['location']
+                anomaly_locations[loc] = anomaly_locations.get(loc, 0) + 1
+
+            print(f"[STAGNANT_DEBUG] Location breakdown:")
+            for loc, count in sorted(anomaly_locations.items(), key=lambda x: x[1], reverse=True):
+                print(f"[STAGNANT_DEBUG]   {loc}: {count} anomalies")
+
+        print(f"[STAGNANT_DEBUG] ================================================================")
+        # ==================== DETAILED LOGGING END ====================
+
         return anomalies
     
     def _assign_location_types(self, inventory_df: pd.DataFrame) -> pd.DataFrame:
@@ -3289,28 +3390,52 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
         conditions = self._parse_conditions(rule)
         time_threshold = conditions.get('time_threshold_hours', 4)
 
+        # ==================== DETAILED LOGGING START ====================
+        print(f"[AISLE_STUCK_DEBUG] ==================== LOCATION-SPECIFIC STAGNANT EVALUATION ====================")
+        print(f"[AISLE_STUCK_DEBUG] Total pallets to evaluate: {len(inventory_df)}")
+        print(f"[AISLE_STUCK_DEBUG] Time threshold: {time_threshold}h")
+        print(f"[AISLE_STUCK_DEBUG] Rule conditions: {conditions}")
+
         anomalies = []
         now = datetime.now()
 
         # ENHANCED: Get patterns from resolver if available
         location_patterns = self._get_location_patterns(conditions, warehouse_context)
 
+        print(f"[AISLE_STUCK_DEBUG] Location patterns to match: {location_patterns}")
+
         # Filter by location patterns (support multiple patterns)
         matching_pallets = self._filter_by_patterns(inventory_df, location_patterns)
 
-        # Evaluate stagnant pallets - only log if anomalies found
+        print(f"[AISLE_STUCK_DEBUG] Pallets matching location patterns: {len(matching_pallets)}")
+
+        # Show location distribution
+        if len(matching_pallets) > 0:
+            location_counts = matching_pallets['location'].value_counts()
+            print(f"[AISLE_STUCK_DEBUG] Location distribution:")
+            for loc, count in location_counts.items():
+                print(f"[AISLE_STUCK_DEBUG]   {loc}: {count} pallets")
+
+        print(f"[AISLE_STUCK_DEBUG] -------------------- EVALUATING PALLETS --------------------")
+
+        evaluated_count = 0
+        skipped_no_date = 0
+        below_threshold_count = 0
 
         for _, pallet in matching_pallets.iterrows():
+            evaluated_count += 1
+
             if pd.isna(pallet.get('creation_date')):
+                skipped_no_date += 1
                 continue
 
             time_diff = now - pallet['creation_date']
             time_diff_hours = time_diff.total_seconds() / 3600
             exceeds_threshold = time_diff > timedelta(hours=time_threshold)
 
-            # Individual pallet evaluation (logged below if anomaly found)
-
             if exceeds_threshold:
+                print(f"[AISLE_STUCK_DEBUG] ✅ ANOMALY #{len(anomalies)+1}: Pallet '{pallet['pallet_id']}' in '{pallet['location']}' (age: {time_diff_hours:.1f}h > {time_threshold}h)")
+
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
@@ -3321,6 +3446,80 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
                     'rule_name': rule.name,
                     'rule_type': rule.rule_type
                 })
+            else:
+                below_threshold_count += 1
+
+        # ==================== SUMMARY STATISTICS ====================
+        print(f"[AISLE_STUCK_DEBUG] ==================== EVALUATION SUMMARY ====================")
+        print(f"[AISLE_STUCK_DEBUG] Total pallets evaluated: {evaluated_count}")
+        print(f"[AISLE_STUCK_DEBUG] Skipped (no creation_date): {skipped_no_date}")
+        print(f"[AISLE_STUCK_DEBUG] Below threshold: {below_threshold_count}")
+        print(f"[AISLE_STUCK_DEBUG] Anomalies detected: {len(anomalies)}")
+
+        # Pattern breakdown analysis
+        if len(anomalies) > 0:
+            print(f"[AISLE_STUCK_DEBUG] -------------------- PATTERN BREAKDOWN --------------------")
+
+            # Analyze pallet ID patterns
+            pattern_counts = {
+                'AISLE-STUCK-': 0,
+                'OVERCAP-': 0,
+                'STAGNANT-': 0,
+                'LOT.*-STRAGGLER': 0,
+                'DUPLICATE-': 0,
+                'INVALID-': 0,
+                'PLT-': 0,
+                'OTHER': 0
+            }
+
+            for anomaly in anomalies:
+                pallet_id = anomaly['pallet_id']
+                matched = False
+
+                if 'AISLE-STUCK-' in pallet_id:
+                    pattern_counts['AISLE-STUCK-'] += 1
+                    matched = True
+                elif 'OVERCAP-' in pallet_id:
+                    pattern_counts['OVERCAP-'] += 1
+                    matched = True
+                elif 'STAGNANT-' in pallet_id:
+                    pattern_counts['STAGNANT-'] += 1
+                    matched = True
+                elif 'STRAGGLER' in pallet_id:
+                    pattern_counts['LOT.*-STRAGGLER'] += 1
+                    matched = True
+                elif 'DUPLICATE-' in pallet_id:
+                    pattern_counts['DUPLICATE-'] += 1
+                    matched = True
+                elif 'INVALID-' in pallet_id:
+                    pattern_counts['INVALID-'] += 1
+                    matched = True
+                elif pallet_id.startswith('PLT-'):
+                    pattern_counts['PLT-'] += 1
+                    matched = True
+
+                if not matched:
+                    pattern_counts['OTHER'] += 1
+
+            print(f"[AISLE_STUCK_DEBUG] Pallet ID pattern analysis:")
+            for pattern, count in pattern_counts.items():
+                if count > 0:
+                    percentage = (count / len(anomalies)) * 100
+                    status = "✅ INJECTED" if pattern == 'AISLE-STUCK-' else "⚠️ CROSS-CONTAMINATION"
+                    print(f"[AISLE_STUCK_DEBUG]   {pattern}: {count} pallets ({percentage:.1f}%) {status}")
+
+            # Location breakdown
+            anomaly_locations = {}
+            for anomaly in anomalies:
+                loc = anomaly['location']
+                anomaly_locations[loc] = anomaly_locations.get(loc, 0) + 1
+
+            print(f"[AISLE_STUCK_DEBUG] Location breakdown:")
+            for loc, count in sorted(anomaly_locations.items(), key=lambda x: x[1], reverse=True):
+                print(f"[AISLE_STUCK_DEBUG]   {loc}: {count} anomalies")
+
+        print(f"[AISLE_STUCK_DEBUG] ================================================================")
+        # ==================== DETAILED LOGGING END ====================
 
         if len(anomalies) > 0:
             print(f"[PATTERN_RESOLVER] LocationSpecificStagnantEvaluator found {len(anomalies)} anomalies")

@@ -14,7 +14,11 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(curl:*)",
-      "Bash(timeout 10 bash:*)"
+      "Bash(timeout 10 bash:*)",
+      "WebSearch",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:simonwillison.net)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": [],
