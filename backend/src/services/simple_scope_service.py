@@ -242,11 +242,59 @@ class SimpleScopeService:
             >>> capacities = scope_service.get_capacities_bulk(codes)
             >>> capacities_series = pd.Series(capacities)
         """
-        return {
-            str(code).strip(): self.get_location_capacity(code)
-            for code in location_codes
-            if code
-        }
+        # OPTIMIZED: Direct cache access + single bulk DB query
+        result = {}
+        uncached_codes = []
+
+        # Phase 1: Extract from cache (fast)
+        for code in location_codes:
+            if not code:
+                continue
+
+            code_str = str(code).strip()
+            if not code_str:
+                continue
+
+            # Check cache first
+            if code_str in self._locations_cache:
+                cached_capacity = self._locations_cache[code_str].get('capacity')
+                if cached_capacity is not None:
+                    result[code_str] = cached_capacity
+                    continue
+
+            # Mark for DB lookup
+            uncached_codes.append(code_str)
+
+        # Phase 2: Bulk DB query for uncached (if any)
+        if uncached_codes:
+            try:
+                from app import db
+                # SINGLE bulk query instead of N individual queries
+                location_records = db.session.query(Location).filter(
+                    Location.code.in_(uncached_codes),
+                    Location.warehouse_id == self.warehouse_id
+                ).all()
+
+                # Cache and return results
+                for location_record in location_records:
+                    capacity = location_record.capacity
+                    unit_type = location_record.unit_type or self._get_default_unit_type()
+
+                    # Update cache
+                    if location_record.code not in self._locations_cache:
+                        self._locations_cache[location_record.code] = {}
+
+                    self._locations_cache[location_record.code]['capacity'] = capacity
+                    self._locations_cache[location_record.code]['unit_type'] = unit_type
+
+                    # Add to result
+                    if capacity is not None:
+                        result[location_record.code] = capacity
+
+            except Exception as e:
+                logger.warning(f"[SCOPE] Bulk capacity query failed: {e}")
+
+        return result
 
     def get_unit_types_bulk(self, location_codes: List[str]) -> Dict[str, str]:
         """
@@ -263,11 +311,74 @@ class SimpleScopeService:
             >>> unit_types = scope_service.get_unit_types_bulk(codes)
             >>> unit_types_series = pd.Series(unit_types)
         """
-        return {
-            str(code).strip(): self.get_location_unit_type(code)
-            for code in location_codes
-            if code
-        }
+        # OPTIMIZED: Direct cache access + single bulk DB query
+        result = {}
+        uncached_codes = []
+        default_unit_type = self._get_default_unit_type()
+
+        # Phase 1: Extract from cache (fast)
+        for code in location_codes:
+            if not code:
+                continue
+
+            code_str = str(code).strip()
+            if not code_str:
+                continue
+
+            # Check cache first
+            if code_str in self._locations_cache:
+                cached_unit_type = self._locations_cache[code_str].get('unit_type')
+                if cached_unit_type is not None:
+                    result[code_str] = cached_unit_type
+                    continue
+
+            # Mark for DB lookup
+            uncached_codes.append(code_str)
+
+        # Phase 2: Bulk DB query for uncached (if any)
+        if uncached_codes:
+            try:
+                from app import db
+                # SINGLE bulk query instead of N individual queries
+                location_records = db.session.query(Location).filter(
+                    Location.code.in_(uncached_codes),
+                    Location.warehouse_id == self.warehouse_id
+                ).all()
+
+                # Cache and return results
+                found_codes = set()
+                for location_record in location_records:
+                    unit_type = location_record.unit_type or default_unit_type
+                    capacity = location_record.capacity
+
+                    # Update cache
+                    if location_record.code not in self._locations_cache:
+                        self._locations_cache[location_record.code] = {}
+
+                    self._locations_cache[location_record.code]['unit_type'] = unit_type
+                    self._locations_cache[location_record.code]['capacity'] = capacity
+
+                    # Add to result
+                    result[location_record.code] = unit_type
+                    found_codes.add(location_record.code)
+
+                # Handle codes not found in DB - use default
+                for code_str in uncached_codes:
+                    if code_str not in found_codes:
+                        result[code_str] = default_unit_type
+                        # Cache the fallback
+                        if code_str not in self._locations_cache:
+                            self._locations_cache[code_str] = {}
+                        self._locations_cache[code_str]['unit_type'] = default_unit_type
+
+            except Exception as e:
+                logger.warning(f"[SCOPE] Bulk unit_type query failed: {e}")
+                # Fallback: use default for all uncached
+                for code_str in uncached_codes:
+                    if code_str not in result:
+                        result[code_str] = default_unit_type
+
+        return result
 
     def get_scope_summary(self) -> Dict:
         """
