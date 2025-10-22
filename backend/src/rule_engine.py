@@ -2194,13 +2194,21 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 none_locations = capacities[none_mask].index.tolist()
                 print(f"[UNIT_AGNOSTIC] {len(none_locations)} locations need fallback capacity lookup")
 
-                # Fallback for locations with None capacity
-                for loc_code in none_locations:
-                    location_obj = self._find_location_by_code(str(loc_code))
-                    fallback_capacity = self._get_location_capacity(
-                        location_obj, str(loc_code), warehouse_context, skip_scope_service=True
-                    )
-                    capacities[loc_code] = fallback_capacity
+                # PERFORMANCE: Use LocationRepository for vectorized fallback (if available)
+                if warehouse_context and warehouse_context.get('location_repository'):
+                    location_repository = warehouse_context['location_repository']
+                    fallback_dict = location_repository.get_capacities_bulk(none_locations)
+                    capacities.update(pd.Series(fallback_dict))
+                    print(f"[UNIT_AGNOSTIC] Bulk fallback complete using LocationRepository")
+                else:
+                    # Fallback to individual lookups (only if LocationRepository unavailable)
+                    print(f"[UNIT_AGNOSTIC] WARNING: No LocationRepository, using individual fallback (slow)")
+                    for loc_code in none_locations:
+                        location_obj = self._find_location_by_code(str(loc_code))
+                        fallback_capacity = self._get_location_capacity(
+                            location_obj, str(loc_code), warehouse_context, skip_scope_service=True
+                        )
+                        capacities[loc_code] = fallback_capacity
 
             # Step 4: Vectorized overcapacity detection (FAST - single comparison operation)
             overcapacity_mask = location_counts > capacities
