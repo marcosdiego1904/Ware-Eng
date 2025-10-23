@@ -150,6 +150,10 @@ export function NewAnalysisView() {
   }
 
   const handleProcessingComplete = () => {
+    // Trigger overview refresh to fetch new analysis data
+    const { triggerOverviewRefresh } = useDashboardStore.getState()
+    triggerOverviewRefresh()
+
     // Redirect to the dashboard overview to show Smart Landing Hub
     setCurrentView('overview')
   }

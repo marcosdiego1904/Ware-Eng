@@ -60,6 +60,9 @@ interface DashboardState {
   actionCenterPreselectedCategory?: string;
   reportToOpen?: { reportId: number; tab?: 'business-intelligence' | 'analytics' };
 
+  // Refresh trigger for overview data
+  lastAnalysisTimestamp: number;
+
   setCurrentView: (view: DashboardState['currentView']) => void;
   setLoading: (loading: boolean) => void;
   setReports: (reports: Report[]) => void;
@@ -73,6 +76,9 @@ interface DashboardState {
   // Navigation actions
   setActionCenterPreselectedCategory: (categoryId?: string) => void;
   setReportToOpen: (reportData?: { reportId: number; tab?: 'business-intelligence' | 'analytics' }) => void;
+
+  // Refresh action
+  triggerOverviewRefresh: () => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -88,6 +94,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   // Navigation state
   actionCenterPreselectedCategory: undefined,
   reportToOpen: undefined,
+
+  // Refresh trigger
+  lastAnalysisTimestamp: 0,
 
   setCurrentView: (view) => set({ currentView: view }),
   setLoading: (loading) => set({ isLoading: loading }),
@@ -111,4 +120,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   // Navigation actions
   setActionCenterPreselectedCategory: (categoryId) => set({ actionCenterPreselectedCategory: categoryId }),
   setReportToOpen: (reportData) => set({ reportToOpen: reportData }),
+
+  // Refresh action - triggers overview to refetch data
+  triggerOverviewRefresh: () => set({ lastAnalysisTimestamp: Date.now() }),
 }));

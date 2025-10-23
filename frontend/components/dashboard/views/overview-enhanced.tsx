@@ -25,7 +25,7 @@ interface QuickFixAction {
 }
 
 export function EnhancedOverviewView() {
-  const { setCurrentView } = useDashboardStore()
+  const { setCurrentView, lastAnalysisTimestamp } = useDashboardStore()
   const [actionData, setActionData] = useState<ActionCenterData | null>(null)
   const [winsData, setWinsData] = useState<WinsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -88,7 +88,7 @@ export function EnhancedOverviewView() {
     }
 
     fetchData()
-  }, [])
+  }, [lastAnalysisTimestamp])
 
   const findCriticalLocation = (details: ReportDetails): CriticalLocationInsight | null => {
     if (!details.locations || details.locations.length === 0) return null
