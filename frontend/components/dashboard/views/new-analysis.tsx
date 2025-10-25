@@ -104,10 +104,10 @@ export function NewAnalysisView() {
 
       console.log('Analysis response:', response)
 
-      // Simulate processing time (the real API call handles this)
+      // Short delay to show completion animation (backend already finished processing)
       setTimeout(() => {
         handleProcessingComplete()
-      }, 5000) // 5 second delay to show the processing animation
+      }, 500) // 500ms delay for UX (show "Complete!" state)
 
     } catch (err: unknown) {
       console.error('Analysis failed:', err)
@@ -154,8 +154,11 @@ export function NewAnalysisView() {
     const { triggerOverviewRefresh } = useDashboardStore.getState()
     triggerOverviewRefresh()
 
-    // Redirect to the dashboard overview to show Smart Landing Hub
-    setCurrentView('overview')
+    // Small delay to ensure Zustand state update propagates before navigation
+    // This prevents race condition where overview mounts before seeing the timestamp change
+    setTimeout(() => {
+      setCurrentView('overview')
+    }, 100)
   }
 
   // Clear Anomalies Modal Handlers

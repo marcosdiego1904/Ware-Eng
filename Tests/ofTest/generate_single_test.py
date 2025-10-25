@@ -20,7 +20,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add TestDone to path to import flexible generator
-sys.path.insert(0, str(Path(__file__).parent / "TestDone"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "TestDone"))
 
 # Import the flexible generator
 try:

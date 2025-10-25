@@ -34,8 +34,12 @@ export function EnhancedOverviewView() {
   const [spaceUtilization, setSpaceUtilization] = useState<SpaceUtilization | null>(null)
 
   useEffect(() => {
+    console.log('🔄 Overview refresh triggered. Timestamp:', lastAnalysisTimestamp)
+
     const fetchData = async () => {
       try {
+        console.log('📊 Fetching dashboard data...')
+
         // Clear previous data and start loading
         setLoading(true)
         setActionData(null)
@@ -46,6 +50,7 @@ export function EnhancedOverviewView() {
 
         // Fetch action center data
         const data = await actionCenterApi.getActionCenterData()
+        console.log('✅ Action center data loaded. Total active items:', data.totalActiveItems)
         setActionData(data)
 
         // Fetch wins data for achievements
@@ -62,6 +67,7 @@ export function EnhancedOverviewView() {
 
         if (reports.length > 0) {
           const latestReport = reports.find(r => r.anomaly_count > 0) || reports[0]
+          console.log('📋 Latest report:', latestReport.id, 'Anomaly count:', latestReport.anomaly_count)
           const reportDetails = await reportsApi.getReportDetails(latestReport.id)
 
           // Find critical location (location with most active anomalies)
@@ -81,8 +87,9 @@ export function EnhancedOverviewView() {
           }
         }
       } catch (error) {
-        console.error('Failed to fetch dashboard data:', error)
+        console.error('❌ Failed to fetch dashboard data:', error)
       } finally {
+        console.log('✨ Dashboard data fetch complete')
         setLoading(false)
       }
     }
