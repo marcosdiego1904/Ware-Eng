@@ -328,43 +328,62 @@ function processReportsForActionCenter(
 export const actionCenterApi = {
   async getActionCenterData(): Promise<ActionCenterData> {
     try {
+      console.log('🚀 [ACTION-CENTER-API] Starting optimized fetch...')
+
       // Fetch all reports
       const reportsResponse = await reportsApi.getReports()
       const reports = reportsResponse.reports || []
 
-      // Get recent reports for detailed analysis (last 7 days)
-      const recentReports = reports
-        .filter(report => {
-          const reportDate = new Date(report.timestamp)
-          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-          return reportDate > weekAgo
-        })
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 10) // Limit to 10 most recent
+      console.log(`📊 [ACTION-CENTER-API] Found ${reports.length} total reports`)
 
-      // Fetch detailed data for recent reports
-      const detailsPromises = recentReports.map(report =>
-        reportsApi.getReportDetails(report.id).catch(() => null)
+      // Sort by timestamp to get most recent
+      const sortedReports = reports.sort((a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       )
 
-      const reportsDetails = (await Promise.all(detailsPromises)).filter(Boolean) as ReportDetails[]
+      // OPTIMIZATION: Only fetch the LATEST report details (not 10!)
+      // This reduces HTTP requests from 11-12 down to 2-3
+      const latestReport = sortedReports[0]
+      const previousReport = sortedReports[1]
 
-      // Get previous report for comparison (second most recent)
-      let previousReportDetails: ReportDetails[] | undefined
-      if (recentReports.length >= 2) {
+      console.log(`🎯 [ACTION-CENTER-API] Fetching details for latest report: ${latestReport?.id}`)
+
+      // Fetch only the latest report details (1 HTTP request instead of 10)
+      const reportsDetails: ReportDetails[] = []
+      if (latestReport) {
         try {
-          const previousReport = await reportsApi.getReportDetails(recentReports[1].id)
-          previousReportDetails = [previousReport]
+          const latestDetails = await reportsApi.getReportDetails(latestReport.id)
+          reportsDetails.push(latestDetails)
+          console.log(`✅ [ACTION-CENTER-API] Latest report loaded with ${latestDetails.locations?.length || 0} locations`)
         } catch (error) {
-          console.warn('Failed to fetch previous report for comparison:', error)
+          console.error('❌ [ACTION-CENTER-API] Failed to fetch latest report:', error)
         }
       }
 
+      // Get previous report for comparison (1 HTTP request)
+      let previousReportDetails: ReportDetails[] | undefined
+      if (previousReport) {
+        try {
+          console.log(`📈 [ACTION-CENTER-API] Fetching previous report for comparison: ${previousReport.id}`)
+          const previousDetails = await reportsApi.getReportDetails(previousReport.id)
+          previousReportDetails = [previousDetails]
+          console.log(`✅ [ACTION-CENTER-API] Previous report loaded`)
+        } catch (error) {
+          console.warn('⚠️ [ACTION-CENTER-API] Failed to fetch previous report:', error)
+        }
+      }
+
+      console.log(`🏁 [ACTION-CENTER-API] Processing data...`)
+
       // Process into action center format with comparison
-      return processReportsForActionCenter(reports, reportsDetails, previousReportDetails)
+      const result = processReportsForActionCenter(reports, reportsDetails, previousReportDetails)
+
+      console.log(`✨ [ACTION-CENTER-API] Complete! Total active items: ${result.totalActiveItems}`)
+
+      return result
 
     } catch (error) {
-      console.error('Failed to fetch action center data:', error)
+      console.error('❌ [ACTION-CENTER-API] Fatal error:', error)
       throw new Error('Failed to load action center data')
     }
   },

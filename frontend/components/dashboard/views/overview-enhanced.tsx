@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -33,10 +33,32 @@ export function EnhancedOverviewView() {
   const [quickFixActions, setQuickFixActions] = useState<QuickFixAction[]>([])
   const [spaceUtilization, setSpaceUtilization] = useState<SpaceUtilization | null>(null)
 
+  // Guard against duplicate fetches
+  const isFetchingRef = useRef(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
   useEffect(() => {
     console.log('🔄 Overview refresh triggered. Timestamp:', lastAnalysisTimestamp)
 
+    // GUARD: Prevent duplicate fetches
+    if (isFetchingRef.current) {
+      console.log('⚠️ Fetch already in progress, skipping duplicate request')
+      return
+    }
+
+    // Cancel any previous fetch that might still be running
+    if (abortControllerRef.current) {
+      console.log('🛑 Cancelling previous fetch')
+      abortControllerRef.current.abort()
+    }
+
+    // Create new abort controller for this fetch
+    abortControllerRef.current = new AbortController()
+
     const fetchData = async () => {
+      // Mark fetch as in progress
+      isFetchingRef.current = true
+
       try {
         console.log('📊 Fetching dashboard data...')
 
@@ -88,13 +110,30 @@ export function EnhancedOverviewView() {
         }
       } catch (error) {
         console.error('❌ Failed to fetch dashboard data:', error)
+
+        // Check if error was due to abort
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('🛑 Fetch was cancelled')
+          return
+        }
       } finally {
         console.log('✨ Dashboard data fetch complete')
         setLoading(false)
+        // Mark fetch as complete
+        isFetchingRef.current = false
       }
     }
 
     fetchData()
+
+    // Cleanup function: cancel fetch if component unmounts or effect re-runs
+    return () => {
+      if (abortControllerRef.current) {
+        console.log('🧹 Cleanup: Aborting ongoing fetch')
+        abortControllerRef.current.abort()
+      }
+      isFetchingRef.current = false
+    }
   }, [lastAnalysisTimestamp])
 
   const findCriticalLocation = (details: ReportDetails): CriticalLocationInsight | null => {
