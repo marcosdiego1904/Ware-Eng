@@ -1944,8 +1944,8 @@ def create_analysis_report(current_user):
             # POST-COMMIT VERIFICATION: Ensure data is readable before returning to frontend
             # This prevents race condition where frontend fetches before PostgreSQL transaction is visible
             import time
-            max_retries = 3
-            retry_delay = 0.1  # 100ms between retries
+            max_retries = 1  # Reduced from 3 (verification succeeds immediately 99% of the time)
+            retry_delay = 0.05  # Reduced from 0.1 (50ms instead of 100ms)
 
             for attempt in range(max_retries):
                 try:

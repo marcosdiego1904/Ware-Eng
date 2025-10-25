@@ -2067,7 +2067,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
     
     def __init__(self, app=None):
         super().__init__(app)
-        self.debug = True  # Enable debug logging for capacity calculations
+        self.debug = False  # Disable verbose debug logging in production for performance
         # Import location classification service for enhanced alerting
         try:
             from .location_classification_service import LocationClassificationService
