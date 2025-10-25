@@ -114,9 +114,10 @@ export function EnhancedOverviewView() {
           let criticalLocation: CriticalLocationInsight | null = null
           let quickFixes: QuickFixAction[] = []
           let spaceData: SpaceUtilization | null = null
+          let latestReport: any = null  // Declare in outer scope for processing detection
 
           if (reports.length > 0) {
-            const latestReport = reports.find(r => r.anomaly_count > 0) || reports[0]
+            latestReport = reports.find(r => r.anomaly_count > 0) || reports[0]
             console.log('📋 Latest report:', latestReport.id, 'Anomaly count:', latestReport.anomaly_count)
             const reportDetails = await reportsApi.getReportDetails(latestReport.id)
 
