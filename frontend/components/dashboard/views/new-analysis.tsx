@@ -104,10 +104,10 @@ export function NewAnalysisView() {
 
       console.log('Analysis response:', response)
 
-      // Short delay to show completion animation (backend already finished processing)
+      // Delay to give backend processing a head start (especially for large files)
       setTimeout(() => {
         handleProcessingComplete()
-      }, 500) // 500ms delay for UX (show "Complete!" state)
+      }, 2000) // 2 second delay to reduce zero-results window
 
     } catch (err: unknown) {
       console.error('Analysis failed:', err)

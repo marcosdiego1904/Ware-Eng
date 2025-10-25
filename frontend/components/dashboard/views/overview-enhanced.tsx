@@ -34,16 +34,19 @@ export function EnhancedOverviewView() {
     loading: true,
     criticalInsight: null as CriticalLocationInsight | null,
     quickFixActions: [] as QuickFixAction[],
-    spaceUtilization: null as SpaceUtilization | null
+    spaceUtilization: null as SpaceUtilization | null,
+    isProcessing: false,  // NEW: Track if backend is still processing
+    processingReportId: null as number | null  // NEW: Track which report is processing
   })
 
   // Destructure for backwards compatibility
-  const { actionData, winsData, loading, criticalInsight, quickFixActions, spaceUtilization } = dashboardState
+  const { actionData, winsData, loading, criticalInsight, quickFixActions, spaceUtilization, isProcessing, processingReportId } = dashboardState
 
   // Guard against duplicate fetches
   const isFetchingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     console.log('🔄 Overview refresh triggered. Timestamp:', lastAnalysisTimestamp)
@@ -131,15 +134,44 @@ export function EnhancedOverviewView() {
             }
           }
 
-          // OPTIMIZATION: Single state update with all data at once
-          setDashboardState({
-            actionData: data,
-            winsData: wins,
-            loading: false,
-            criticalInsight: criticalLocation,
-            quickFixActions: quickFixes,
-            spaceUtilization: spaceData
-          })
+          // SMART PROCESSING DETECTION: Check if we got 0 results from a recent report
+          const isLikelyProcessing = reports.length > 0 &&
+                                     data.totalActiveItems === 0 &&
+                                     latestReport &&
+                                     isReportRecent(latestReport.timestamp)
+
+          if (isLikelyProcessing) {
+            console.log('🔄 Detected processing state - report is recent with 0 anomalies')
+            console.log(`📊 Starting polling for report ID: ${latestReport.id}`)
+
+            // Set processing state
+            setDashboardState({
+              actionData: data,
+              winsData: wins,
+              loading: false,
+              criticalInsight: criticalLocation,
+              quickFixActions: quickFixes,
+              spaceUtilization: spaceData,
+              isProcessing: true,
+              processingReportId: latestReport.id
+            })
+
+            // Start polling for updates
+            startPolling(latestReport.id)
+          } else {
+            // Normal state - data is ready
+            console.log('✅ Data ready - not in processing state')
+            setDashboardState({
+              actionData: data,
+              winsData: wins,
+              loading: false,
+              criticalInsight: criticalLocation,
+              quickFixActions: quickFixes,
+              spaceUtilization: spaceData,
+              isProcessing: false,
+              processingReportId: null
+            })
+          }
 
         } catch (error) {
           console.error('❌ Failed to fetch dashboard data:', error)
@@ -169,6 +201,10 @@ export function EnhancedOverviewView() {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
+      if (pollingIntervalRef.current) {
+        console.log('🛑 Stopping polling')
+        clearInterval(pollingIntervalRef.current)
+      }
       if (abortControllerRef.current) {
         console.log('🧹 Cleanup: Aborting ongoing fetch')
         abortControllerRef.current.abort()
@@ -176,6 +212,66 @@ export function EnhancedOverviewView() {
       isFetchingRef.current = false
     }
   }, [lastAnalysisTimestamp])
+
+  // Helper: Check if report timestamp is recent (within last 30 seconds)
+  const isReportRecent = (timestamp: string): boolean => {
+    const reportTime = new Date(timestamp).getTime()
+    const now = Date.now()
+    const secondsAgo = (now - reportTime) / 1000
+    return secondsAgo < 30
+  }
+
+  // Helper: Start polling for report updates
+  const startPolling = (reportId: number) => {
+    let pollCount = 0
+    const maxPolls = 30 // Stop after 60 seconds (30 polls × 2s)
+
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+    }
+
+    pollingIntervalRef.current = setInterval(async () => {
+      pollCount++
+      console.log(`🔄 Polling attempt ${pollCount}/${maxPolls} for report ${reportId}`)
+
+      try {
+        // Fetch the latest reports to check if anomaly count has updated
+        const reportsResponse = await reportsApi.getReports()
+        const reports = reportsResponse.reports || []
+        const updatedReport = reports.find(r => r.id === reportId)
+
+        if (updatedReport && updatedReport.anomaly_count > 0) {
+          console.log(`✅ Report ${reportId} now has ${updatedReport.anomaly_count} anomalies!`)
+          console.log('🛑 Stopping polling - data is ready')
+
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+
+          // Trigger a fresh data fetch by updating the timestamp
+          const { triggerOverviewRefresh } = useDashboardStore.getState()
+          triggerOverviewRefresh()
+        } else if (pollCount >= maxPolls) {
+          console.log('⏱️ Polling timeout reached - stopping')
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          // Exit processing state even if no data
+          setDashboardState(prev => ({
+            ...prev,
+            isProcessing: false,
+            processingReportId: null
+          }))
+        }
+      } catch (error) {
+        console.error('❌ Polling error:', error)
+      }
+    }, 2000) // Poll every 2 seconds
+  }
 
   const findCriticalLocation = (details: ReportDetails): CriticalLocationInsight | null => {
     if (!details.locations || details.locations.length === 0) return null
@@ -265,6 +361,62 @@ export function EnhancedOverviewView() {
 
   // Calculate total active issues count (all unresolved anomalies)
   const totalActiveIssuesCount = actionData ? actionData.totalActiveItems : 0
+
+  //  If processing state is active, show processing UI instead of normal dashboard
+  if (isProcessing) {
+    return (
+      <div className="p-8 pt-12 space-y-8">
+        <Card className="border-2 border-blue-500 bg-gradient-to-br from-blue-50 to-white">
+          <CardContent className="p-12">
+            <div className="flex flex-col items-center justify-center space-y-6">
+              {/* Animated Spinner */}
+              <div className="relative w-24 h-24">
+                <div className="absolute inset-0 border-8 border-blue-200 rounded-full"></div>
+                <div className="absolute inset-0 border-8 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+              </div>
+
+              {/* Processing Message */}
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold text-blue-900">
+                  Analyzing Your Warehouse Data...
+                </h2>
+                <p className="text-blue-700 text-lg">
+                  Processing inventory report #{processingReportId}
+                </p>
+                <p className="text-blue-600">
+                  This may take 15-20 seconds for large files
+                </p>
+              </div>
+
+              {/* Progress Steps */}
+              <div className="w-full max-w-md space-y-3">
+                <div className="flex items-center space-x-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <span className="text-green-900 font-medium">Files uploaded successfully</span>
+                </div>
+                <div className="flex items-center space-x-3 p-3 bg-blue-100 border-2 border-blue-400 rounded-lg">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-blue-900 font-medium">Running detection algorithms...</span>
+                </div>
+                <div className="flex items-center space-x-3 p-3 bg-gray-50 border border-gray-200 rounded-lg opacity-50">
+                  <Clock className="w-5 h-5 text-gray-400" />
+                  <span className="text-gray-600">Generating insights...</span>
+                </div>
+              </div>
+
+              {/* Info Banner */}
+              <div className="mt-6 p-4 bg-blue-100 border border-blue-300 rounded-lg max-w-md">
+                <p className="text-sm text-blue-800 text-center">
+                  <AlertTriangle className="w-4 h-4 inline mr-2" />
+                  Results will appear automatically when ready. No need to refresh!
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8 pt-12 space-y-8">
