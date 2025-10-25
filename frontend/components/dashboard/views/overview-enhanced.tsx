@@ -26,25 +26,43 @@ interface QuickFixAction {
 
 export function EnhancedOverviewView() {
   const { setCurrentView, lastAnalysisTimestamp } = useDashboardStore()
-  const [actionData, setActionData] = useState<ActionCenterData | null>(null)
-  const [winsData, setWinsData] = useState<WinsData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [criticalInsight, setCriticalInsight] = useState<CriticalLocationInsight | null>(null)
-  const [quickFixActions, setQuickFixActions] = useState<QuickFixAction[]>([])
-  const [spaceUtilization, setSpaceUtilization] = useState<SpaceUtilization | null>(null)
+
+  // OPTIMIZATION: Batch all state into single object to prevent multiple re-renders
+  const [dashboardState, setDashboardState] = useState({
+    actionData: null as ActionCenterData | null,
+    winsData: null as WinsData | null,
+    loading: true,
+    criticalInsight: null as CriticalLocationInsight | null,
+    quickFixActions: [] as QuickFixAction[],
+    spaceUtilization: null as SpaceUtilization | null
+  })
+
+  // Destructure for backwards compatibility
+  const { actionData, winsData, loading, criticalInsight, quickFixActions, spaceUtilization } = dashboardState
 
   // Guard against duplicate fetches
   const isFetchingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     console.log('🔄 Overview refresh triggered. Timestamp:', lastAnalysisTimestamp)
 
-    // GUARD: Prevent duplicate fetches
+    // CRITICAL FIX: Set flag IMMEDIATELY (synchronously) before any async operations
     if (isFetchingRef.current) {
       console.log('⚠️ Fetch already in progress, skipping duplicate request')
       return
     }
+
+    // Debounce: Clear any pending timers
+    if (debounceTimerRef.current) {
+      console.log('⏱️ Clearing debounce timer')
+      clearTimeout(debounceTimerRef.current)
+    }
+
+    // Set fetch flag SYNCHRONOUSLY (before async work begins)
+    isFetchingRef.current = true
+    console.log('🔒 Fetch guard enabled')
 
     // Cancel any previous fetch that might still be running
     if (abortControllerRef.current) {
@@ -55,79 +73,102 @@ export function EnhancedOverviewView() {
     // Create new abort controller for this fetch
     abortControllerRef.current = new AbortController()
 
-    const fetchData = async () => {
-      // Mark fetch as in progress
-      isFetchingRef.current = true
+    // Debounce wrapper: Wait 100ms before actually fetching
+    debounceTimerRef.current = setTimeout(() => {
+      console.log('⚡ Debounce completed, starting fetch')
 
-      try {
-        console.log('📊 Fetching dashboard data...')
-
-        // Clear previous data and start loading
-        setLoading(true)
-        setActionData(null)
-        setWinsData(null)
-        setCriticalInsight(null)
-        setQuickFixActions([])
-        setSpaceUtilization(null)
-
-        // Fetch action center data
-        const data = await actionCenterApi.getActionCenterData()
-        console.log('✅ Action center data loaded. Total active items:', data.totalActiveItems)
-        setActionData(data)
-
-        // Fetch wins data for achievements
+      const fetchData = async () => {
         try {
-          const wins = await getLatestWinsData()
-          setWinsData(wins)
-        } catch (winsError) {
-          console.log('Wins data not available yet:', winsError)
-        }
+          console.log('📊 Fetching dashboard data...')
 
-        // Fetch latest report for critical location insights, resolution types, and space utilization
-        const reportsResponse = await reportsApi.getReports()
-        const reports = reportsResponse.reports || []
+          // OPTIMIZATION: Single state update to clear data and start loading
+          setDashboardState(prev => ({
+            ...prev,
+            loading: true,
+            actionData: null,
+            winsData: null,
+            criticalInsight: null,
+            quickFixActions: [],
+            spaceUtilization: null
+          }))
 
-        if (reports.length > 0) {
-          const latestReport = reports.find(r => r.anomaly_count > 0) || reports[0]
-          console.log('📋 Latest report:', latestReport.id, 'Anomaly count:', latestReport.anomaly_count)
-          const reportDetails = await reportsApi.getReportDetails(latestReport.id)
+          // Fetch action center data
+          const data = await actionCenterApi.getActionCenterData()
+          console.log('✅ Action center data loaded. Total active items:', data.totalActiveItems)
 
-          // Find critical location (location with most active anomalies)
-          const criticalLocation = findCriticalLocation(reportDetails)
-          setCriticalInsight(criticalLocation)
-
-          // Calculate quick fix actions (5-15 min resolution opportunities)
-          const quickFixes = calculateQuickFixActions(reportDetails)
-          setQuickFixActions(quickFixes)
-
-          // Fetch space utilization
+          // Fetch wins data for achievements
+          let wins: WinsData | null = null
           try {
-            const spaceData = await reportsApi.getSpaceUtilization(latestReport.id)
-            setSpaceUtilization(spaceData)
-          } catch (spaceError) {
-            console.log('Space utilization not available:', spaceError)
+            wins = await getLatestWinsData()
+          } catch (winsError) {
+            console.log('Wins data not available yet:', winsError)
           }
-        }
-      } catch (error) {
-        console.error('❌ Failed to fetch dashboard data:', error)
 
-        // Check if error was due to abort
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.log('🛑 Fetch was cancelled')
-          return
+          // Fetch latest report for critical location insights, resolution types, and space utilization
+          const reportsResponse = await reportsApi.getReports()
+          const reports = reportsResponse.reports || []
+
+          let criticalLocation: CriticalLocationInsight | null = null
+          let quickFixes: QuickFixAction[] = []
+          let spaceData: SpaceUtilization | null = null
+
+          if (reports.length > 0) {
+            const latestReport = reports.find(r => r.anomaly_count > 0) || reports[0]
+            console.log('📋 Latest report:', latestReport.id, 'Anomaly count:', latestReport.anomaly_count)
+            const reportDetails = await reportsApi.getReportDetails(latestReport.id)
+
+            // Find critical location (location with most active anomalies)
+            criticalLocation = findCriticalLocation(reportDetails)
+
+            // Calculate quick fix actions (5-15 min resolution opportunities)
+            quickFixes = calculateQuickFixActions(reportDetails)
+
+            // Fetch space utilization
+            try {
+              spaceData = await reportsApi.getSpaceUtilization(latestReport.id)
+            } catch (spaceError) {
+              console.log('Space utilization not available:', spaceError)
+            }
+          }
+
+          // OPTIMIZATION: Single state update with all data at once
+          setDashboardState({
+            actionData: data,
+            winsData: wins,
+            loading: false,
+            criticalInsight: criticalLocation,
+            quickFixActions: quickFixes,
+            spaceUtilization: spaceData
+          })
+
+        } catch (error) {
+          console.error('❌ Failed to fetch dashboard data:', error)
+
+          // Check if error was due to abort
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('🛑 Fetch was cancelled')
+            return
+          }
+
+          // On error, just stop loading
+          setDashboardState(prev => ({ ...prev, loading: false }))
+        } finally {
+          console.log('✨ Dashboard data fetch complete')
+          // Mark fetch as complete
+          isFetchingRef.current = false
+          console.log('🔓 Fetch guard released')
         }
-      } finally {
-        console.log('✨ Dashboard data fetch complete')
-        setLoading(false)
-        // Mark fetch as complete
-        isFetchingRef.current = false
       }
-    }
 
-    fetchData()
+      fetchData()
+    }, 100) // 100ms debounce
 
     // Cleanup function: cancel fetch if component unmounts or effect re-runs
     return () => {
+      console.log('🧹 Cleanup triggered')
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
       if (abortControllerRef.current) {
         console.log('🧹 Cleanup: Aborting ongoing fetch')
         abortControllerRef.current.abort()
