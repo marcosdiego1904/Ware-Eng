@@ -63,6 +63,9 @@ interface DashboardState {
   // Refresh trigger for overview data
   lastAnalysisTimestamp: number;
 
+  // Pending report ID (set after upload, used to show processing UI)
+  pendingReportId: number | null;
+
   setCurrentView: (view: DashboardState['currentView']) => void;
   setLoading: (loading: boolean) => void;
   setReports: (reports: Report[]) => void;
@@ -79,6 +82,9 @@ interface DashboardState {
 
   // Refresh action
   triggerOverviewRefresh: () => void;
+
+  // Pending report actions
+  setPendingReportId: (reportId: number | null) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -97,6 +103,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
 
   // Refresh trigger
   lastAnalysisTimestamp: 0,
+
+  // Pending report ID
+  pendingReportId: null,
 
   setCurrentView: (view) => set({ currentView: view }),
   setLoading: (loading) => set({ isLoading: loading }),
@@ -123,4 +132,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
 
   // Refresh action - triggers overview to refetch data
   triggerOverviewRefresh: () => set({ lastAnalysisTimestamp: Date.now() }),
+
+  // Pending report actions
+  setPendingReportId: (reportId) => set({ pendingReportId: reportId }),
 }));

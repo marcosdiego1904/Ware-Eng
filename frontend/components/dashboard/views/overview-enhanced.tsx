@@ -25,7 +25,7 @@ interface QuickFixAction {
 }
 
 export function EnhancedOverviewView() {
-  const { setCurrentView, lastAnalysisTimestamp } = useDashboardStore()
+  const { setCurrentView, lastAnalysisTimestamp, pendingReportId, setPendingReportId } = useDashboardStore()
 
   // OPTIMIZATION: Batch all state into single object to prevent multiple re-renders
   const [dashboardState, setDashboardState] = useState({
@@ -135,28 +135,45 @@ export function EnhancedOverviewView() {
             }
           }
 
-          // SMART PROCESSING DETECTION: Check if we got 0 results from a recent report
+          // SMART PROCESSING DETECTION: Check if we have a pending report OR got 0 results from a recent report
           console.log('🔍 DEBUG: Processing Detection Check')
+          console.log('  - pendingReportId:', pendingReportId)
           console.log('  - reports.length:', reports.length)
           console.log('  - data.totalActiveItems:', data.totalActiveItems)
           console.log('  - latestReport:', latestReport ? `ID ${latestReport.id}, timestamp: ${latestReport.timestamp}, anomaly_count: ${latestReport.anomaly_count}` : 'null')
 
+          // Check if we have a pending report (just uploaded, not in database yet)
+          const hasPendingReport = !!pendingReportId
+
+          // Check if the pending report has appeared in the database
+          const pendingReportExists = hasPendingReport && reports.some(r => r.id === pendingReportId)
+
+          // Check if we have zero results from a recent report (original logic)
           const hasReports = reports.length > 0
           const hasZeroActiveItems = data.totalActiveItems === 0
           const hasLatestReport = !!latestReport
           const isRecent = latestReport ? isReportRecent(latestReport.timestamp) : false
 
+          console.log('  - hasPendingReport:', hasPendingReport)
+          console.log('  - pendingReportExists:', pendingReportExists)
           console.log('  - hasReports:', hasReports)
           console.log('  - hasZeroActiveItems:', hasZeroActiveItems)
           console.log('  - hasLatestReport:', hasLatestReport)
           console.log('  - isRecent:', isRecent)
 
-          const isLikelyProcessing = hasReports && hasZeroActiveItems && hasLatestReport && isRecent
+          // Show processing if:
+          // 1. We have a pending report that hasn't appeared yet (production case)
+          // 2. OR we have 0 results from a recent report (original logic)
+          const isLikelyProcessing = (hasPendingReport && !pendingReportExists) ||
+                                      (hasReports && hasZeroActiveItems && hasLatestReport && isRecent)
           console.log('  ➡️ RESULT: isLikelyProcessing =', isLikelyProcessing)
 
           if (isLikelyProcessing) {
-            console.log('🔄 ✅ PROCESSING STATE DETECTED - report is recent with 0 anomalies')
-            console.log(`📊 Starting polling for report ID: ${latestReport.id}`)
+            console.log('🔄 ✅ PROCESSING STATE DETECTED')
+
+            // Use pending report ID if available, otherwise use latest report ID
+            const reportIdToTrack = pendingReportId || (latestReport ? latestReport.id : null)
+            console.log(`📊 Starting polling for report ID: ${reportIdToTrack}`)
 
             // Set processing state
             setDashboardState({
@@ -167,14 +184,23 @@ export function EnhancedOverviewView() {
               quickFixActions: quickFixes,
               spaceUtilization: spaceData,
               isProcessing: true,
-              processingReportId: latestReport.id
+              processingReportId: reportIdToTrack
             })
 
-            // Start polling for updates
-            startPolling(latestReport.id)
+            // Start polling for updates if we have a report ID to track
+            if (reportIdToTrack) {
+              startPolling(reportIdToTrack)
+            }
           } else {
             // Normal state - data is ready
             console.log('✅ Data ready - not in processing state')
+
+            // Clear pending report ID if it exists (data is ready)
+            if (pendingReportId) {
+              console.log('🧹 Clearing pending report ID (data ready)')
+              setPendingReportId(null)
+            }
+
             setDashboardState({
               actionData: data,
               winsData: wins,
@@ -267,6 +293,10 @@ export function EnhancedOverviewView() {
             pollingIntervalRef.current = null
           }
 
+          // Clear the pending report ID
+          console.log('🧹 Clearing pending report ID')
+          setPendingReportId(null)
+
           // Trigger a fresh data fetch by updating the timestamp
           const { triggerOverviewRefresh } = useDashboardStore.getState()
           triggerOverviewRefresh()
@@ -276,6 +306,9 @@ export function EnhancedOverviewView() {
             clearInterval(pollingIntervalRef.current)
             pollingIntervalRef.current = null
           }
+          // Clear the pending report ID on timeout
+          console.log('🧹 Clearing pending report ID (timeout)')
+          setPendingReportId(null)
           // Exit processing state even if no data
           setDashboardState(prev => ({
             ...prev,

@@ -104,6 +104,12 @@ export function NewAnalysisView() {
 
       console.log('Analysis response:', response)
 
+      // Store the pending report ID so overview can show processing UI
+      const reportId = response.report_id
+      console.log(`📝 Setting pending report ID: ${reportId}`)
+      const { setPendingReportId } = useDashboardStore.getState()
+      setPendingReportId(reportId)
+
       // Delay to give backend processing a head start (especially for large files)
       console.log('⏱️ Starting 2-second delay before navigating to overview...')
       setTimeout(() => {
