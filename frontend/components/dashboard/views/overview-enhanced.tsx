@@ -136,13 +136,26 @@ export function EnhancedOverviewView() {
           }
 
           // SMART PROCESSING DETECTION: Check if we got 0 results from a recent report
-          const isLikelyProcessing = reports.length > 0 &&
-                                     data.totalActiveItems === 0 &&
-                                     latestReport &&
-                                     isReportRecent(latestReport.timestamp)
+          console.log('🔍 DEBUG: Processing Detection Check')
+          console.log('  - reports.length:', reports.length)
+          console.log('  - data.totalActiveItems:', data.totalActiveItems)
+          console.log('  - latestReport:', latestReport ? `ID ${latestReport.id}, timestamp: ${latestReport.timestamp}, anomaly_count: ${latestReport.anomaly_count}` : 'null')
+
+          const hasReports = reports.length > 0
+          const hasZeroActiveItems = data.totalActiveItems === 0
+          const hasLatestReport = !!latestReport
+          const isRecent = latestReport ? isReportRecent(latestReport.timestamp) : false
+
+          console.log('  - hasReports:', hasReports)
+          console.log('  - hasZeroActiveItems:', hasZeroActiveItems)
+          console.log('  - hasLatestReport:', hasLatestReport)
+          console.log('  - isRecent:', isRecent)
+
+          const isLikelyProcessing = hasReports && hasZeroActiveItems && hasLatestReport && isRecent
+          console.log('  ➡️ RESULT: isLikelyProcessing =', isLikelyProcessing)
 
           if (isLikelyProcessing) {
-            console.log('🔄 Detected processing state - report is recent with 0 anomalies')
+            console.log('🔄 ✅ PROCESSING STATE DETECTED - report is recent with 0 anomalies')
             console.log(`📊 Starting polling for report ID: ${latestReport.id}`)
 
             // Set processing state
@@ -219,7 +232,9 @@ export function EnhancedOverviewView() {
     const reportTime = new Date(timestamp).getTime()
     const now = Date.now()
     const secondsAgo = (now - reportTime) / 1000
-    return secondsAgo < 30
+    const isRecent = secondsAgo < 30
+    console.log(`  🕐 isReportRecent check: timestamp="${timestamp}", secondsAgo=${secondsAgo.toFixed(1)}s, isRecent=${isRecent}`)
+    return isRecent
   }
 
   // Helper: Start polling for report updates
@@ -364,7 +379,9 @@ export function EnhancedOverviewView() {
   const totalActiveIssuesCount = actionData ? actionData.totalActiveItems : 0
 
   //  If processing state is active, show processing UI instead of normal dashboard
+  console.log('🎨 RENDER CHECK: isProcessing =', isProcessing, 'processingReportId =', processingReportId)
   if (isProcessing) {
+    console.log('✨ RENDERING PROCESSING UI for report:', processingReportId)
     return (
       <div className="p-8 pt-12 space-y-8">
         <Card className="border-2 border-blue-500 bg-gradient-to-br from-blue-50 to-white">

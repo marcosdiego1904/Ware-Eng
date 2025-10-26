@@ -105,7 +105,9 @@ export function NewAnalysisView() {
       console.log('Analysis response:', response)
 
       // Delay to give backend processing a head start (especially for large files)
+      console.log('⏱️ Starting 2-second delay before navigating to overview...')
       setTimeout(() => {
+        console.log('⏱️ Delay complete - calling handleProcessingComplete()')
         handleProcessingComplete()
       }, 2000) // 2 second delay to reduce zero-results window
 
@@ -150,13 +152,19 @@ export function NewAnalysisView() {
   }
 
   const handleProcessingComplete = () => {
+    console.log('🎯 handleProcessingComplete called')
+
     // Trigger overview refresh to fetch new analysis data
     const { triggerOverviewRefresh } = useDashboardStore.getState()
+    console.log('📡 Triggering overview refresh...')
     triggerOverviewRefresh()
+    console.log('✅ Overview refresh triggered')
 
     // Small delay to ensure Zustand state update propagates before navigation
     // This prevents race condition where overview mounts before seeing the timestamp change
+    console.log('⏱️ Starting 100ms delay before navigation to overview...')
     setTimeout(() => {
+      console.log('🚀 Navigating to overview view')
       setCurrentView('overview')
     }, 100)
   }
