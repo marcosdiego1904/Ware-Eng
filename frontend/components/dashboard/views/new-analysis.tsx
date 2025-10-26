@@ -22,6 +22,7 @@ export function NewAnalysisView() {
     rules: null
   })
   const [error, setError] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)  // NEW: Track upload state
   const { setCurrentView } = useDashboardStore()
 
   // NEW: Get current warehouse configuration from applied template
@@ -78,8 +79,9 @@ export function NewAnalysisView() {
   }
 
   const submitAnalysis = async (mapping: Record<string, string>, clearPrevious: boolean = false) => {
-    // REMOVED: setCurrentStep('processing') - we navigate directly instead of showing fake processing UI
     setClearAnomaliesModal(prev => ({ ...prev, open: false }))
+    setIsUploading(true)  // Show loading state
+    setError(null)  // Clear any previous errors
 
     try {
       // NEW: Include warehouse_id from applied template
@@ -113,6 +115,7 @@ export function NewAnalysisView() {
 
       // Navigate immediately to overview (which will show processing UI)
       console.log('🚀 Navigating to overview to show processing state...')
+      setIsUploading(false)  // Stop loading before navigation
       handleProcessingComplete()
 
     } catch (err: unknown) {
@@ -151,6 +154,7 @@ export function NewAnalysisView() {
       }
 
       setError(errorMessage)
+      setIsUploading(false)  // Stop loading on error
       setCurrentStep('mapping')
     }
   }
@@ -314,6 +318,7 @@ export function NewAnalysisView() {
           inventoryFile={selectedFiles.inventory}
           onMappingComplete={handleMappingComplete}
           onBack={handleBackToFiles}
+          isUploading={isUploading}
         />
       )}
 

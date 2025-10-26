@@ -15,7 +15,8 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { ConfidenceIndicator, ConfidenceBar } from './confidence-badge'
@@ -25,6 +26,7 @@ interface ColumnMappingProps {
   inventoryFile: File
   onMappingComplete: (mapping: Record<string, string>) => void
   onBack: () => void
+  isUploading?: boolean  // NEW: Loading state during upload
 }
 
 // Required columns that need to be mapped
@@ -71,7 +73,7 @@ interface MappingSuggestions {
   }
 }
 
-export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: ColumnMappingProps) {
+export function ColumnMapping({ inventoryFile, onMappingComplete, onBack, isUploading = false }: ColumnMappingProps) {
   const [userColumns, setUserColumns] = useState<string[]>([])
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [mappingSuggestions, setMappingSuggestions] = useState<MappingSuggestions | null>(null)
@@ -464,12 +466,19 @@ export function ColumnMapping({ inventoryFile, onMappingComplete, onBack }: Colu
           Back to Files
         </Button>
         
-        <Button 
+        <Button
           onClick={handleContinue}
-          disabled={!isComplete()}
+          disabled={!isComplete() || isUploading}
           className="min-w-32"
         >
-          Start Analysis
+          {isUploading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            'Start Analysis'
+          )}
         </Button>
       </div>
     </div>
