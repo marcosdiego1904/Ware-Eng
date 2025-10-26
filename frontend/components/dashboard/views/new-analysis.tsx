@@ -78,7 +78,7 @@ export function NewAnalysisView() {
   }
 
   const submitAnalysis = async (mapping: Record<string, string>, clearPrevious: boolean = false) => {
-    setCurrentStep('processing')
+    // REMOVED: setCurrentStep('processing') - we navigate directly instead of showing fake processing UI
     setClearAnomaliesModal(prev => ({ ...prev, open: false }))
 
     try {
@@ -93,7 +93,8 @@ export function NewAnalysisView() {
         clear_previous: clearPrevious
       })
 
-      // Submit to backend API
+      // Submit to backend API (this waits for the response)
+      console.log('⏱️ Uploading files and waiting for response...')
       const response = await reportsApi.createReport({
         inventory_file: selectedFiles.inventory!,
         rules_file: selectedFiles.rules || undefined,
@@ -102,7 +103,7 @@ export function NewAnalysisView() {
         clear_previous: clearPrevious  // CLEAR ANOMALIES: Pass user decision
       })
 
-      console.log('Analysis response:', response)
+      console.log('✅ Upload complete! Analysis response:', response)
 
       // Store the pending report ID so overview can show processing UI
       const reportId = response.report_id
@@ -110,12 +111,9 @@ export function NewAnalysisView() {
       const { setPendingReportId } = useDashboardStore.getState()
       setPendingReportId(reportId)
 
-      // Delay to give backend processing a head start (especially for large files)
-      console.log('⏱️ Starting 2-second delay before navigating to overview...')
-      setTimeout(() => {
-        console.log('⏱️ Delay complete - calling handleProcessingComplete()')
-        handleProcessingComplete()
-      }, 2000) // 2 second delay to reduce zero-results window
+      // Navigate immediately to overview (which will show processing UI)
+      console.log('🚀 Navigating to overview to show processing state...')
+      handleProcessingComplete()
 
     } catch (err: unknown) {
       console.error('Analysis failed:', err)
