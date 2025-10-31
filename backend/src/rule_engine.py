@@ -1669,10 +1669,6 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
             time_threshold_hours = max_days_in_location * 24
 
         # ==================== DETAILED LOGGING START ====================
-        print(f"[STAGNANT_DEBUG] ==================== STAGNANT PALLETS EVALUATION ====================")
-        print(f"[STAGNANT_DEBUG] Total pallets to evaluate: {len(inventory_df)}")
-        print(f"[STAGNANT_DEBUG] Time threshold: {time_threshold_hours}h")
-        print(f"[STAGNANT_DEBUG] Location criteria: location_types={location_types}, patterns={location_patterns}, excluded={excluded_patterns}")
 
         anomalies = []
         now = datetime.now()
@@ -1693,16 +1689,6 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
             patterns = self._get_patterns_for_location_types(location_types)
             valid_pallets = self._filter_by_location_patterns(inventory_df, patterns)
 
-        print(f"[STAGNANT_DEBUG] Pallets matching location criteria: {len(valid_pallets)}")
-
-        # Show location distribution
-        if len(valid_pallets) > 0:
-            location_counts = valid_pallets['location'].value_counts()
-            print(f"[STAGNANT_DEBUG] Location distribution (top 10):")
-            for loc, count in location_counts.head(10).items():
-                print(f"[STAGNANT_DEBUG]   {loc}: {count} pallets")
-
-        print(f"[STAGNANT_DEBUG] -------------------- EVALUATING PALLETS --------------------")
 
         evaluated_count = 0
         skipped_no_date = 0
@@ -1722,8 +1708,6 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
                 # Determine location category from location pattern for reporting
                 location_category = self._get_location_category(pallet['location'])
 
-                print(f"[STAGNANT_DEBUG] ✅ ANOMALY #{len(anomalies)+1}: Pallet '{pallet['pallet_id']}' in '{pallet['location']}' (age: {age_hours:.1f}h > {time_threshold_hours}h)")
-
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
@@ -1735,75 +1719,9 @@ class StagnantPalletsEvaluator(BaseRuleEvaluator):
                 below_threshold_count += 1
 
         # ==================== SUMMARY STATISTICS ====================
-        print(f"[STAGNANT_DEBUG] ==================== EVALUATION SUMMARY ====================")
-        print(f"[STAGNANT_DEBUG] Total pallets evaluated: {evaluated_count}")
-        print(f"[STAGNANT_DEBUG] Skipped (no creation_date): {skipped_no_date}")
-        print(f"[STAGNANT_DEBUG] Below threshold: {below_threshold_count}")
-        print(f"[STAGNANT_DEBUG] Anomalies detected: {len(anomalies)}")
-
-        # Pattern breakdown analysis
+        # Only log summary in production
         if len(anomalies) > 0:
-            print(f"[STAGNANT_DEBUG] -------------------- PATTERN BREAKDOWN --------------------")
-
-            # Analyze pallet ID patterns
-            pattern_counts = {
-                'STAGNANT-': 0,
-                'OVERCAP-': 0,
-                'LOT.*-STRAGGLER': 0,
-                'AISLE-STUCK-': 0,
-                'DUPLICATE-': 0,
-                'INVALID-': 0,
-                'PLT-': 0,
-                'OTHER': 0
-            }
-
-            for anomaly in anomalies:
-                pallet_id = anomaly['pallet_id']
-                matched = False
-
-                if 'STAGNANT-' in pallet_id:
-                    pattern_counts['STAGNANT-'] += 1
-                    matched = True
-                elif 'OVERCAP-' in pallet_id:
-                    pattern_counts['OVERCAP-'] += 1
-                    matched = True
-                elif 'STRAGGLER' in pallet_id:
-                    pattern_counts['LOT.*-STRAGGLER'] += 1
-                    matched = True
-                elif 'AISLE-STUCK-' in pallet_id:
-                    pattern_counts['AISLE-STUCK-'] += 1
-                    matched = True
-                elif 'DUPLICATE-' in pallet_id:
-                    pattern_counts['DUPLICATE-'] += 1
-                    matched = True
-                elif 'INVALID-' in pallet_id:
-                    pattern_counts['INVALID-'] += 1
-                    matched = True
-                elif pallet_id.startswith('PLT-'):
-                    pattern_counts['PLT-'] += 1
-                    matched = True
-
-                if not matched:
-                    pattern_counts['OTHER'] += 1
-
-            print(f"[STAGNANT_DEBUG] Pallet ID pattern analysis:")
-            for pattern, count in pattern_counts.items():
-                if count > 0:
-                    percentage = (count / len(anomalies)) * 100
-                    status = "✅ INJECTED" if pattern == 'STAGNANT-' else "⚠️ CROSS-CONTAMINATION"
-                    print(f"[STAGNANT_DEBUG]   {pattern}: {count} pallets ({percentage:.1f}%) {status}")
-
-            # Location breakdown
-            anomaly_locations = {}
-            for anomaly in anomalies:
-                loc = anomaly['location']
-                anomaly_locations[loc] = anomaly_locations.get(loc, 0) + 1
-
-            print(f"[STAGNANT_DEBUG] Location breakdown:")
-            for loc, count in sorted(anomaly_locations.items(), key=lambda x: x[1], reverse=True):
-                print(f"[STAGNANT_DEBUG]   {loc}: {count} anomalies")
-
-        print(f"[STAGNANT_DEBUG] ================================================================")
+            print(f"[STAGNANT_PALLETS] Found {len(anomalies)} stagnant pallets (threshold: {time_threshold_hours}h)")
         # ==================== DETAILED LOGGING END ====================
 
         return anomalies
@@ -2775,22 +2693,13 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         
         # Count pallets per location
         location_counts = inventory_df['location'].value_counts()
-        print(f"[OVERCAPACITY_DEBUG] ==================== OVERCAPACITY ANALYSIS START ====================")
-        print(f"[OVERCAPACITY_DEBUG] Total unique locations found: {len(location_counts)}")
-        # Only show locations with >2 pallets (potential overcapacity)
-        overcap_candidates = location_counts[location_counts > 2]
-        if len(overcap_candidates) > 0:
-            print(f"[OVERCAPACITY_DEBUG] Potential overcapacity locations: {len(overcap_candidates)}")
-        else:
-            print(f"[OVERCAPACITY_DEBUG] No locations with >2 pallets found")
-        
+
         # Separate overcapacity locations by category for differentiated processing
         storage_overcapacity = {}
         special_overcapacity = {}
         locations_within_capacity = 0
-        
+
         # ENHANCEMENT: Pre-validation filter to exclude invalid locations from overcapacity analysis
-        print(f"[OVERCAPACITY_DEBUG] -------------------- PRE-VALIDATION FILTER --------------------")
         validated_location_counts = {}
         invalid_location_count = 0
         
@@ -2808,7 +2717,6 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             # Bulk load all unique locations from inventory
             unique_locations = inventory_df['location'].unique().tolist()
             self._scope_service_cache[warehouse_id_str].bulk_load_locations(unique_locations)
-            print(f"[LOCATION_DIFF] Bulk loaded {len(unique_locations)} locations into cached scope service")
 
         # PERFORMANCE: Use cached virtual engine from warehouse context (avoid redundant initialization)
         virtual_engine = None
@@ -2850,22 +2758,17 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 validated_location_counts[location] = count
             else:
                 invalid_location_count += 1
-                print(f"[OVERCAPACITY_DEBUG] [INVALID]: {location} ({count} pallets) - {validation_reason} [EXCLUDED from overcapacity analysis]")
-        
-        print(f"[OVERCAPACITY_DEBUG] Pre-validation summary: {len(validated_location_counts)} valid locations, {invalid_location_count} invalid locations excluded")
-        
+
         # Use validated locations for capacity analysis
         location_counts = validated_location_counts
-        
+
         # ========== VECTORIZED CAPACITY ANALYSIS (10-15x FASTER) ==========
-        print(f"[OVERCAPACITY_DEBUG] -------------------- CAPACITY ANALYSIS (VECTORIZED) --------------------")
 
         # Step 1: Bulk retrieve capacities using LocationRepository if available
         if warehouse_context and warehouse_context.get('location_repository'):
             location_repository = warehouse_context['location_repository']
             capacities_dict = location_repository.get_capacities_bulk(location_counts.keys())
             capacities = pd.Series(capacities_dict)
-            print(f"[OVERCAPACITY_DEBUG] Bulk loaded {len(capacities)} capacities from LocationRepository")
         else:
             # Fallback: Use scope service or individual lookups
             capacities = {}
@@ -2875,7 +2778,6 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                     location_obj, str(location), warehouse_context, is_validated=True
                 )
             capacities = pd.Series(capacities)
-            print(f"[OVERCAPACITY_DEBUG] Loaded {len(capacities)} capacities individually (no repository)")
 
         # Step 2: Convert location_counts to Series for vectorized operations
         location_counts_series = pd.Series(location_counts)
@@ -2887,8 +2789,6 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
         total_locations_analyzed = len(location_counts)
         overcapacity_locations_found = len(overcapacity_locs)
         locations_within_capacity = total_locations_analyzed - overcapacity_locations_found
-
-        print(f"[OVERCAPACITY_DEBUG] Vectorized detection complete: {overcapacity_locations_found} overcapacity locations")
 
         # Step 4: Classify overcapacity locations (only loop through overcapacity locations)
         for location in overcapacity_locs.index:
@@ -2914,16 +2814,8 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 special_overcapacity[location] = location_info
 
         # ========== END VECTORIZED CAPACITY ANALYSIS ==========
-        
-        print(f"[OVERCAPACITY_DEBUG] -------------------- SUMMARY --------------------")
-        print(f"[OVERCAPACITY_DEBUG] Total locations analyzed: {total_locations_analyzed}")
-        print(f"[OVERCAPACITY_DEBUG] Locations within capacity: {locations_within_capacity}")
-        print(f"[OVERCAPACITY_DEBUG] Overcapacity locations found: {overcapacity_locations_found}")
-        print(f"[OVERCAPACITY_DEBUG] Storage overcapacity locations: {len(storage_overcapacity)}")
-        print(f"[OVERCAPACITY_DEBUG] Special area overcapacity locations: {len(special_overcapacity)}")
-        
+
         # Generate CRITICAL individual pallet alerts for Storage locations
-        print(f"[OVERCAPACITY_DEBUG] Generating {len(storage_overcapacity)} storage anomalies...")
         storage_anomaly_count = 0
         excluded_pallet_count = 0
         
@@ -2971,13 +2863,7 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             })
             storage_anomaly_count += 1
         
-        if excluded_pallet_count > 0:
-            print(f"[OVERCAPACITY_DEBUG] Total pallets excluded by precedence: {excluded_pallet_count}")
-        
-        print(f"[OVERCAPACITY_DEBUG] Total storage anomalies generated: {storage_anomaly_count}")
-        
         # Generate WARNING location-level alerts for Special areas
-        print(f"[OVERCAPACITY_DEBUG] Generating {len(special_overcapacity)} special area anomalies...")
         special_anomaly_count = 0
         for location, info in special_overcapacity.items():
             # SAFETY CHECK: Prevent division by zero
@@ -2985,7 +2871,6 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
                 percentage = round((info['count'] / info['capacity']) * 100)
             else:
                 percentage = 999  # Indicate infinite overcapacity
-                print(f"[OVERCAPACITY_DEBUG] WARNING: Location {location} has capacity 0, using percentage=999")
             excess_pallets = info['count'] - info['capacity']
 
             # Use first pallet in location for the alert (required field)
@@ -3012,9 +2897,10 @@ class OvercapacityEvaluator(BaseRuleEvaluator):
             })
             special_anomaly_count += 1
             # Count logged in summary
-        
-        print(f"[OVERCAPACITY_DEBUG] Total special area anomalies generated: {special_anomaly_count}")
-        print(f"[OVERCAPACITY_DEBUG] Complete: {storage_anomaly_count} storage + {special_anomaly_count} special = {len(anomalies)} total anomalies")
+
+        # Log summary of overcapacity anomalies
+        if len(anomalies) > 0:
+            print(f"[OVERCAPACITY] Found {len(anomalies)} overcapacity anomalies ({storage_anomaly_count} storage, {special_anomaly_count} special)")
         
         # Add analytics metadata for tracking improvement
         if hasattr(rule, 'conditions') and rule.conditions:
@@ -3391,32 +3277,14 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
         time_threshold = conditions.get('time_threshold_hours', 4)
 
         # ==================== DETAILED LOGGING START ====================
-        print(f"[AISLE_STUCK_DEBUG] ==================== LOCATION-SPECIFIC STAGNANT EVALUATION ====================")
-        print(f"[AISLE_STUCK_DEBUG] Total pallets to evaluate: {len(inventory_df)}")
-        print(f"[AISLE_STUCK_DEBUG] Time threshold: {time_threshold}h")
-        print(f"[AISLE_STUCK_DEBUG] Rule conditions: {conditions}")
-
         anomalies = []
         now = datetime.now()
 
         # ENHANCED: Get patterns from resolver if available
         location_patterns = self._get_location_patterns(conditions, warehouse_context)
 
-        print(f"[AISLE_STUCK_DEBUG] Location patterns to match: {location_patterns}")
-
         # Filter by location patterns (support multiple patterns)
         matching_pallets = self._filter_by_patterns(inventory_df, location_patterns)
-
-        print(f"[AISLE_STUCK_DEBUG] Pallets matching location patterns: {len(matching_pallets)}")
-
-        # Show location distribution
-        if len(matching_pallets) > 0:
-            location_counts = matching_pallets['location'].value_counts()
-            print(f"[AISLE_STUCK_DEBUG] Location distribution:")
-            for loc, count in location_counts.items():
-                print(f"[AISLE_STUCK_DEBUG]   {loc}: {count} pallets")
-
-        print(f"[AISLE_STUCK_DEBUG] -------------------- EVALUATING PALLETS --------------------")
 
         evaluated_count = 0
         skipped_no_date = 0
@@ -3434,8 +3302,6 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
             exceeds_threshold = time_diff > timedelta(hours=time_threshold)
 
             if exceeds_threshold:
-                print(f"[AISLE_STUCK_DEBUG] ✅ ANOMALY #{len(anomalies)+1}: Pallet '{pallet['pallet_id']}' in '{pallet['location']}' (age: {time_diff_hours:.1f}h > {time_threshold}h)")
-
                 anomalies.append({
                     'pallet_id': pallet['pallet_id'],
                     'location': pallet['location'],
@@ -3450,79 +3316,11 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
                 below_threshold_count += 1
 
         # ==================== SUMMARY STATISTICS ====================
-        print(f"[AISLE_STUCK_DEBUG] ==================== EVALUATION SUMMARY ====================")
-        print(f"[AISLE_STUCK_DEBUG] Total pallets evaluated: {evaluated_count}")
-        print(f"[AISLE_STUCK_DEBUG] Skipped (no creation_date): {skipped_no_date}")
-        print(f"[AISLE_STUCK_DEBUG] Below threshold: {below_threshold_count}")
-        print(f"[AISLE_STUCK_DEBUG] Anomalies detected: {len(anomalies)}")
-
-        # Pattern breakdown analysis
+        # Log summary if anomalies found
         if len(anomalies) > 0:
-            print(f"[AISLE_STUCK_DEBUG] -------------------- PATTERN BREAKDOWN --------------------")
+            print(f"[LOCATION_SPECIFIC_STAGNANT] Found {len(anomalies)} pallets stuck in specific locations (threshold: {time_threshold}h)")
 
-            # Analyze pallet ID patterns
-            pattern_counts = {
-                'AISLE-STUCK-': 0,
-                'OVERCAP-': 0,
-                'STAGNANT-': 0,
-                'LOT.*-STRAGGLER': 0,
-                'DUPLICATE-': 0,
-                'INVALID-': 0,
-                'PLT-': 0,
-                'OTHER': 0
-            }
-
-            for anomaly in anomalies:
-                pallet_id = anomaly['pallet_id']
-                matched = False
-
-                if 'AISLE-STUCK-' in pallet_id:
-                    pattern_counts['AISLE-STUCK-'] += 1
-                    matched = True
-                elif 'OVERCAP-' in pallet_id:
-                    pattern_counts['OVERCAP-'] += 1
-                    matched = True
-                elif 'STAGNANT-' in pallet_id:
-                    pattern_counts['STAGNANT-'] += 1
-                    matched = True
-                elif 'STRAGGLER' in pallet_id:
-                    pattern_counts['LOT.*-STRAGGLER'] += 1
-                    matched = True
-                elif 'DUPLICATE-' in pallet_id:
-                    pattern_counts['DUPLICATE-'] += 1
-                    matched = True
-                elif 'INVALID-' in pallet_id:
-                    pattern_counts['INVALID-'] += 1
-                    matched = True
-                elif pallet_id.startswith('PLT-'):
-                    pattern_counts['PLT-'] += 1
-                    matched = True
-
-                if not matched:
-                    pattern_counts['OTHER'] += 1
-
-            print(f"[AISLE_STUCK_DEBUG] Pallet ID pattern analysis:")
-            for pattern, count in pattern_counts.items():
-                if count > 0:
-                    percentage = (count / len(anomalies)) * 100
-                    status = "✅ INJECTED" if pattern == 'AISLE-STUCK-' else "⚠️ CROSS-CONTAMINATION"
-                    print(f"[AISLE_STUCK_DEBUG]   {pattern}: {count} pallets ({percentage:.1f}%) {status}")
-
-            # Location breakdown
-            anomaly_locations = {}
-            for anomaly in anomalies:
-                loc = anomaly['location']
-                anomaly_locations[loc] = anomaly_locations.get(loc, 0) + 1
-
-            print(f"[AISLE_STUCK_DEBUG] Location breakdown:")
-            for loc, count in sorted(anomaly_locations.items(), key=lambda x: x[1], reverse=True):
-                print(f"[AISLE_STUCK_DEBUG]   {loc}: {count} anomalies")
-
-        print(f"[AISLE_STUCK_DEBUG] ================================================================")
         # ==================== DETAILED LOGGING END ====================
-
-        if len(anomalies) > 0:
-            print(f"[PATTERN_RESOLVER] LocationSpecificStagnantEvaluator found {len(anomalies)} anomalies")
         return anomalies
 
     def _get_location_patterns(self, conditions: dict, warehouse_context: dict) -> List[str]:
@@ -3581,19 +3379,11 @@ class LocationSpecificStagnantEvaluator(BaseRuleEvaluator):
                 combined_mask = combined_mask | pattern_mask
 
                 matches = pattern_mask.sum()
-                # Only log zero matches for troubleshooting
-                if matches == 0:
-                    print(f"[PATTERN_RESOLVER] Pattern '{pattern}' matched 0 locations")
 
             except Exception as e:
-                print(f"[PATTERN_RESOLVER] Pattern '{pattern}' failed: {e}")
                 continue
 
         matching_pallets = inventory_df[combined_mask]
-        # Only log if no matches found (for troubleshooting)
-        if len(matching_pallets) == 0:
-            print(f"[PATTERN_RESOLVER] Total matches across all patterns: {len(matching_pallets)}")
-
         return matching_pallets
 
 class TemperatureZoneMismatchEvaluator(BaseRuleEvaluator):
@@ -3714,7 +3504,6 @@ class LocationMappingErrorEvaluator(BaseRuleEvaluator):
                                 matched_pattern = pattern
                                 break
                         except re.error as e:
-                            print(f"[PATTERN_RESOLVER] Invalid regex pattern '{pattern}': {e}")
                             continue
 
                     if expected_type:
@@ -3740,7 +3529,7 @@ class LocationMappingErrorEvaluator(BaseRuleEvaluator):
                     })
 
         if len(anomalies) > 0:
-            print(f"[PATTERN_RESOLVER] LocationMappingErrorEvaluator found {len(anomalies)} anomalies")
+            print(f"[LOCATION_MAPPING] Found {len(anomalies)} location mapping errors")
         return anomalies
 
     def _get_location_type_patterns_enhanced(self, warehouse_context: dict) -> Dict[str, List[str]]:

@@ -101,8 +101,8 @@ CORS(app,
 # Global request logger
 @app.before_request
 def log_requests():
-    # Log all API requests - bypass log filter
-    if request.path.startswith('/api/'):
+    # Log all API requests - bypass log filter (only in development)
+    if not IS_PRODUCTION and request.path.startswith('/api/'):
         import sys
         # Force output to stderr to bypass logging filter
         sys.stderr.write(f"[REQUEST_LOG] {request.method} {request.url} - Path: {request.path} - Endpoint: {request.endpoint}\n")
@@ -152,9 +152,10 @@ def test_cors():
 # Manual CORS handler for all requests
 def add_cors_headers(response):
     origin = request.headers.get('Origin')
-    print(f"Request origin: {origin}")
-    print(f"Allowed origins: {allowed_origins}")
-    
+    if not IS_PRODUCTION:
+        print(f"Request origin: {origin}")
+        print(f"Allowed origins: {allowed_origins}")
+
     # Always add CORS headers for allowed origins
     if origin and (origin in allowed_origins or any(origin.endswith(allowed.replace('https://*.', '.')) for allowed in allowed_origins if allowed.startswith('https://*.'))):
         response.headers['Access-Control-Allow-Origin'] = origin
@@ -162,7 +163,8 @@ def add_cors_headers(response):
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Max-Age'] = '3600'
-        print(f"CORS headers added for origin: {origin}")
+        if not IS_PRODUCTION:
+            print(f"CORS headers added for origin: {origin}")
     else:
         # For debugging, let's be more permissive temporarily
         if origin and (origin.endswith('.vercel.app') or origin.startswith('http://localhost')):
@@ -171,10 +173,12 @@ def add_cors_headers(response):
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Max-Age'] = '3600'
-            print(f"CORS headers added (permissive) for origin: {origin}")
+            if not IS_PRODUCTION:
+                print(f"CORS headers added (permissive) for origin: {origin}")
         else:
-            print(f"CORS headers NOT added for origin: {origin}")
-    
+            if not IS_PRODUCTION:
+                print(f"CORS headers NOT added for origin: {origin}")
+
     return response
 
 
@@ -182,19 +186,21 @@ def add_cors_headers(response):
 @app.after_request
 def after_request(response):
     response = add_cors_headers(response)
-    print(f"Response: {response.status_code}")
-    print(f"CORS Headers: {dict(response.headers)}")
+    if not IS_PRODUCTION:
+        print(f"Response: {response.status_code}")
+        print(f"CORS Headers: {dict(response.headers)}")
     return response
 
 # Combined request handler for logging and preflight
 @app.before_request
 def handle_request():
-    # Log the request
-    print(f"\nIncoming request: {request.method} {request.path}")
-    print(f"Origin: {request.headers.get('Origin', 'None')}")
-    print(f"Authorization: {'Present' if request.headers.get('Authorization') else 'Missing'}")
-    print(f"Content-Type: {request.headers.get('Content-Type', 'None')}")
-    print(f"User-Agent: {request.headers.get('User-Agent', 'None')[:50]}...")
+    # Log the request (only in development)
+    if not IS_PRODUCTION:
+        print(f"\nIncoming request: {request.method} {request.path}")
+        print(f"Origin: {request.headers.get('Origin', 'None')}")
+        print(f"Authorization: {'Present' if request.headers.get('Authorization') else 'Missing'}")
+        print(f"Content-Type: {request.headers.get('Content-Type', 'None')}")
+        print(f"User-Agent: {request.headers.get('User-Agent', 'None')[:50]}...")
     
     # Handle preflight OPTIONS requests
     if request.method == "OPTIONS":
