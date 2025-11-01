@@ -411,63 +411,6 @@ export function EnhancedOverviewView() {
   // Calculate total active issues count (all unresolved anomalies)
   const totalActiveIssuesCount = actionData ? actionData.totalActiveItems : 0
 
-  //  If processing state is active, show processing UI instead of normal dashboard
-  console.log('🎨 RENDER CHECK: isProcessing =', isProcessing, 'processingReportId =', processingReportId)
-  if (isProcessing) {
-    console.log('✨ RENDERING PROCESSING UI for report:', processingReportId)
-    return (
-      <div className="p-8 pt-12 space-y-8">
-        <Card className="border-2 border-blue-500 bg-gradient-to-br from-blue-50 to-white">
-          <CardContent className="p-12">
-            <div className="flex flex-col items-center justify-center space-y-6">
-              {/* Animated Spinner */}
-              <div className="relative w-24 h-24">
-                <div className="absolute inset-0 border-8 border-blue-200 rounded-full"></div>
-                <div className="absolute inset-0 border-8 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
-              </div>
-
-              {/* Processing Message */}
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-blue-900">
-                  Analyzing Your Warehouse Data...
-                </h2>
-                <p className="text-blue-700 text-lg">
-                  Processing inventory report #{processingReportId}
-                </p>
-                <p className="text-blue-600">
-                  This may take 15-20 seconds for large files
-                </p>
-              </div>
-
-              {/* Progress Steps */}
-              <div className="w-full max-w-md space-y-3">
-                <div className="flex items-center space-x-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span className="text-green-900 font-medium">Files uploaded successfully</span>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-blue-100 border-2 border-blue-400 rounded-lg">
-                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-blue-900 font-medium">Running detection algorithms...</span>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-gray-50 border border-gray-200 rounded-lg opacity-50">
-                  <Clock className="w-5 h-5 text-gray-400" />
-                  <span className="text-gray-600">Generating insights...</span>
-                </div>
-              </div>
-
-              {/* Info Banner */}
-              <div className="mt-6 p-4 bg-blue-100 border border-blue-300 rounded-lg max-w-md">
-                <p className="text-sm text-blue-800 text-center">
-                  <AlertTriangle className="w-4 h-4 inline mr-2" />
-                  Results will appear automatically when ready. No need to refresh!
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
 
   return (
     <div className="p-8 pt-12 space-y-8">
