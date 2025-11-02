@@ -2013,6 +2013,39 @@ def create_analysis_report(current_user):
             db.session.rollback()
             raise db_error
 
+        # Track file upload analytics
+        try:
+            from analytics_service import AnalyticsService
+
+            # Track successful file upload
+            AnalyticsService.track_file_upload(
+                user_id=current_user.id,
+                warehouse_id=warehouse_id,
+                filename=inventory_file.filename,
+                file_size_bytes=0,  # Size already consumed
+                processing_time_seconds=0,  # Will improve with timing later
+                success=True
+            )
+
+            # Track generic event
+            AnalyticsService.track_event(
+                user_id=current_user.id,
+                warehouse_id=warehouse_id,
+                event_type='file_upload',
+                event_category='inventory',
+                event_action='upload_success',
+                event_data={
+                    'filename': inventory_file.filename,
+                    'anomaly_count': len(new_report.anomalies) if hasattr(new_report, 'anomalies') else 0,
+                    'cleared_previous': cleared_count
+                }
+            )
+
+            print(f"[ANALYTICS] File upload tracked for user {current_user.id}")
+        except Exception as analytics_error:
+            # Don't fail the upload if analytics fails
+            print(f"[ANALYTICS] Warning: Failed to track upload analytics: {analytics_error}")
+
         # Prepare success message with clearing info
         success_message = 'Report created successfully'
         if cleared_count > 0:
@@ -2029,6 +2062,23 @@ def create_analysis_report(current_user):
         import traceback
         print(f"[ERROR] during processing: {e}")
         print(f"[ERROR] traceback: {traceback.format_exc()}")
+
+        # Track failed upload
+        try:
+            from analytics_service import AnalyticsService
+            AnalyticsService.track_file_upload(
+                user_id=current_user.id,
+                warehouse_id=warehouse_id if 'warehouse_id' in locals() else None,
+                filename=inventory_file.filename if 'inventory_file' in locals() else 'unknown',
+                file_size_bytes=0,
+                processing_time_seconds=0,
+                success=False,
+                error_message=str(e)
+            )
+            print(f"[ANALYTICS] Failed upload tracked for user {current_user.id}")
+        except Exception as analytics_error:
+            print(f"[ANALYTICS] Warning: Failed to track failed upload: {analytics_error}")
+
         return jsonify({'message': f'An error occurred while analyzing the data. (Detail: {type(e).__name__}: {str(e)})'}), 500
     
     finally:
