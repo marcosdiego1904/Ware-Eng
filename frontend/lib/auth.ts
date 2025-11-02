@@ -2,6 +2,7 @@ import api from './api';
 
 export interface User {
   username: string;
+  is_admin?: boolean;
 }
 
 export interface LoginRequest {
@@ -18,6 +19,7 @@ export interface RegisterRequest {
 export interface AuthResponse {
   token: string;
   username: string;
+  is_admin?: boolean;
 }
 
 export const authApi = {
@@ -68,4 +70,9 @@ export const getUser = (): User | null => {
 
 export const isAuthenticated = () => {
   return !!getAuthToken();
+};
+
+export const isAdmin = (): boolean => {
+  const user = getUser();
+  return user?.is_admin === true;
 };
