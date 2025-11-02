@@ -1976,9 +1976,49 @@ def create_analysis_report(current_user):
                 anomaly.report_id = new_report.id
                 db.session.add(anomaly)
 
+                # Track anomaly in analytics
+                try:
+                    from analytics_service import AnalyticsService
+                    # Extract rule type and severity from anomaly
+                    rule_type = cleaned_item.get('anomaly_type', 'unknown') if isinstance(item, dict) else 'unknown'
+                    severity = cleaned_item.get('severity', 'medium') if isinstance(item, dict) else 'medium'
+
+                    # Note: We'll link this to AnalyticsAnomaly after flush when anomaly.id is available
+                    # For now, just log that we'll track it
+                    print(f"[ANALYTICS] Will track anomaly: {rule_type} (severity: {severity})")
+                except Exception as analytics_error:
+                    print(f"[ANALYTICS] Warning: Failed to prepare anomaly tracking: {analytics_error}")
+
             # CRITICAL: Ensure all changes are flushed before committing
             print(f"[DB] Flushing all {len(anomalies)} anomalies to database...")
             db.session.flush()
+
+            # Create AnalyticsAnomaly entries now that anomaly IDs are available
+            try:
+                from analytics_service import AnalyticsService
+                print(f"[ANALYTICS] Creating AnalyticsAnomaly entries for {len(new_report.anomalies)} anomalies...")
+
+                for anomaly in new_report.anomalies:
+                    try:
+                        # Parse details to get rule_type and severity
+                        details = json.loads(anomaly.details) if anomaly.details else {}
+                        rule_type = details.get('anomaly_type', anomaly.description)
+                        severity = details.get('severity', 'medium')
+
+                        # Track the anomaly
+                        AnalyticsService.track_anomaly(
+                            anomaly_id=anomaly.id,
+                            user_id=current_user.id,
+                            warehouse_id=warehouse_id,
+                            rule_type=rule_type,
+                            severity=severity
+                        )
+                    except Exception as track_error:
+                        print(f"[ANALYTICS] Warning: Failed to track individual anomaly {anomaly.id}: {track_error}")
+
+                print(f"[ANALYTICS] ✅ Successfully tracked {len(new_report.anomalies)} anomalies")
+            except Exception as analytics_error:
+                print(f"[ANALYTICS] Warning: Failed to track anomalies: {analytics_error}")
 
             # CRITICAL: Explicit commit to make data visible immediately
             print(f"[DB] Committing transaction for report {new_report.id}...")
@@ -2315,8 +2355,31 @@ def change_api_anomaly_status(current_user, anomaly_id):
         comment=comment,
         user_id=current_user.id
     )
-    
+
     db.session.add(history_entry)
+
+    # Update analytics if status changed to Resolved
+    if new_status == 'Resolved':
+        try:
+            from analytics_models import AnalyticsAnomaly
+            from datetime import datetime
+
+            analytics_anomaly = AnalyticsAnomaly.query.filter_by(anomaly_id=anomaly.id).first()
+            if analytics_anomaly:
+                analytics_anomaly.resolved_at = datetime.utcnow()
+
+                # Calculate time to resolve
+                if analytics_anomaly.detected_at:
+                    time_diff = datetime.utcnow() - analytics_anomaly.detected_at
+                    analytics_anomaly.time_to_resolve_hours = time_diff.total_seconds() / 3600
+
+                analytics_anomaly.user_action = 'resolved'
+                print(f"[ANALYTICS] Marked anomaly {anomaly.id} as resolved")
+            else:
+                print(f"[ANALYTICS] Warning: No AnalyticsAnomaly found for anomaly {anomaly.id}")
+        except Exception as analytics_error:
+            print(f"[ANALYTICS] Warning: Failed to update resolution analytics: {analytics_error}")
+
     db.session.commit()
     
     new_history_item = {
@@ -2364,7 +2427,23 @@ def resolve_all_anomalies(current_user):
             )
             db.session.add(history_entry)
 
+            # Update analytics
+            try:
+                from analytics_models import AnalyticsAnomaly
+                from datetime import datetime
+
+                analytics_anomaly = AnalyticsAnomaly.query.filter_by(anomaly_id=anomaly.id).first()
+                if analytics_anomaly:
+                    analytics_anomaly.resolved_at = datetime.utcnow()
+                    if analytics_anomaly.detected_at:
+                        time_diff = datetime.utcnow() - analytics_anomaly.detected_at
+                        analytics_anomaly.time_to_resolve_hours = time_diff.total_seconds() / 3600
+                    analytics_anomaly.user_action = 'bulk_resolved'
+            except Exception as analytics_error:
+                print(f"[ANALYTICS] Warning: Failed to update analytics for anomaly {anomaly.id}: {analytics_error}")
+
         db.session.commit()
+        print(f"[ANALYTICS] Bulk resolved {resolved_count} anomalies")
 
         return jsonify({
             'success': True,

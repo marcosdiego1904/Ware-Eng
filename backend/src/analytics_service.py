@@ -15,8 +15,12 @@ from analytics_models import (
 from sqlalchemy import func
 import uuid
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+# Pilot user configuration
+PILOT_USERNAME = os.environ.get('PILOT_USERNAME', 'pilot1')
 
 
 class AnalyticsService:
@@ -26,6 +30,17 @@ class AnalyticsService:
     MANUAL_FILE_REVIEW_TIME = 30  # Minutes to manually review an inventory file
     MANUAL_ANOMALY_CHECK_TIME = 2  # Minutes to manually check for each type of anomaly
     MANUAL_REPORT_GENERATION_TIME = 15  # Minutes to manually create a report
+
+    @staticmethod
+    def get_pilot_user_id():
+        """Get the pilot user's ID from username"""
+        from core_models import User
+        pilot_user = User.query.filter_by(username=PILOT_USERNAME).first()
+        if pilot_user:
+            return pilot_user.id
+        else:
+            logger.warning(f"Pilot user '{PILOT_USERNAME}' not found in database")
+            return None
 
     @staticmethod
     def generate_session_id():

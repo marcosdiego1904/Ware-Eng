@@ -132,7 +132,13 @@ def get_dashboard_metrics(current_user):
         warehouse_id = request.args.get('warehouse_id', type=int)
         start_date, end_date = parse_date_range(request)
 
-        # Get all metrics
+        # Default to pilot user if no user_id specified
+        if not user_id:
+            user_id = AnalyticsService.get_pilot_user_id()
+            if not user_id:
+                return jsonify({'error': 'Pilot user not found'}), 404
+
+        # Get all metrics (filtered by pilot user)
         usage_metrics = AnalyticsService.get_usage_metrics(
             user_id=user_id,
             warehouse_id=warehouse_id,

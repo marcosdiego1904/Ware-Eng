@@ -155,7 +155,7 @@ export function AnalyticsView() {
         <div>
           <h1 className="text-3xl font-bold">Pilot Analytics Dashboard</h1>
           <p className="text-muted-foreground mt-1">
-            Monitor pilot program performance, usage, and ROI metrics
+            Tracking pilot user: <span className="font-semibold text-blue-600">pilot1</span> | Monitor usage, anomalies found & resolved
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -196,41 +196,54 @@ export function AnalyticsView() {
         </div>
       )}
 
-      {/* Usage Overview */}
+      {/* Core Pilot Metrics */}
       <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Usage Metrics</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard
-            title="Total Sessions"
-            value={metrics?.usage.total_sessions || 0}
-            description="Login sessions"
-            icon={<Users className="h-5 w-5" />}
-            loading={loading}
-          />
+        <h2 className="text-xl font-semibold">Core Pilot Metrics</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="border-2 border-blue-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-700">
+                <FileUp className="h-6 w-6" />
+                Files Uploaded
+              </CardTitle>
+              <CardDescription>Total inventory files processed by pilot</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-5xl font-bold text-blue-600">
+                {loading ? '...' : metrics?.usage.files_uploaded || 0}
+              </p>
+            </CardContent>
+          </Card>
 
-          <MetricCard
-            title="Time Spent"
-            value={`${Math.round((metrics?.usage.total_time_minutes || 0) / 60)}h ${Math.round((metrics?.usage.total_time_minutes || 0) % 60)}m`}
-            description="Total active time"
-            icon={<Clock className="h-5 w-5" />}
-            loading={loading}
-          />
+          <Card className="border-2 border-orange-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-orange-700">
+                <AlertCircle className="h-6 w-6" />
+                Anomalies Found
+              </CardTitle>
+              <CardDescription>Issues detected in pilot's uploaded files</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-5xl font-bold text-orange-600">
+                {loading ? '...' : metrics?.business.total_issues || 0}
+              </p>
+            </CardContent>
+          </Card>
 
-          <MetricCard
-            title="Files Uploaded"
-            value={metrics?.usage.files_uploaded || 0}
-            description="Inventory files processed"
-            icon={<FileUp className="h-5 w-5" />}
-            loading={loading}
-          />
-
-          <MetricCard
-            title="Avg Session"
-            value={`${Math.round(metrics?.usage.avg_session_duration || 0)} min`}
-            description="Average session duration"
-            icon={<Activity className="h-5 w-5" />}
-            loading={loading}
-          />
+          <Card className="border-2 border-green-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-green-700">
+                <CheckCircle className="h-6 w-6" />
+                Anomalies Resolved
+              </CardTitle>
+              <CardDescription>Issues from pilot's files that were fixed</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-5xl font-bold text-green-600">
+                {loading ? '...' : metrics?.business.resolved_issues || 0}
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
