@@ -82,15 +82,22 @@ export function AnalyticsView() {
         total_issues: 45,
         resolved_issues: 38,
         resolution_rate: 84.4,
-        time_saved_minutes: 1350,
-        cost_savings: 1125.00,
+        avg_resolution_hours: 12.5,
+        issues_by_severity: {
+          'high': 15,
+          'medium': 20,
+          'low': 10
+        },
         issues_by_rule: {
           'excess_inventory': 18,
           'understock_warning': 12,
           'slow_moving_items': 8,
           'pricing_anomaly': 5,
           'duplicate_entries': 2
-        }
+        },
+        total_cost_impact: 2500.00,
+        time_saved_minutes: 1350,
+        cost_savings: 1125.00
       },
       technical: {
         total_uploads: 15,
