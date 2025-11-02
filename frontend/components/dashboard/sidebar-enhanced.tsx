@@ -5,12 +5,12 @@ import { useAuth } from '@/lib/auth-context'
 import { useDashboardStore } from '@/lib/store-enhanced'
 import { useToast } from '@/lib/store-enhanced'
 import { cn } from '@/lib/utils'
-import { 
-  BarChart3, 
-  FileText, 
-  Upload, 
-  Settings, 
-  User, 
+import {
+  BarChart3,
+  FileText,
+  Upload,
+  Settings,
+  User,
   LogOut,
   Package,
   Menu,
@@ -19,7 +19,8 @@ import {
   Moon,
   Sun,
   Zap,
-  Activity
+  Activity,
+  TrendingUp
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,28 +31,40 @@ const navigationItems = [
     label: 'Dashboard',
     icon: BarChart3,
     description: 'Overview and health metrics',
-    shortcut: '⌘D'
+    shortcut: '⌘D',
+    adminOnly: false
   },
   {
     id: 'new-analysis' as const,
     label: 'New Analysis',
     icon: Upload,
     description: 'Upload files and start analysis',
-    shortcut: '⌘N'
+    shortcut: '⌘N',
+    adminOnly: false
   },
   {
     id: 'reports' as const,
     label: 'Reports',
     icon: FileText,
     description: 'View and manage reports',
-    shortcut: '⌘R'
+    shortcut: '⌘R',
+    adminOnly: false
   },
   {
     id: 'rules' as const,
     label: 'Rules',
     icon: Settings,
     description: 'Warehouse rules configuration',
-    shortcut: '⌘S'
+    shortcut: '⌘S',
+    adminOnly: false
+  },
+  {
+    id: 'analytics' as const,
+    label: 'Analytics',
+    icon: TrendingUp,
+    description: 'Pilot program metrics & ROI',
+    shortcut: '⌘A',
+    adminOnly: true
   },
 ]
 
@@ -97,13 +110,19 @@ export function EnhancedSidebar() {
             e.preventDefault()
             setCurrentView('rules')
             break
+          case 'a':
+            e.preventDefault()
+            if (user?.is_admin) {
+              setCurrentView('analytics')
+            }
+            break
         }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [setCurrentView])
+  }, [setCurrentView, user])
 
   const handleLogout = () => {
     logout()
@@ -195,9 +214,9 @@ export function EnhancedSidebar() {
 }
 
 interface SidebarContentProps {
-  user: { username?: string; name?: string; email?: string } | null
+  user: { username?: string; name?: string; email?: string; is_admin?: boolean } | null
   currentView: string
-  setCurrentView: (view: "rules" | "overview" | "new-analysis" | "reports" | "profile") => void
+  setCurrentView: (view: "rules" | "overview" | "new-analysis" | "reports" | "profile" | "analytics") => void
   sidebarCollapsed: boolean
   setSidebarCollapsed: (collapsed: boolean) => void
   theme: string
@@ -297,50 +316,52 @@ function SidebarContent({
       {/* Navigation */}
       <nav className="flex-1 px-4 py-2">
         <div className="space-y-1">
-          {navigationItems.map((item) => {
-            const isActive = currentView === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => setCurrentView(item.id)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-3 rounded-xl w-full text-left transition-all duration-200 group relative",
-                  isActive
-                    ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg transform scale-[1.02]"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white hover:transform hover:scale-[1.01]"
-                )}
-                title={sidebarCollapsed ? item.label : undefined}
-              >
-                <item.icon className={cn(
-                  "w-5 h-5 transition-transform duration-200",
-                  isActive && "drop-shadow-sm"
-                )} />
-                
-                {!sidebarCollapsed && (
-                  <>
-                    <div className="flex flex-col flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{item.label}</span>
-                        <span className="text-xs opacity-50">{item.shortcut}</span>
+          {navigationItems
+            .filter((item) => !item.adminOnly || user?.is_admin)
+            .map((item) => {
+              const isActive = currentView === item.id
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setCurrentView(item.id)}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-3 rounded-xl w-full text-left transition-all duration-200 group relative",
+                    isActive
+                      ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg transform scale-[1.02]"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white hover:transform hover:scale-[1.01]"
+                  )}
+                  title={sidebarCollapsed ? item.label : undefined}
+                >
+                  <item.icon className={cn(
+                    "w-5 h-5 transition-transform duration-200",
+                    isActive && "drop-shadow-sm"
+                  )} />
+
+                  {!sidebarCollapsed && (
+                    <>
+                      <div className="flex flex-col flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{item.label}</span>
+                          <span className="text-xs opacity-50">{item.shortcut}</span>
+                        </div>
+                        <span className="text-xs opacity-70">{item.description}</span>
                       </div>
-                      <span className="text-xs opacity-70">{item.description}</span>
+
+                      {isActive && (
+                        <div className="w-1 h-6 bg-white rounded-full opacity-80" />
+                      )}
+                    </>
+                  )}
+
+                  {/* Tooltip for collapsed state */}
+                  {sidebarCollapsed && (
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+                      {item.label}
                     </div>
-                    
-                    {isActive && (
-                      <div className="w-1 h-6 bg-white rounded-full opacity-80" />
-                    )}
-                  </>
-                )}
-                
-                {/* Tooltip for collapsed state */}
-                {sidebarCollapsed && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
-                    {item.label}
-                  </div>
-                )}
-              </button>
-            )
-          })}
+                  )}
+                </button>
+              )
+            })}
         </div>
       </nav>
 

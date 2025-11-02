@@ -15,7 +15,8 @@ import {
   Building2,
   Shield,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  TrendingUp
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -24,37 +25,50 @@ const navigationItems = [
     id: 'overview' as const,
     label: 'Dashboard',
     icon: BarChart3,
-    description: 'Overview and health metrics'
+    description: 'Overview and health metrics',
+    adminOnly: false
   },
   {
     id: 'new-analysis' as const,
     label: 'New Analysis',
     icon: Upload,
-    description: 'Upload files and start analysis'
+    description: 'Upload files and start analysis',
+    adminOnly: false
   },
   {
     id: 'reports' as const,
     label: 'Reports',
     icon: FileText,
-    description: 'View and manage reports'
+    description: 'View and manage reports',
+    adminOnly: false
   },
   {
     id: 'rule-center' as const,
     label: 'Rule Center',
     icon: Shield,
-    description: '7 rules protecting your inventory'
+    description: '7 rules protecting your inventory',
+    adminOnly: false
   },
   {
     id: 'rules' as const,
     label: 'Rules',
     icon: Settings,
-    description: 'Warehouse rules configuration'
+    description: 'Warehouse rules configuration',
+    adminOnly: false
   },
   {
     id: 'warehouse-settings' as const,
     label: 'Warehouse Settings',
     icon: Building2,
-    description: 'Location management & setup'
+    description: 'Location management & setup',
+    adminOnly: false
+  },
+  {
+    id: 'analytics' as const,
+    label: 'Analytics',
+    icon: TrendingUp,
+    description: 'Pilot program metrics & ROI',
+    adminOnly: true
   },
 ]
 
@@ -115,42 +129,44 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className={cn("flex-1", isCollapsed ? "px-2" : "px-4")}>
         <div className="space-y-1">
-          {navigationItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setCurrentView(item.id)}
-              title={isCollapsed ? item.label : undefined}
-              className={cn(
-                "group flex items-center rounded-lg w-full text-left transition-all duration-200",
-                isCollapsed ? "gap-0 py-3 justify-center" : "gap-3 py-3",
-                currentView === item.id
-                  ? isCollapsed
-                    ? "bg-[#FFF4F0] text-[#F08A5D]"
-                    : "bg-[#FFF4F0] text-[#F08A5D] pl-2 border-l-4 border-[#F08A5D] font-semibold shadow-sm"
-                  : isCollapsed
-                    ? "text-gray-600 hover:bg-[#FFF4F0]/40 hover:text-[#F08A5D]"
-                    : "text-gray-600 hover:bg-[#FFF4F0]/40 hover:text-[#F08A5D] pl-3",
-                item.id === 'rules' && "hidden"
-              )}
-            >
-              <item.icon className={cn(
-                "transition-colors duration-200",
-                isCollapsed ? "w-6 h-6" : "w-5 h-5",
-                currentView === item.id
-                  ? "text-[#F08A5D]"
-                  : "text-gray-400 group-hover:text-[#F08A5D]"
-              )} />
-              {!isCollapsed && (
-                <div className="flex flex-col">
-                  <span className="font-medium">{item.label}</span>
-                  <span className={cn(
-                    "text-xs transition-colors duration-200",
-                    currentView === item.id ? "text-[#F08A5D]/70" : "text-gray-500 group-hover:text-gray-600"
-                  )}>{item.description}</span>
-                </div>
-              )}
-            </button>
-          ))}
+          {navigationItems
+            .filter((item) => !item.adminOnly || user?.is_admin)
+            .map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setCurrentView(item.id)}
+                title={isCollapsed ? item.label : undefined}
+                className={cn(
+                  "group flex items-center rounded-lg w-full text-left transition-all duration-200",
+                  isCollapsed ? "gap-0 py-3 justify-center" : "gap-3 py-3",
+                  currentView === item.id
+                    ? isCollapsed
+                      ? "bg-[#FFF4F0] text-[#F08A5D]"
+                      : "bg-[#FFF4F0] text-[#F08A5D] pl-2 border-l-4 border-[#F08A5D] font-semibold shadow-sm"
+                    : isCollapsed
+                      ? "text-gray-600 hover:bg-[#FFF4F0]/40 hover:text-[#F08A5D]"
+                      : "text-gray-600 hover:bg-[#FFF4F0]/40 hover:text-[#F08A5D] pl-3",
+                  item.id === 'rules' && "hidden"
+                )}
+              >
+                <item.icon className={cn(
+                  "transition-colors duration-200",
+                  isCollapsed ? "w-6 h-6" : "w-5 h-5",
+                  currentView === item.id
+                    ? "text-[#F08A5D]"
+                    : "text-gray-400 group-hover:text-[#F08A5D]"
+                )} />
+                {!isCollapsed && (
+                  <div className="flex flex-col">
+                    <span className="font-medium">{item.label}</span>
+                    <span className={cn(
+                      "text-xs transition-colors duration-200",
+                      currentView === item.id ? "text-[#F08A5D]/70" : "text-gray-500 group-hover:text-gray-600"
+                    )}>{item.description}</span>
+                  </div>
+                )}
+              </button>
+            ))}
         </div>
       </nav>
 

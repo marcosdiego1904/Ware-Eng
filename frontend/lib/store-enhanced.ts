@@ -85,7 +85,7 @@ export const useAuthStore = create<AuthState>()(
 // Enhanced Dashboard Store
 interface DashboardState {
   // Navigation
-  currentView: 'overview' | 'new-analysis' | 'reports' | 'rules' | 'profile';
+  currentView: 'overview' | 'new-analysis' | 'reports' | 'rules' | 'profile' | 'analytics';
   previousView: DashboardState['currentView'] | null;
   
   // Data

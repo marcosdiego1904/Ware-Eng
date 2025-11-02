@@ -10,6 +10,7 @@ import { WarehouseSettingsView } from './views/warehouse-settings'
 import { ActionCenterView } from './views/action-center'
 import { LocationIntelligenceView } from './views/location-intelligence'
 import { RuleCenterView } from './views/rule-center'
+import { AnalyticsView } from './views/analytics'
 
 export function WarehouseDashboard() {
   const { currentView } = useDashboardStore()
@@ -31,7 +32,7 @@ export function WarehouseDashboard() {
       case 'action-center':
         return <ActionCenterView />
       case 'analytics':
-        return <LocationIntelligenceView />
+        return <AnalyticsView />
       default:
         return <EnhancedOverviewView />
     }
