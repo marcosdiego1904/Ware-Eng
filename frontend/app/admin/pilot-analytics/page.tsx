@@ -37,11 +37,6 @@ export default function PilotAnalyticsPage() {
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d')
   const { toast } = useToast()
 
-  const filters: DashboardFilters = {
-    start_date: getStartDate(dateRange),
-    end_date: new Date().toISOString()
-  }
-
   function getStartDate(range: typeof dateRange): string {
     const now = new Date()
     switch (range) {
@@ -60,11 +55,17 @@ export default function PilotAnalyticsPage() {
 
   useEffect(() => {
     loadMetrics()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange])
 
   async function loadMetrics() {
     setLoading(true)
     try {
+      const filters: DashboardFilters = {
+        start_date: getStartDate(dateRange),
+        end_date: new Date().toISOString()
+      }
+
       const data = await getDashboardMetrics(filters)
       setMetrics(data)
     } catch (error) {
@@ -101,7 +102,10 @@ export default function PilotAnalyticsPage() {
               <SelectItem value="all">All time</SelectItem>
             </SelectContent>
           </Select>
-          <ExportButton filters={filters} />
+          <ExportButton filters={{
+            start_date: getStartDate(dateRange),
+            end_date: new Date().toISOString()
+          }} />
           <Button onClick={loadMetrics} variant="outline">
             Refresh
           </Button>
