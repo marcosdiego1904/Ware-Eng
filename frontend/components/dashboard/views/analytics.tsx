@@ -35,6 +35,7 @@ export function AnalyticsView() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d')
+  const [usingMockData, setUsingMockData] = useState(false)
   const { toast } = useToast()
 
   function getStartDate(range: typeof dateRange): string {
@@ -53,6 +54,67 @@ export function AnalyticsView() {
     }
   }
 
+  function getMockData(): DashboardMetrics {
+    return {
+      success: true,
+      date_range: {
+        start: getStartDate(dateRange),
+        end: new Date().toISOString()
+      },
+      filters: {
+        start_date: getStartDate(dateRange),
+        end_date: new Date().toISOString()
+      },
+      usage: {
+        total_sessions: 24,
+        total_time_minutes: 720,
+        avg_session_duration: 30,
+        files_uploaded: 15,
+        feature_usage: {
+          'file_upload': 15,
+          'view_dashboard': 48,
+          'view_reports': 22,
+          'click_anomaly': 18,
+          'export_data': 5
+        }
+      },
+      business: {
+        total_issues: 45,
+        resolved_issues: 38,
+        resolution_rate: 84.4,
+        time_saved_minutes: 1350,
+        cost_savings: 1125.00,
+        issues_by_rule: {
+          'excess_inventory': 18,
+          'understock_warning': 12,
+          'slow_moving_items': 8,
+          'pricing_anomaly': 5,
+          'duplicate_entries': 2
+        }
+      },
+      technical: {
+        total_uploads: 15,
+        successful_uploads: 14,
+        failed_uploads: 1,
+        success_rate: 93.3,
+        avg_processing_time: 3.2,
+        min_processing_time: 1.8,
+        max_processing_time: 5.4,
+        error_types: {
+          'File format invalid': 1
+        },
+        browsers: {
+          'Chrome': 20,
+          'Firefox': 4
+        },
+        devices: {
+          'Desktop': 22,
+          'Mobile': 2
+        }
+      }
+    }
+  }
+
   useEffect(() => {
     loadMetrics()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,6 +122,7 @@ export function AnalyticsView() {
 
   async function loadMetrics() {
     setLoading(true)
+    setUsingMockData(false)
     try {
       const filters: DashboardFilters = {
         start_date: getStartDate(dateRange),
@@ -69,12 +132,10 @@ export function AnalyticsView() {
       const data = await getDashboardMetrics(filters)
       setMetrics(data)
     } catch (error) {
-      console.error('Failed to load metrics:', error)
-      toast({
-        title: "Failed to load analytics",
-        description: "Could not fetch pilot program metrics. Please try again.",
-        variant: "destructive"
-      })
+      console.error('Analytics API not available, using sample data:', error)
+      // Use mock data instead of showing error - prevents logout
+      setMetrics(getMockData())
+      setUsingMockData(true)
     } finally {
       setLoading(false)
     }
@@ -111,6 +172,22 @@ export function AnalyticsView() {
           </Button>
         </div>
       </div>
+
+      {/* Mock Data Banner */}
+      {usingMockData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-blue-600" />
+            <div>
+              <p className="font-medium text-blue-900">Showing Sample Data</p>
+              <p className="text-sm text-blue-700">
+                Backend analytics API is not yet available. Displaying sample metrics for preview.
+                Real data will load automatically once the backend is deployed.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Usage Overview */}
       <section className="space-y-4">

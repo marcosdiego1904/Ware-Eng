@@ -51,16 +51,19 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Token expired or invalid
       console.warn('401 Unauthorized response received:', error.config?.url);
-      
-      // Only redirect to auth if this is NOT a rules API call (for debugging)
+
+      // Don't logout for these API calls (they handle errors gracefully)
       const isRulesApiCall = error.config?.url?.includes('/rules') || error.config?.url?.includes('/categories');
-      
-      if (!isRulesApiCall && typeof window !== 'undefined') {
+      const isAnalyticsApiCall = error.config?.url?.includes('/pilot/');
+
+      if (!isRulesApiCall && !isAnalyticsApiCall && typeof window !== 'undefined') {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
         window.location.href = '/auth';
       } else if (isRulesApiCall) {
         console.warn('Rules API call failed with 401 - check if backend is running and rules endpoints are configured');
+      } else if (isAnalyticsApiCall) {
+        console.warn('Analytics API call failed with 401 - backend analytics endpoints not deployed yet, using mock data');
       }
     }
     return Promise.reject(error);
