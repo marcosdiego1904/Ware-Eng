@@ -1077,7 +1077,45 @@ def api_login():
                 'exp': datetime.utcnow() + timedelta(hours=24)  # Token valid for 24 hours
             }, app.config['SECRET_KEY'], algorithm="HS256")
 
-            return jsonify({'token': token, 'username': user.username})
+            # Track login session with analytics
+            try:
+                from analytics_service import AnalyticsService
+                # Parse user agent for browser/device info
+                user_agent_string = request.headers.get('User-Agent', '')
+                browser = 'unknown'
+                device_type = 'desktop'
+
+                if 'Mobile' in user_agent_string or 'Android' in user_agent_string:
+                    device_type = 'mobile'
+                elif 'Tablet' in user_agent_string or 'iPad' in user_agent_string:
+                    device_type = 'tablet'
+
+                if 'Chrome' in user_agent_string:
+                    browser = 'Chrome'
+                elif 'Firefox' in user_agent_string:
+                    browser = 'Firefox'
+                elif 'Safari' in user_agent_string:
+                    browser = 'Safari'
+                elif 'Edge' in user_agent_string:
+                    browser = 'Edge'
+
+                session = AnalyticsService.start_session(
+                    user_id=user.id,
+                    warehouse_id=user.get_default_warehouse(),
+                    ip_address=request.remote_addr,
+                    user_agent=user_agent_string[:500],  # Truncate to fit DB
+                    browser=browser,
+                    device_type=device_type
+                )
+            except Exception as analytics_error:
+                print(f"Analytics tracking error: {analytics_error}")
+                # Don't fail login due to analytics error
+
+            return jsonify({
+                'token': token,
+                'username': user.username,
+                'is_admin': user.is_admin if hasattr(user, 'is_admin') else False
+            })
 
         return jsonify({'message': 'Invalid username or password'}), 401
     except Exception as e:
@@ -2677,6 +2715,22 @@ try:
     print("Customer Monitoring API registered successfully")
 except ImportError as e:
     print(f"Customer Monitoring API not available: {e}")
+
+# Register Pilot Analytics API (Admin-only analytics dashboard)
+try:
+    from pilot_analytics_api import pilot_analytics_bp
+    app.register_blueprint(pilot_analytics_bp)
+    print("Pilot Analytics API registered successfully")
+except ImportError as e:
+    print(f"Pilot Analytics API not available: {e}")
+
+# Setup analytics middleware for performance tracking
+try:
+    from analytics_middleware import setup_analytics_middleware
+    setup_analytics_middleware(app)
+    print("Analytics middleware initialized")
+except ImportError as e:
+    print(f"Analytics middleware not available: {e}")
 
 # ==================== PRODUCTION DATABASE DIAGNOSTIC ====================
 

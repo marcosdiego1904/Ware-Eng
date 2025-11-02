@@ -13,6 +13,9 @@ class User(db.Model, UserMixin):
     reports = db.relationship('AnalysisReport', backref='author', lazy=True)
     warehouse_access = db.relationship('UserWarehouseAccess', backref='user', lazy=True, cascade="all, delete-orphan")
 
+    # Admin access for pilot analytics
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)  # Admin can access analytics dashboard
+
     # Analysis preferences - Clear Previous Anomalies feature
     clear_previous_anomalies = db.Column(db.Boolean, default=True, nullable=False)  # Default: clear on new analysis
     show_clear_warning = db.Column(db.Boolean, default=True, nullable=False)  # Default: show warning modal
