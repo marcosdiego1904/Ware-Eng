@@ -2061,10 +2061,11 @@ def create_analysis_report(current_user):
             AnalyticsService.track_file_upload(
                 user_id=current_user.id,
                 warehouse_id=warehouse_id,
-                filename=inventory_file.filename,
-                file_size_bytes=0,  # Size already consumed
+                file_type='inventory',
+                file_name=inventory_file.filename,
                 processing_time_seconds=0,  # Will improve with timing later
-                success=True
+                success=True,
+                anomalies_found=len(new_report.anomalies) if hasattr(new_report, 'anomalies') else 0
             )
 
             # Track generic event
@@ -2109,8 +2110,8 @@ def create_analysis_report(current_user):
             AnalyticsService.track_file_upload(
                 user_id=current_user.id,
                 warehouse_id=warehouse_id if 'warehouse_id' in locals() else None,
-                filename=inventory_file.filename if 'inventory_file' in locals() else 'unknown',
-                file_size_bytes=0,
+                file_type='inventory',
+                file_name=inventory_file.filename if 'inventory_file' in locals() else 'unknown',
                 processing_time_seconds=0,
                 success=False,
                 error_message=str(e)
