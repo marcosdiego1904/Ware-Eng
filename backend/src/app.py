@@ -2087,6 +2087,42 @@ def create_analysis_report(current_user):
             # Don't fail the upload if analytics fails
             print(f"[ANALYTICS] Warning: Failed to track upload analytics: {analytics_error}")
 
+        # Calculate time savings based on rule types checked
+        try:
+            from analytics_service import AnalyticsService
+
+            # Count unique anomaly types (rule types) to calculate time savings
+            # This represents the number of different automated checks performed
+            unique_rule_types = set()
+            if hasattr(new_report, 'anomalies'):
+                for anomaly in new_report.anomalies:
+                    try:
+                        details = json.loads(anomaly.details) if anomaly.details else {}
+                        rule_type = details.get('anomaly_type', anomaly.description)
+                        if rule_type:
+                            unique_rule_types.add(rule_type)
+                    except:
+                        pass
+
+            rule_types_checked = len(unique_rule_types) if unique_rule_types else 1  # At least 1 if file processed
+
+            print(f"[ANALYTICS] Calculating time savings: {rule_types_checked} unique rule types checked")
+
+            # Calculate ROI metrics: time and cost savings
+            AnalyticsService.calculate_time_savings(
+                user_id=current_user.id,
+                warehouse_id=warehouse_id,
+                files_processed=1,
+                reports_generated=1,
+                rule_types_checked=rule_types_checked,
+                automated_time_seconds=5  # Typical processing time
+            )
+
+            print(f"[ANALYTICS] ✅ Time savings calculated: {rule_types_checked} rule checks = "
+                  f"{30 + (rule_types_checked * 12) + 15} minutes saved")
+        except Exception as savings_error:
+            print(f"[ANALYTICS] Warning: Failed to calculate time savings: {savings_error}")
+
         # Prepare success message with clearing info
         success_message = 'Report created successfully'
         if cleared_count > 0:
