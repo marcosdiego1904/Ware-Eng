@@ -29,8 +29,8 @@ from analytics_models import (
 # Create blueprint
 pilot_analytics_bp = Blueprint('pilot_analytics', __name__, url_prefix='/api/v1/pilot')
 
-# JWT secret from environment
-JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret-key-change-in-production')
+# JWT secret from environment - use same key as main app
+JWT_SECRET = os.environ.get('FLASK_SECRET_KEY', os.environ.get('JWT_SECRET', 'dev-secret-key-change-in-production'))
 
 
 def token_required(f):
