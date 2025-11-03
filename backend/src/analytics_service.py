@@ -10,7 +10,8 @@ from analytics_models import (
     AnalyticsSession,
     AnalyticsFileUpload,
     AnalyticsAnomaly,
-    AnalyticsTimeSavings
+    AnalyticsTimeSavings,
+    AnalyticsPilotSummary
 )
 from sqlalchemy import func
 import uuid
@@ -74,6 +75,42 @@ class AnalyticsService:
         else:
             logger.warning(f"Pilot user '{PILOT_USERNAME}' not found in database")
             return None
+
+    @staticmethod
+    def get_or_create_pilot_summary(user_id):
+        """
+        Get or create the pilot summary record for cumulative metrics
+
+        This is a thread-safe get-or-create pattern that ensures exactly one
+        summary row exists per pilot user.
+
+        Args:
+            user_id: User ID to get/create summary for
+
+        Returns:
+            AnalyticsPilotSummary object (existing or newly created)
+        """
+        try:
+            # Try to get existing summary
+            summary = AnalyticsPilotSummary.query.filter_by(user_id=user_id).first()
+
+            if not summary:
+                # Create new summary with zeroed counters
+                summary = AnalyticsPilotSummary(
+                    user_id=user_id,
+                    total_anomalies_found=0,
+                    total_anomalies_resolved=0
+                )
+                db.session.add(summary)
+                db.session.flush()  # Get ID but don't commit yet
+                logger.info(f"Created new pilot summary for user {user_id}")
+
+            return summary
+        except Exception as e:
+            logger.error(f"Error in get_or_create_pilot_summary: {str(e)}")
+            db.session.rollback()
+            # Return a basic object to prevent crashes (will have default values)
+            return AnalyticsPilotSummary(user_id=user_id)
 
     @staticmethod
     def generate_session_id():
@@ -583,12 +620,28 @@ class AnalyticsService:
                 func.count(AnalyticsAnomaly.id).label('count')
             ).filter(*query_filters).group_by(AnalyticsAnomaly.rule_type).all()
 
-            # Resolution metrics
-            total_issues = AnalyticsAnomaly.query.filter(*query_filters).count()
-            resolved_issues = AnalyticsAnomaly.query.filter(
-                *query_filters,
-                AnalyticsAnomaly.resolved_at.isnot(None)
-            ).count()
+            # Resolution metrics - USE CUMULATIVE COUNTERS from pilot summary
+            # This ensures counts never decrease when reports are deleted
+            if user_id:
+                pilot_summary = AnalyticsPilotSummary.query.filter_by(user_id=user_id).first()
+                if pilot_summary:
+                    total_issues = pilot_summary.total_anomalies_found
+                    resolved_issues = pilot_summary.total_anomalies_resolved
+                else:
+                    # Fallback to counting if no summary exists yet
+                    total_issues = AnalyticsAnomaly.query.filter(*query_filters).count()
+                    resolved_issues = AnalyticsAnomaly.query.filter(
+                        *query_filters,
+                        AnalyticsAnomaly.resolved_at.isnot(None)
+                    ).count()
+            else:
+                # If no user_id specified, use old counting method
+                total_issues = AnalyticsAnomaly.query.filter(*query_filters).count()
+                resolved_issues = AnalyticsAnomaly.query.filter(
+                    *query_filters,
+                    AnalyticsAnomaly.resolved_at.isnot(None)
+                ).count()
+
             resolution_rate = (resolved_issues / total_issues * 100) if total_issues > 0 else 0
 
             # Average resolution time

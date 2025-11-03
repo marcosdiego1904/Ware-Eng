@@ -281,3 +281,65 @@ class AnalyticsTimeSavings(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+
+class AnalyticsPilotSummary(db.Model):
+    """
+    Immutable cumulative counters for pilot program lifetime metrics
+
+    These counters ONLY increase, never decrease - perfect for marketing ROI.
+    Not affected by pilot actions like deleting reports or clearing anomalies.
+
+    Purpose: Provide reliable, defensible metrics for sales and marketing materials.
+
+    Example: If pilot finds 100 anomalies then deletes those reports, the counter
+    stays at 100 because the value was delivered regardless of report lifecycle.
+    """
+    __tablename__ = 'analytics_pilot_summary'
+
+    # Primary key is user_id - one row per pilot user
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True, nullable=False)
+
+    # Cumulative lifetime counters (only increment, never decrement)
+    total_anomalies_found = db.Column(db.Integer, default=0, nullable=False)
+    """Total anomalies detected across all file uploads (lifetime cumulative)"""
+
+    total_anomalies_resolved = db.Column(db.Integer, default=0, nullable=False)
+    """Total anomalies marked as resolved (lifetime cumulative, counts each resolution once)"""
+
+    # Tracking timestamps
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_file_upload_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    """Timestamp of most recent file upload (for reference)"""
+
+    def increment_anomalies_found(self, count):
+        """
+        Increment the cumulative anomalies found counter
+
+        Args:
+            count: Number of anomalies to add (from new file upload)
+        """
+        self.total_anomalies_found = (self.total_anomalies_found or 0) + count
+        self.last_file_upload_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+
+    def increment_anomalies_resolved(self, count=1):
+        """
+        Increment the cumulative anomalies resolved counter
+
+        Args:
+            count: Number of anomalies resolved (default 1)
+        """
+        self.total_anomalies_resolved = (self.total_anomalies_resolved or 0) + count
+        self.updated_at = datetime.utcnow()
+
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'total_anomalies_found': self.total_anomalies_found,
+            'total_anomalies_resolved': self.total_anomalies_resolved,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_file_upload_at': self.last_file_upload_at.isoformat() if self.last_file_upload_at else None
+        }

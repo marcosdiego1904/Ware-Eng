@@ -2020,6 +2020,16 @@ def create_analysis_report(current_user):
             except Exception as analytics_error:
                 print(f"[ANALYTICS] Warning: Failed to track anomalies: {analytics_error}")
 
+            # Increment cumulative anomalies found counter (immutable, for marketing)
+            try:
+                from analytics_service import AnalyticsService
+                pilot_summary = AnalyticsService.get_or_create_pilot_summary(current_user.id)
+                pilot_summary.increment_anomalies_found(len(new_report.anomalies))
+                print(f"[ANALYTICS] ✅ Incremented cumulative counter: +{len(new_report.anomalies)} anomalies found "
+                      f"(total: {pilot_summary.total_anomalies_found})")
+            except Exception as summary_error:
+                print(f"[ANALYTICS] Warning: Failed to update pilot summary: {summary_error}")
+
             # CRITICAL: Explicit commit to make data visible immediately
             print(f"[DB] Committing transaction for report {new_report.id}...")
             db.session.commit()
@@ -2405,6 +2415,9 @@ def change_api_anomaly_status(current_user, anomaly_id):
 
             analytics_anomaly = AnalyticsAnomaly.query.filter_by(anomaly_id=anomaly.id).first()
             if analytics_anomaly:
+                # Check if this is the FIRST resolution (resolved_at was None)
+                was_not_resolved = analytics_anomaly.resolved_at is None
+
                 analytics_anomaly.resolved_at = datetime.utcnow()
 
                 # Calculate time to resolve
@@ -2414,6 +2427,19 @@ def change_api_anomaly_status(current_user, anomaly_id):
 
                 analytics_anomaly.user_action = 'resolved'
                 print(f"[ANALYTICS] Marked anomaly {anomaly.id} as resolved")
+
+                # Increment cumulative counter only on FIRST resolution
+                if was_not_resolved:
+                    try:
+                        from analytics_service import AnalyticsService
+                        # Get the user_id from the anomaly's report
+                        user_id = anomaly.report.user_id
+                        pilot_summary = AnalyticsService.get_or_create_pilot_summary(user_id)
+                        pilot_summary.increment_anomalies_resolved(1)
+                        print(f"[ANALYTICS] ✅ Incremented cumulative resolved counter "
+                              f"(total: {pilot_summary.total_anomalies_resolved})")
+                    except Exception as summary_error:
+                        print(f"[ANALYTICS] Warning: Failed to update pilot summary: {summary_error}")
             else:
                 print(f"[ANALYTICS] Warning: No AnalyticsAnomaly found for anomaly {anomaly.id}")
         except Exception as analytics_error:
@@ -2450,6 +2476,7 @@ def resolve_all_anomalies(current_user):
         ).all()
 
         resolved_count = len(anomalies)
+        newly_resolved_count = 0  # Track how many were resolved for the first time
 
         # Update all anomalies to resolved status
         for anomaly in anomalies:
@@ -2473,6 +2500,11 @@ def resolve_all_anomalies(current_user):
 
                 analytics_anomaly = AnalyticsAnomaly.query.filter_by(anomaly_id=anomaly.id).first()
                 if analytics_anomaly:
+                    # Check if this is the FIRST resolution
+                    was_not_resolved = analytics_anomaly.resolved_at is None
+                    if was_not_resolved:
+                        newly_resolved_count += 1
+
                     analytics_anomaly.resolved_at = datetime.utcnow()
                     if analytics_anomaly.detected_at:
                         time_diff = datetime.utcnow() - analytics_anomaly.detected_at
@@ -2481,8 +2513,19 @@ def resolve_all_anomalies(current_user):
             except Exception as analytics_error:
                 print(f"[ANALYTICS] Warning: Failed to update analytics for anomaly {anomaly.id}: {analytics_error}")
 
+        # Increment cumulative counter for newly resolved anomalies
+        if newly_resolved_count > 0:
+            try:
+                from analytics_service import AnalyticsService
+                pilot_summary = AnalyticsService.get_or_create_pilot_summary(current_user.id)
+                pilot_summary.increment_anomalies_resolved(newly_resolved_count)
+                print(f"[ANALYTICS] ✅ Incremented cumulative resolved counter by {newly_resolved_count} "
+                      f"(total: {pilot_summary.total_anomalies_resolved})")
+            except Exception as summary_error:
+                print(f"[ANALYTICS] Warning: Failed to update pilot summary: {summary_error}")
+
         db.session.commit()
-        print(f"[ANALYTICS] Bulk resolved {resolved_count} anomalies")
+        print(f"[ANALYTICS] Bulk resolved {resolved_count} anomalies ({newly_resolved_count} newly resolved)")
 
         return jsonify({
             'success': True,
