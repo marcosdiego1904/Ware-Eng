@@ -33,6 +33,8 @@ export function WarehouseDashboard() {
         return <ActionCenterView />
       case 'analytics':
         return <AnalyticsView />
+      case 'location-intelligence':
+        return <LocationIntelligenceView />
       default:
         return <EnhancedOverviewView />
     }

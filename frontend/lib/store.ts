@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 // Dashboard Store
 interface DashboardState {
-  currentView: 'overview' | 'new-analysis' | 'reports' | 'rule-center' | 'rules' | 'warehouse-settings' | 'profile' | 'action-center' | 'analytics' | 'track-wins';
+  currentView: 'overview' | 'new-analysis' | 'reports' | 'rule-center' | 'rules' | 'warehouse-settings' | 'profile' | 'action-center' | 'analytics' | 'track-wins' | 'location-intelligence';
   isLoading: boolean;
   reports: Report[];
   currentReport: ReportDetails | null;
