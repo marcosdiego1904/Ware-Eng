@@ -454,11 +454,11 @@ class AnalyticsService:
                 )
                 db.session.add(time_savings)
 
-            # Update counts
-            time_savings.files_processed += files_processed
-            time_savings.reports_generated += reports_generated
-            time_savings.anomalies_detected += rule_types_checked  # Store rule count here for now
-            time_savings.automated_time_seconds += automated_time_seconds
+            # Update counts (handle None values from database)
+            time_savings.files_processed = (time_savings.files_processed or 0) + files_processed
+            time_savings.reports_generated = (time_savings.reports_generated or 0) + reports_generated
+            time_savings.anomalies_detected = (time_savings.anomalies_detected or 0) + rule_types_checked  # Store rule count here for now
+            time_savings.automated_time_seconds = (time_savings.automated_time_seconds or 0) + automated_time_seconds
 
             # Estimate manual time based on activities (in seconds)
             # This is the key calculation for ROI metrics
@@ -467,7 +467,7 @@ class AnalyticsService:
             manual_time += reports_generated * (AnalyticsService.MANUAL_REPORT_GENERATION_TIME * 60)
             manual_time += rule_types_checked * (AnalyticsService.MANUAL_RULE_CHECK_TIME * 60)
 
-            time_savings.estimated_manual_time_seconds += manual_time
+            time_savings.estimated_manual_time_seconds = (time_savings.estimated_manual_time_seconds or 0) + manual_time
 
             # Calculate savings
             time_savings.calculate_savings(hourly_rate=50.0)
