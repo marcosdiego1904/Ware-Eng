@@ -159,7 +159,7 @@ class AnalyticsAnomaly(db.Model):
     __tablename__ = 'analytics_anomalies'
 
     id = db.Column(db.Integer, primary_key=True)
-    anomaly_id = db.Column(db.Integer, db.ForeignKey('anomaly.id'), nullable=False, unique=True, index=True)
+    anomaly_id = db.Column(db.Integer, db.ForeignKey('anomaly.id', ondelete='CASCADE'), nullable=False, unique=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouse_config.id'), nullable=True)
 
