@@ -497,7 +497,7 @@ export function EnhancedOverviewView() {
                 )}
                 <Button
                   className="w-full group-hover:scale-105 transition-transform duration-200 bg-slate-600 hover:bg-slate-700 text-white"
-                  onClick={() => setCurrentView('analytics')}
+                  onClick={() => setCurrentView('location-intelligence')}
                 >
                   Open Analytics
                 </Button>
@@ -790,7 +790,7 @@ export function EnhancedOverviewView() {
         {/* Space Utilization - Steel Gray Professional */}
         <Card
           className="group relative overflow-hidden cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-2 border-slate-200 hover:border-slate-300"
-          onClick={() => setCurrentView('analytics')}
+          onClick={() => setCurrentView('location-intelligence')}
         >
           <CardContent className="relative p-6">
             <div className="flex items-center justify-between mb-4">
