@@ -2121,7 +2121,9 @@ def create_analysis_report(current_user):
             print(f"[ANALYTICS] ✅ Time savings calculated: {rule_types_checked} rule checks = "
                   f"{30 + (rule_types_checked * 12) + 15} minutes saved")
         except Exception as savings_error:
+            import traceback
             print(f"[ANALYTICS] Warning: Failed to calculate time savings: {savings_error}")
+            print(f"[ANALYTICS] Traceback: {traceback.format_exc()}")
 
         # Prepare success message with clearing info
         success_message = 'Report created successfully'

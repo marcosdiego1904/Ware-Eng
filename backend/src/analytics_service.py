@@ -479,7 +479,9 @@ class AnalyticsService:
                        f"(files: {files_processed}, rules: {rule_types_checked})")
             return time_savings
         except Exception as e:
+            import traceback
             logger.error(f"Error calculating time savings: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             db.session.rollback()
             return None
 
